@@ -1,0 +1,8 @@
+{
+  "name": "Taash Bhattiv1.5",
+  "description": "indian version of kfc startup",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,298 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with goals and saved settings.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "avatar": { "type": "string" },
+        "goal": { "type": "string", "enum": ["fat_loss", "muscle_gain", "maintenance", "general"] },
+        "preferredGymId": { "type": "string" },
+        "savedAddresses": { "type": "array" },
+        "savedPayments": { "type": "array" }
+      },
+      "required": ["name", "email", "goal"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order containing food items purchased by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "items": { "type": "array" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["cooking", "out_for_delivery", "delivered", "cancelled"] },
+        "total": { "type": "number" },
+        "discount": { "type": "number" },
+        "subtotal": { "type": "number" },
+        "deliveryFee": { "type": "number" },
+        "address": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "trackingSteps": { "type": "array" },
+        "gymId": { "type": "string" }
+      },
+      "required": ["id", "userId", "items", "date", "status", "total", "address", "paymentMethod"]
+    },
+    "Meal": {
+      "title": "Meal",
+      "description": "A food item/meal in the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "calories": { "type": "number" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fats": { "type": "number" },
+        "isVeg": { "type": "boolean" },
+        "timings": { "type": "array" },
+        "goals": { "type": "array" },
+        "rating": { "type": "number" },
+        "popularity": { "type": "number" },
+        "partnerGymExclusive": { "type": "boolean" },
+        "image": { "type": "string" }
+      },
+      "required": ["id", "name", "price", "calories", "protein", "carbs", "fats", "isVeg", "timings", "goals"]
+    },
+    "MealReview": {
+      "title": "Meal Review",
+      "description": "Customer ratings and reviews on dishes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mealId": { "type": "string" },
+        "mealName": { "type": "string" },
+        "orderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewText": { "type": "string" },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "mealId", "userName", "rating", "createdAt"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "A coupon or discount offer.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "discountType": { "type": "string", "enum": ["percentage", "fixed", "free_delivery", "free_perk"] },
+        "discountValue": { "type": "number" },
+        "perkName": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "expiryDate": { "type": "string" },
+        "minOrderValue": { "type": "number" },
+        "usageCap": { "type": "number" },
+        "usageCount": { "type": "number" },
+        "totalSavings": { "type": "number" },
+        "firstNUsersOnly": { "type": "number" },
+        "scope": { "type": "string", "enum": ["all", "account_based", "gym_only"] },
+        "targetUserEmail": { "type": "string" },
+        "targetGymId": { "type": "string" },
+        "isStackable": { "type": "boolean" },
+        "stackableWith": { "type": "array" }
+      },
+      "required": ["code", "discountType", "discountValue", "isActive", "scope", "isStackable", "stackableWith"]
+    },
+    "Gym": {
+      "title": "Gym Terminal Affiliate",
+      "description": "Affiliated partner gyms with smart lockers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chainId": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "discountPct": { "type": "number" },
+        "bannerText": { "type": "string" },
+        "membersOnlyOffers": { "type": "array" },
+        "image": { "type": "string" },
+        "city": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "ownerContactName": { "type": "string" },
+        "ownerContactPhone: ": { "type": "string" },
+        "ownerContactEmail": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "isVerified": { "type": "boolean" },
+        "partnerStatus": { "type": "string", "enum": ["bronze", "silver", "gold", "elite"] },
+        "offerType": { "type": "string", "enum": ["discount", "free_meal", "perk_only", "referral_bonus", "group_deal"] },
+        "freeMealRule": { "type": "string" },
+        "referralOffers": { "type": "array" },
+        "membershipBenefits": { "type": "array" },
+        "groupOrderDeals": { "type": "array" },
+        "referralCode": { "type": "string" },
+        "redemptionsCount": { "type": "number" },
+        "totalConversions": { "type": "number" },
+        "registeredAt": { "type": "string" }
+      },
+      "required": ["id", "chainId", "name", "address", "discountPct", "city"]
+    },
+    "GymChain": {
+      "title": "Gym Chain / Clanspace",
+      "description": "A franchise or brand of gyms that groups individual gym branches.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "logo": { "type": "string" },
+        "registeredAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Ingredient": {
+      "title": "Macro Ingredient Stock",
+      "description": "A premium macro ingredient in the kitchen with threshold-based restocking triggers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["protein", "grain", "spice", "premium"] },
+        "currentStock": { "type": "number" },
+        "minRequired": { "type": "number" },
+        "unit": { "type": "string" }
+      },
+      "required": ["id", "name", "category", "currentStock", "minRequired", "unit"]
+    },
+    "Kitchen": {
+      "title": "Kitchen Branch",
+      "description": "Physical kitchen branches that accept and route orders within their delivery radius.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "geofenceRadius": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" }
+      },
+      "required": ["id", "name", "address", "geofenceRadius", "isActive"]
+    },
+    "DealOffer": {
+      "title": "Deal & Offer Package",
+      "description": "Dynamic deals created by admin including Build Your Own Deck boxes, fixed combos, BOGO, and tiered bundles.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "tagline": { "type": "string" },
+        "description": { "type": "string" },
+        "badge": { "type": "string" },
+        "image": { "type": "string" },
+        "offerType": { "type": "string", "enum": ["build_your_deck", "fixed_combo", "bogo", "tiered_bundle", "flash_deal"] },
+        "packagePrice": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "discountPct": { "type": "number" },
+        "steps": { "type": "array" },
+        "comboItems": { "type": "array" },
+        "bogoPrimaryMealIds": { "type": "array" },
+        "bogoRewardMealIds": { "type": "array" },
+        "bogoDiscountPct": { "type": "number" },
+        "bundleItemCount": { "type": "number" },
+        "bundleEligibleMealIds": { "type": "array" },
+        "flashExpiresAt": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "offerType", "packagePrice", "isActive"]
+    },
+    "CashDeposit": {
+      "title": "Cash Deposit",
+      "description": "Two-step rider cash handover request and kitchen approval ledger",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "partnerName": { "type": "string" },
+        "kitchenId": { "type": "string" },
+        "kitchenName": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "requestedAt": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "approvedBy": { "type": "string" }
+      },
+      "required": ["id", "partnerId", "kitchenId", "amount", "status", "requestedAt"]
+    },
+    "KitchenManager": {
+      "title": "Kitchen Manager",
+      "description": "Kitchen branch manager credentials and branch assignment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "assignedKitchenId": { "type": "string" },
+        "assignedKitchenName": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "role": { "type": "string", "enum": ["kitchen_manager"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "assignedKitchenId", "status", "role"]
+    }
+  },
+  "firestore": {
+    "/kitchen_managers/{managerId}": {
+      "schema": "KitchenManager",
+      "description": "Kitchen manager user profiles and branch credentials"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer orders"
+    },
+    "/cash_deposits/{depositId}": {
+      "schema": "CashDeposit",
+      "description": "Rider cash handover deposit requests and cashier approvals"
+    },
+    "/meals/{mealId}": {
+      "schema": "Meal",
+      "description": "Menu meals list"
+    },
+    "/deals/{dealId}": {
+      "schema": "DealOffer",
+      "description": "Admin configured deals, combos, BOGO, and deck builder packages"
+    },
+    "/meal_reviews/{reviewId}": {
+      "schema": "MealReview",
+      "description": "Dish reviews and customer ratings"
+    },
+    "/coupons/{couponId}": {
+      "schema": "Coupon",
+      "description": "Active stackable and regular coupons"
+    },
+    "/gym_chains/{chainId}": {
+      "schema": "GymChain",
+      "description": "Gym chains and franchise groups"
+    },
+    "/gyms/{gymId}": {
+      "schema": "Gym",
+      "description": "Partner gyms with locker integrations"
+    },
+    "/ingredients/{ingredientId}": {
+      "schema": "Ingredient",
+      "description": "Kitchen raw ingredient inventory stock records"
+    },
+    "/kitchens/{kitchenId}": {
+      "schema": "Kitchen",
+      "description": "Kitchen branch locations and geofence parameters"
+    },
+    "/kitchen_inventory/{itemId}": {
+      "schema": "KitchenInventoryItem",
+      "description": "Kitchen raw inventory and ingredient stock items"
+    }
+  }
+}

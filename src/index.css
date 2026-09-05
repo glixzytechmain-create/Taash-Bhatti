@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Caveat:wght@700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-accent: "Caveat", cursive, sans-serif;
+  
+  /* Primary Palette */
+  --color-brand-charcoal: #12161A;
+  --color-brand-dark: #0A0D0F;
+  --color-brand-green: #143D27; /* Dark Forest Green */
+  --color-brand-forest: #0E2B1B;
+  --color-brand-copper: #C06C38;
+  --color-brand-bronze: #8C532B;
+  --color-brand-ivory: #FAF8F5;
+  --color-brand-cream: #F8F3EA;
+
+  /* Accent Palette */
+  --color-brand-orange: #FF5722; /* Fire Orange */
+  --color-brand-fire: #FF5722;
+  --color-brand-red: #C62828; /* Ember Red */
+  --color-brand-ember: #C62828;
+  --color-brand-gold: #D4AF37; /* Gold */
+  --color-brand-lime: #2D6A4F;
+}
+
+/* Default Theme Styling */
+@layer base {
+  body {
+    background-color: var(--color-brand-cream);
+    color: var(--color-brand-charcoal);
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    user-select: auto;
+  }
+
+  button, a, [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
+/* Tactile Click & Tap Feedback */
+button:not(:disabled):active, 
+.tap-spring:active {
+  transform: scale(0.965);
+  transition: transform 0.08s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-brand-cream);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-brand-bronze);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-copper);
+}
+
+/* Custom shimmers and glowing animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #F8F3EA 25%, #EFE7DA 50%, #F8F3EA 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+.glow-orange {
+  box-shadow: 0 0 16px rgba(255, 87, 34, 0.45);
+}
+
+.glow-green {
+  box-shadow: 0 0 16px rgba(20, 61, 39, 0.45);
+}
+
+.glow-gold {
+  box-shadow: 0 0 16px rgba(212, 175, 55, 0.45);
+}
+
+.glow-copper {
+  box-shadow: 0 0 16px rgba(192, 108, 56, 0.45);
+}
+
+

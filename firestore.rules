@@ -1,0 +1,110 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if ID is valid format to guard against injection/poisoning
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Match users collection
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Match orders collection
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    // Match meals collection
+    match /meals/{mealId} {
+      allow read, write: if true;
+    }
+
+    // Match deals collection (offers, combos, custom decks, BOGO)
+    match /deals/{dealId} {
+      allow read, write: if true;
+    }
+
+    // Match coupons collection
+    match /coupons/{couponId} {
+      allow read, write: if true;
+    }
+
+    // Match gym_chains collection
+    match /gym_chains/{chainId} {
+      allow read, write: if true;
+    }
+
+    // Match gyms collection
+    match /gyms/{gymId} {
+      allow read, write: if true;
+    }
+
+    // Match ingredients collection
+    match /ingredients/{ingredientId} {
+      allow read, write: if true;
+    }
+
+    // Match kitchen_inventory collection
+    match /kitchen_inventory/{itemId} {
+      allow read, write: if true;
+    }
+
+    // Match kitchens collection
+    match /kitchens/{kitchenId} {
+      allow read, write: if true;
+    }
+
+    // Match delivery_partners collection
+    match /delivery_partners/{partnerId} {
+      allow read, write: if true;
+    }
+
+    // Match support_tickets collection
+    match /support_tickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    // Match hero_banners collection
+    match /hero_banners/{bannerId} {
+      allow read, write: if true;
+    }
+
+    // Match notifications collection
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    // Match meal_reviews collection
+    match /meal_reviews/{reviewId} {
+      allow read, write: if true;
+    }
+
+    // Match support_agents collection
+    match /support_agents/{agentId} {
+      allow read, write: if true;
+    }
+
+    // Match kitchen_managers collection (scoped single-kitchen management)
+    match /kitchen_managers/{managerId} {
+      allow read, write: if true;
+    }
+
+    // Match cash_deposits collection (two-step rider cash handover approvals)
+    match /cash_deposits/{depositId} {
+      allow read, write: if true;
+    }
+
+    // Match kitchen_eod_reports collection (EOD settlements and shift audit reports)
+    match /kitchen_eod_reports/{reportId} {
+      allow read, write: if true;
+    }
+
+    // Match test collection for connection validation
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+  }
+}
