@@ -242,10 +242,102 @@ export default function KitchenEODSettlementModal({
           </div>
         </div>
 
-        {/* 4. AUDITOR NOTES & SIGN-OFF */}
+        {/* 4. FOOD WASTAGE & LOSS AUDIT (ENTERPRISE QSR STANDARD) */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black uppercase tracking-wider text-gray-300 print:text-black flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 print:text-black" />
+              <span>4. Food Wastage & Spoilage Audit</span>
+            </h4>
+            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border print:border-black print:text-black ${
+              (report.wastagePctOfRevenue || 0) <= 2.5
+                ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30'
+                : (report.wastagePctOfRevenue || 0) <= 4.0
+                  ? 'bg-amber-950/40 text-amber-400 border-amber-500/30'
+                  : 'bg-rose-950/40 text-rose-400 border-rose-500/30'
+            }`}>
+              {(report.wastagePctOfRevenue || 0).toFixed(1)}% of Revenue ({
+                (report.wastagePctOfRevenue || 0) <= 2.5
+                  ? 'Within QSR Target'
+                  : (report.wastagePctOfRevenue || 0) <= 4.0
+                    ? 'Moderate Loss'
+                    : 'Critical Loss Alert'
+              })
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 print:grid-cols-4">
+            <div className="bg-[#0A0E13] p-3 rounded-xl border border-rose-500/20 print:border-black print:bg-gray-100">
+              <span className="text-[9px] font-black uppercase text-rose-400 print:text-gray-600 block">Total Waste Loss</span>
+              <span className="text-base font-mono font-black text-rose-400 print:text-black">
+                ₹{(report.totalWastageLoss || 0).toLocaleString()}
+              </span>
+            </div>
+
+            <div className="bg-[#0A0E13] p-3 rounded-xl border border-white/5 print:border-black print:bg-gray-100">
+              <span className="text-[9px] font-black uppercase text-gray-400 print:text-gray-600 block">Raw Ingredients</span>
+              <span className="text-base font-mono font-black text-white print:text-black">
+                ₹{(report.rawMaterialWastageLoss || 0).toLocaleString()}
+              </span>
+            </div>
+
+            <div className="bg-[#0A0E13] p-3 rounded-xl border border-white/5 print:border-black print:bg-gray-100">
+              <span className="text-[9px] font-black uppercase text-gray-400 print:text-gray-600 block">Finished Dishes/Orders</span>
+              <span className="text-base font-mono font-black text-white print:text-black">
+                ₹{(report.finishedGoodsWastageLoss || 0).toLocaleString()}
+              </span>
+            </div>
+
+            <div className="bg-[#0A0E13] p-3 rounded-xl border border-white/5 print:border-black print:bg-gray-100">
+              <span className="text-[9px] font-black uppercase text-gray-400 print:text-gray-600 block">Total Waste Events</span>
+              <span className="text-base font-mono font-black text-white print:text-black">
+                {report.totalWastageItemsCount || 0} items
+              </span>
+            </div>
+          </div>
+
+          {/* Itemized Wasted Items List (if any) */}
+          {report.wastedItemsList && report.wastedItemsList.length > 0 ? (
+            <div className="bg-[#0A0E13] rounded-xl border border-white/5 p-3 space-y-2 print:border-black print:bg-gray-50">
+              <span className="text-[9px] font-black uppercase text-gray-400 print:text-gray-600 block tracking-wider">
+                Shift Wasted Items Audit Trail:
+              </span>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {report.wastedItemsList.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-white/5 print:bg-white border border-white/5 print:border-black">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                        item.type === 'ingredient' ? 'bg-amber-500/20 text-amber-300' : item.type === 'whole_dish' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
+                      }`}>
+                        {item.type === 'ingredient' ? 'Raw Stock' : item.type === 'whole_dish' ? 'Whole Dish' : 'Order Waste'}
+                      </span>
+                      <span className="font-bold text-white print:text-black">{item.name}</span>
+                      <span className="text-[10px] text-gray-400 print:text-gray-600 font-mono">({item.quantity} {item.unit})</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] text-gray-400 print:text-gray-600 font-mono capitalize">
+                        {item.reason.replace(/_/g, ' ')}
+                      </span>
+                      <span className="font-mono font-black text-rose-400 print:text-black">
+                        -₹{item.financialLoss.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-[#0A0E13] p-2.5 rounded-xl border border-white/5 text-[11px] text-gray-400 italic flex items-center justify-between print:border-black print:text-gray-700">
+              <span>✓ Zero food waste recorded during this shift. Optimal kitchen prep yield maintained.</span>
+              <span className="font-mono text-emerald-400 font-black">₹0 Waste Loss</span>
+            </div>
+          )}
+        </div>
+
+        {/* 5. AUDITOR NOTES & SIGN-OFF */}
         <div className="space-y-2 border-t border-white/10 pt-4 print:border-black">
           <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 print:text-black block">
-            4. Shift Manager Closing Remarks & Certification
+            5. Shift Manager Closing Remarks & Certification
           </label>
           {isReadOnly ? (
             <div className="bg-[#0A0E13] p-3 rounded-xl border border-white/5 text-xs text-gray-300 italic print:text-black print:border-black print:bg-white">

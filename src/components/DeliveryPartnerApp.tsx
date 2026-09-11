@@ -539,6 +539,10 @@ export default function DeliveryPartnerApp({
     }
   };
 
+  // Live Transit Simulation & Progress Stepper State
+  const [isSimulatingDrive, setIsSimulatingDrive] = useState(false);
+  const [simProgressPercent, setSimProgressPercent] = useState(0);
+
   // Live GPS tracking effect for active order
   useEffect(() => {
     if (!activeUnlockedOrder || activeUnlockedOrder.status === 'delivered' || activeUnlockedOrder.status === 'cancelled') return;
@@ -555,7 +559,7 @@ export default function DeliveryPartnerApp({
         await updateDoc(orderRef, {
           riderLat: lat,
           riderLng: lng,
-          riderLastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          riderLastUpdated: new Date().toISOString()
         });
       } catch (e) {
         console.warn("Error updating rider GPS in Firestore:", e);
@@ -579,6 +583,68 @@ export default function DeliveryPartnerApp({
       return () => navigator.geolocation.clearWatch(watchId);
     }
   }, [activeUnlockedOrder?.id, activeUnlockedOrder?.status, allKitchens]);
+
+  // Simulation Interval Runner
+  useEffect(() => {
+    if (!isSimulatingDrive || !activeUnlockedOrder || activeUnlockedOrder.status === 'delivered') return;
+
+    const originKitchen = allKitchens.find((k) => k.id === activeUnlockedOrder.acceptedByKitchenId || k.id === activeUnlockedOrder.kitchenId) || {
+      lat: 26.1209,
+      lng: 85.3647
+    };
+    const destLat = activeUnlockedOrder.customerLat || 26.1345;
+    const destLng = activeUnlockedOrder.customerLng || 85.3854;
+
+    const interval = setInterval(() => {
+      setSimProgressPercent((prev) => {
+        const next = Math.min(prev + 5, 100);
+        const fraction = next / 100;
+        const lat = originKitchen.lat + (destLat - originKitchen.lat) * fraction;
+        const lng = originKitchen.lng + (destLng - originKitchen.lng) * fraction;
+        setRiderRealCoords({ lat, lng });
+        const orderRef = doc(db, 'orders', activeUnlockedOrder.id);
+        updateDoc(orderRef, {
+          riderLat: lat,
+          riderLng: lng,
+          riderLastUpdated: new Date().toISOString(),
+          riderStatus: next >= 100 ? 'arrived_customer' : 'out_for_delivery'
+        }).catch((e) => console.warn("Sim update error:", e));
+
+        if (next >= 100) {
+          setIsSimulatingDrive(false);
+        }
+        return next;
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isSimulatingDrive, activeUnlockedOrder?.id, activeUnlockedOrder?.status, allKitchens]);
+
+  const handleStepTransit = (increment: number) => {
+    if (!activeUnlockedOrder) return;
+    const originKitchen = allKitchens.find((k) => k.id === activeUnlockedOrder.acceptedByKitchenId || k.id === activeUnlockedOrder.kitchenId) || {
+      lat: 26.1209,
+      lng: 85.3647
+    };
+    const destLat = activeUnlockedOrder.customerLat || 26.1345;
+    const destLng = activeUnlockedOrder.customerLng || 85.3854;
+
+    setSimProgressPercent((prev) => {
+      const next = Math.max(0, Math.min(prev + increment, 100));
+      const fraction = next / 100;
+      const lat = originKitchen.lat + (destLat - originKitchen.lat) * fraction;
+      const lng = originKitchen.lng + (destLng - originKitchen.lng) * fraction;
+      setRiderRealCoords({ lat, lng });
+      const orderRef = doc(db, 'orders', activeUnlockedOrder.id);
+      updateDoc(orderRef, {
+        riderLat: lat,
+        riderLng: lng,
+        riderLastUpdated: new Date().toISOString(),
+        riderStatus: next >= 100 ? 'arrived_customer' : 'out_for_delivery'
+      }).catch((e) => console.warn("Step update error:", e));
+      return next;
+    });
+  };
 
   // Sync fleet state with localStorage whenever it updates
   useEffect(() => {
@@ -828,14 +894,24 @@ export default function DeliveryPartnerApp({
       });
 
       const orderRef = doc(db, 'orders', activeUnlockedOrder.id);
-      await updateDoc(orderRef, {
+      const updatePayload: any = {
         kdsPickupStage: 'arrived_kitchen',
+        riderStatus: 'arrived_kitchen',
+        riderLastUpdated: new Date().toISOString(),
         trackingSteps: updatedSteps
-      }).catch((e) => console.warn("Update notice:", e));
+      };
+      if (currentPartner.lat && currentPartner.lng) {
+        updatePayload.riderLat = currentPartner.lat;
+        updatePayload.riderLng = currentPartner.lng;
+      }
+      await updateDoc(orderRef, updatePayload).catch((e) => console.warn("Update notice:", e));
 
       const updated: Order = {
         ...activeUnlockedOrder,
         kdsPickupStage: 'arrived_kitchen',
+        riderStatus: 'arrived_kitchen',
+        riderLastUpdated: updatePayload.riderLastUpdated,
+        ...(currentPartner.lat && currentPartner.lng ? { riderLat: currentPartner.lat, riderLng: currentPartner.lng } : {}),
         trackingSteps: updatedSteps
       };
       setActiveUnlockedOrder(updated);
@@ -862,14 +938,24 @@ export default function DeliveryPartnerApp({
       });
 
       const orderRef = doc(db, 'orders', activeUnlockedOrder.id);
-      await updateDoc(orderRef, {
+      const updatePayload: any = {
         riderArrivedAtCustomer: true,
+        riderStatus: 'arrived_customer',
+        riderLastUpdated: new Date().toISOString(),
         trackingSteps: updatedSteps
-      }).catch((e) => console.warn("Update notice:", e));
+      };
+      if (currentPartner.lat && currentPartner.lng) {
+        updatePayload.riderLat = currentPartner.lat;
+        updatePayload.riderLng = currentPartner.lng;
+      }
+      await updateDoc(orderRef, updatePayload).catch((e) => console.warn("Update notice:", e));
 
       const updated: Order = {
         ...activeUnlockedOrder,
         riderArrivedAtCustomer: true,
+        riderStatus: 'arrived_customer',
+        riderLastUpdated: updatePayload.riderLastUpdated,
+        ...(currentPartner.lat && currentPartner.lng ? { riderLat: currentPartner.lat, riderLng: currentPartner.lng } : {}),
         trackingSteps: updatedSteps
       };
       setActiveUnlockedOrder(updated);
@@ -983,12 +1069,18 @@ export default function DeliveryPartnerApp({
         status: 'out_for_delivery',
         kdsStage: 'dispatched',
         kdsPickupStage: 'picked_up',
+        riderStatus: 'out_for_delivery',
+        riderLastUpdated: new Date().toISOString(),
         deliveryOtp: generatedOtp,
         trackingSteps: updatedSteps,
         deliveryPartnerId: currentPartner.id,
         deliveryPartnerName: currentPartner.name,
         deliveryPartnerPhone: currentPartner.phone,
       };
+      if (currentPartner.lat && currentPartner.lng) {
+        updatePayload.riderLat = currentPartner.lat;
+        updatePayload.riderLng = currentPartner.lng;
+      }
 
       await updateDoc(orderRef, updatePayload).catch((e) => {
         console.warn("Firestore update error on pickup:", e);
@@ -999,6 +1091,9 @@ export default function DeliveryPartnerApp({
         status: 'out_for_delivery',
         kdsStage: 'dispatched',
         kdsPickupStage: 'picked_up',
+        riderStatus: 'out_for_delivery',
+        riderLastUpdated: updatePayload.riderLastUpdated,
+        ...(currentPartner.lat && currentPartner.lng ? { riderLat: currentPartner.lat, riderLng: currentPartner.lng } : {}),
         deliveryOtp: generatedOtp,
         trackingSteps: updatedSteps,
         deliveryPartnerId: currentPartner.id,
@@ -2188,6 +2283,81 @@ export default function DeliveryPartnerApp({
                 onEnableGps={enableRiderGps}
                 gpsActive={riderGpsActive}
               />
+
+              {/* LIVE ROUTE TELEMETRY & TRANSIT PROGRESSION CONTROLS */}
+              {(stepNum >= 3 || activeUnlockedOrder.status === 'out_for_delivery' || activeUnlockedOrder.kdsPickupStage === 'arrived_kitchen') && (
+                <div className="bg-[#0D131C] border border-emerald-500/30 rounded-2xl p-4 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                        <Navigation className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 block">
+                          Live Route Progression & Telemetry
+                        </span>
+                        <span className="text-xs font-bold text-white">
+                          Transit Progress: {simProgressPercent}%
+                        </span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-bold">
+                      {isSimulatingDrive ? '🛰️ AUTO-RIDE STREAMING' : '⚡ READY TO ADVANCE'}
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
+                      style={{ width: `${simProgressPercent}%` }}
+                    />
+                  </div>
+
+                  {/* Quick Action Buttons for Testing & Real-time updates */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setIsSimulatingDrive(!isSimulatingDrive)}
+                      className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        isSimulatingDrive
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md'
+                      }`}
+                    >
+                      {isSimulatingDrive ? <Zap className="w-3.5 h-3.5 animate-pulse" /> : <Navigation className="w-3.5 h-3.5" />}
+                      <span>{isSimulatingDrive ? 'Pause Auto-Ride' : 'Auto-Ride (Drive)'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStepTransit(20)}
+                      className="py-2 px-3 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>Advance +20%</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleStepTransit(100);
+                        handleArrivedAtCustomer();
+                      }}
+                      className="py-2 px-3 bg-white/10 hover:bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>Doorstep (100%)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStepTransit(-100)}
+                      className="py-2 px-3 bg-white/10 hover:bg-white/20 text-slate-300 border border-white/10 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>Reset to Kitchen</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* PROGRESSIVE STEP INDICATOR BAR */}
               <div className="bg-[#0B0F14] border border-white/10 rounded-2xl p-4">

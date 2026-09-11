@@ -12,11 +12,13 @@ import MenuTab from './components/MenuTab';
 import DealsTab from './components/DealsTab';
 import CateringPlannerTab from './components/CateringPlannerTab';
 import AICoachTab from './components/AICoachTab';
-import GymsTab from './components/GymsTab';
+import BhattisTab from './components/BhattisTab';
 import AccountTab from './components/AccountTab';
 import MyDeckTab from './components/MyDeckTab';
+import BuddyDeckView from './components/BuddyDeckView';
 import CartDrawer from './components/CartDrawer';
-import { Meal, Gym, GymChain, Order, User, OrderItem, Kitchen, MealReview } from './types';
+import { Gift, ArrowRight } from 'lucide-react';
+import { Meal, Gym, GymChain, Order, User, OrderItem, Kitchen, MealReview, BuddyDeckRequest, GroupOrderRoom } from './types';
 import { GYMS_DATA, MEALS_DATA } from './data';
 import { 
   onAuthStateChanged, 
@@ -35,12 +37,14 @@ import {
   where, 
   onSnapshot,
   deleteDoc,
+  getDoc,
   getDocs
 } from 'firebase/firestore';
 import { auth, db, googleProvider, sanitizeForFirestore } from './lib/firebase';
 import OnboardingWizard from './components/OnboardingWizard';
 import AdminPortal from './components/AdminPortal';
 import AdminLoginPortal from './components/AdminLoginPortal';
+import CartQuantityButton from './components/CartQuantityButton';
 import DeliveryPartnerApp from './components/DeliveryPartnerApp';
 import CustomerSupportPortal from './components/CustomerSupportPortal';
 import KitchenManagerApp from './components/KitchenManagerApp';
@@ -56,6 +60,8 @@ import FloatingDeliveredRateBubble from './components/FloatingDeliveredRateBubbl
 import DeliveredOrderRatingModal from './components/DeliveredOrderRatingModal';
 import MealReviewsSection from './components/MealReviewsSection';
 import DeliverableOrderTracker from './components/DeliverableOrderTracker';
+import GroupOrderRoomView from './components/GroupOrderRoomView';
+import GroupOrderFloatingBubble from './components/GroupOrderFloatingBubble';
 import { SmartNotificationEngine } from './components/SmartNotificationEngine';
 import { DeveloperMenuModal } from './components/DeveloperMenuModal';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from './lib/featureFlags';
@@ -189,8 +195,111 @@ export default function App() {
   });
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [initialBuddyDeckId] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        const params = new URLSearchParams(window.location.search);
+        if (path.startsWith('/buddydeck') || params.get('page') === 'buddydeck' || params.has('deckId')) {
+          return params.get('deckId') || null;
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  const [activeTab, setActiveTab] = useState<TabType | 'buddydeck'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        const params = new URLSearchParams(window.location.search);
+        if (path.startsWith('/buddydeck') || params.get('page') === 'buddydeck' || params.has('deckId')) {
+          return 'buddydeck';
+        }
+      }
+    } catch (e) {}
+    return 'home';
+  });
   const [preSelectedGoal, setPreSelectedGoal] = useState<string | null>(null);
+
+  // Buddy Deck Real-Time Receiver Notifications State
+  const [incomingBuddyRequest, setIncomingBuddyRequest] = useState<BuddyDeckRequest | null>(null);
+  const [incomingBuddyOrderAlert, setIncomingBuddyOrderAlert] = useState<Order | null>(null);
+
+  // Group Ordering Room (Taash Dawat) State (?groupRoomId=... or ?dawat=...)
+  const [urlGroupRoomId] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('groupRoomId') || params.get('roomCode') || params.get('dawat') || null;
+      }
+    } catch (e) {}
+    return null;
+  });
+  const [urlGroupPin] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('groupPin') || params.get('pin') || null;
+      }
+    } catch (e) {}
+    return null;
+  });
+  const [showGroupOrdering, setShowGroupOrdering] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return Boolean(params.get('groupRoomId') || params.get('roomCode') || params.get('dawat'));
+      }
+    } catch (e) {}
+    return false;
+  });
+
+  // Group Ordering Active State & Preloaded Meals (from Reorder)
+  const [groupOrderPreloadMeals, setGroupOrderPreloadMeals] = useState<{ meal: Meal; quantity: number }[] | null>(null);
+  const [activeGroupRoom, setActiveGroupRoom] = useState<GroupOrderRoom | null>(null);
+  const [placedGroupOrder, setPlacedGroupOrder] = useState<Order | null>(null);
+
+  // Monitor active group order room from localStorage & Firestore for the floating bubble
+  useEffect(() => {
+    const activeRoomId = localStorage.getItem('tb_active_group_room_id');
+    if (!activeRoomId) {
+      setActiveGroupRoom(null);
+      return;
+    }
+
+    const unsub = onSnapshot(
+      doc(db, 'group_orders', activeRoomId),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as GroupOrderRoom;
+          if (data.status === 'disbanded' || data.status === 'ordered') {
+            setActiveGroupRoom(null);
+            localStorage.removeItem('tb_active_group_room_id');
+          } else {
+            setActiveGroupRoom(data);
+          }
+        } else {
+          setActiveGroupRoom(null);
+          localStorage.removeItem('tb_active_group_room_id');
+        }
+      },
+      (err) => {
+        console.warn('Group room sync error:', err);
+      }
+    );
+
+    return () => unsub();
+  }, [showGroupOrdering]);
+
+  const handleOpenGroupOrderWithMeals = (items?: any[]) => {
+    if (items && items.length > 0) {
+      setGroupOrderPreloadMeals(items);
+    } else {
+      setGroupOrderPreloadMeals(null);
+    }
+    setShowGroupOrdering(true);
+  };
 
   // Cart State
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -237,10 +346,23 @@ export default function App() {
   };
 
   // Global selection trackers
-  const [gyms, setGyms] = useState<Gym[]>([]);
-  const [gymChains, setGymChains] = useState<GymChain[]>([]);
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
-  const [selectedGym, setSelectedGym] = useState<Gym | null>(null); // pre-linked with Gym by default once loaded
+  const [selectedBhatti, setSelectedBhatti] = useState<Kitchen | null>(() => {
+    try {
+      const cached = localStorage.getItem('fitzaika_selected_bhatti');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return null;
+  });
+
+  const handleSelectBhatti = (bhatti: Kitchen | null) => {
+    setSelectedBhatti(bhatti);
+    if (bhatti) {
+      localStorage.setItem('fitzaika_selected_bhatti', JSON.stringify(bhatti));
+    } else {
+      localStorage.removeItem('fitzaika_selected_bhatti');
+    }
+  };
   const [likedMeals, setLikedMeals] = useState<string[]>(() => {
     try {
       const cached = localStorage.getItem('fitzaika_deck_meals');
@@ -258,7 +380,69 @@ export default function App() {
     }
     return [];
   });
-  const [meals, setMeals] = useState<Meal[]>([]);
+  const [meals, setMeals] = useState<Meal[]>(() => MEALS_DATA);
+
+  // Monitor placed group orders for floating tracking bubble
+  useEffect(() => {
+    const placedOrderId = localStorage.getItem('tb_placed_group_order_id');
+    if (placedOrderId) {
+      const match = orders.find(
+        (o) => o.id === placedOrderId && o.status !== 'delivered' && o.status !== 'cancelled'
+      );
+      if (match) {
+        setPlacedGroupOrder(match);
+      } else {
+        const finished = orders.find(
+          (o) => o.id === placedOrderId && (o.status === 'delivered' || o.status === 'cancelled')
+        );
+        if (finished) {
+          localStorage.removeItem('tb_placed_group_order_id');
+          setPlacedGroupOrder(null);
+        }
+      }
+    } else {
+      const latestActiveGroupOrder = orders.find(
+        (o) => o.isGroupOrder && o.status !== 'delivered' && o.status !== 'cancelled'
+      );
+      if (latestActiveGroupOrder) {
+        setPlacedGroupOrder(latestActiveGroupOrder);
+      }
+    }
+  }, [orders]);
+
+  // Auto-cleanup: Auto-delete feast room from Firestore backend when group order is delivered
+  useEffect(() => {
+    const deliveredGroupOrders = orders.filter(
+      (o) => (o.isGroupOrder || o.groupRoomId) && o.status === 'delivered'
+    );
+
+    deliveredGroupOrders.forEach(async (ord) => {
+      const roomId = ord.groupRoomId;
+      if (roomId) {
+        try {
+          const roomRef = doc(db, 'group_orders', roomId);
+          const snap = await getDoc(roomRef);
+          if (snap.exists()) {
+            await deleteDoc(roomRef);
+            console.log(`[Auto-Cleanup] Group feast room #${roomId} deleted from backend upon order delivery #${ord.id}`);
+          }
+        } catch (e) {
+          console.warn('[Auto-Cleanup] Error deleting delivered feast room:', e);
+        }
+
+        const activeId = localStorage.getItem('tb_active_group_room_id');
+        if (activeId === roomId) {
+          localStorage.removeItem('tb_active_group_room_id');
+          setActiveGroupRoom(null);
+        }
+        const placedId = localStorage.getItem('tb_placed_group_order_id');
+        if (placedId === ord.id) {
+          localStorage.removeItem('tb_placed_group_order_id');
+          setPlacedGroupOrder(null);
+        }
+      }
+    });
+  }, [orders]);
 
   // Firebase Auth and sync state
   const [fbUser, setFbUser] = useState<any>(() => {
@@ -708,14 +892,104 @@ export default function App() {
     };
   }, []);
 
+  // Real-time Buddy Deck Approval Request & Received Orders Listener for Receiver
+  useEffect(() => {
+    const currentUserId = fbUser?.uid || getGuestUserId();
+    if (!currentUserId) return;
+
+    // 1. Listen for pending approval requests for this receiver
+    const buddyReqQuery = query(
+      collection(db, 'buddy_deck_requests'),
+      where('receiverId', '==', currentUserId),
+      where('status', '==', 'pending')
+    );
+    const unsubBuddyReq = onSnapshot(buddyReqQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        const firstDoc = snapshot.docs[0];
+        setIncomingBuddyRequest({ ...firstDoc.data(), id: firstDoc.id } as BuddyDeckRequest);
+      } else {
+        setIncomingBuddyRequest(null);
+      }
+    }, (err) => {
+      console.warn("Buddy requests subscription running in local mode:", err);
+    });
+
+    // 2. Listen for orders where this user is the receiver
+    let initialOrdersLoaded = false;
+    const buddyOrdersQuery = query(
+      collection(db, 'orders'),
+      where('receiverId', '==', currentUserId)
+    );
+    const unsubBuddyOrders = onSnapshot(buddyOrdersQuery, (snapshot) => {
+      const receivedOrders: Order[] = [];
+      snapshot.forEach((docSnap) => {
+        receivedOrders.push(docSnap.data() as Order);
+      });
+
+      if (!initialOrdersLoaded) {
+        initialOrdersLoaded = true;
+      } else {
+        // Detect newly added surprise orders
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const newOrder = change.doc.data() as Order;
+            const seenKey = `fitzaika_seen_buddy_order_${newOrder.id}`;
+            if (!sessionStorage.getItem(seenKey)) {
+              sessionStorage.setItem(seenKey, '1');
+              setIncomingBuddyOrderAlert(newOrder);
+
+              // Trigger native browser notification if enabled
+              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                try {
+                  new Notification(`🎁 Surprise Order Placed!`, {
+                    body: `${newOrder.senderName || 'Your friend'} (${newOrder.senderPhone || 'Verified'}) has placed an order for you at ${newOrder.address}! Click here to track.`,
+                    icon: 'https://cdn.postimage.me/2026/08/01/28172.png',
+                  });
+                } catch (e) {}
+              }
+            }
+          }
+        });
+      }
+
+      // Merge into orders list so they show in Account Orders History & Tracking
+      if (receivedOrders.length > 0) {
+        setOrders((prev) => {
+          const map = new Map<string, Order>();
+          prev.forEach((o) => map.set(o.id, o));
+          receivedOrders.forEach((o) => map.set(o.id, o));
+          const list = Array.from(map.values());
+          list.sort((a, b) => (b.createdAt || b.id).localeCompare(a.createdAt || a.id));
+          return list;
+        });
+      }
+    }, (err) => {
+      console.warn("Buddy received orders subscription running in local mode:", err);
+    });
+
+    return () => {
+      unsubBuddyReq();
+      unsubBuddyOrders();
+    };
+  }, [fbUser]);
+
   // Sync meals from Firestore
   useEffect(() => {
     const unsubscribeMeals = onSnapshot(collection(db, 'meals'), (snapshot) => {
-      const loadedMeals: Meal[] = [];
-      snapshot.forEach((doc) => {
-        loadedMeals.push(doc.data() as Meal);
-      });
-      setMeals(loadedMeals);
+      if (!snapshot.empty) {
+        const loadedMeals: Meal[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as Meal;
+          loadedMeals.push({
+            ...data,
+            id: docSnap.id || data.id,
+            goesWellWith: Array.isArray(data.goesWellWith) ? data.goesWellWith : [],
+          });
+        });
+        setMeals(loadedMeals);
+      } else {
+        setMeals(MEALS_DATA);
+      }
     }, (error) => {
       console.error("Error subscribing to meals in App.tsx:", error);
     });
@@ -882,41 +1156,6 @@ export default function App() {
       }
     };
     checkAndSeed();
-  }, []);
-
-  // Sync gyms from Firestore
-  useEffect(() => {
-    const unsubscribeGyms = onSnapshot(collection(db, 'gyms'), (snapshot) => {
-      const loadedGyms: Gym[] = [];
-      snapshot.forEach((doc) => {
-        loadedGyms.push(doc.data() as Gym);
-      });
-      setGyms(loadedGyms);
-      
-      // Keep selectedGym reference up to date with the Firestore version
-      setSelectedGym((prev) => {
-        if (!prev) return loadedGyms[0] || null;
-        const matched = loadedGyms.find((g) => g.id === prev.id);
-        return matched || prev;
-      });
-    }, (error) => {
-      console.error("Error subscribing to gyms in App.tsx:", error);
-    });
-    return () => unsubscribeGyms();
-  }, []);
-
-  // Sync gym chains from Firestore
-  useEffect(() => {
-    const unsubscribeChains = onSnapshot(collection(db, 'gym_chains'), (snapshot) => {
-      const loadedChains: GymChain[] = [];
-      snapshot.forEach((doc) => {
-        loadedChains.push(doc.data() as GymChain);
-      });
-      setGymChains(loadedChains);
-    }, (error) => {
-      console.error("Error subscribing to gym chains in App.tsx:", error);
-    });
-    return () => unsubscribeChains();
   }, []);
 
   // Sync kitchens from Firestore (strictly from backend, no fake hardcoded kitchens)
@@ -1338,12 +1577,6 @@ export default function App() {
 
   // Add Item to Cart
   const handleAddToCart = (meal: Meal) => {
-    if (!auth.currentUser) {
-      alert("🔒 Authentication Required: Please sign in or register under the Vault tab to customize your metabolic meal plan and add items to your cart!");
-      setActiveTab('account');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
     setCart((prev) => {
       const existingIdx = prev.findIndex((item) => item.meal.id === meal.id);
       if (existingIdx > -1) {
@@ -1353,12 +1586,19 @@ export default function App() {
       }
       return [...prev, { meal, quantity: 1 }];
     });
-    showToast(`💪 ${meal.name.split(' ')[0]} added to meal plan!`);
+    showToast(`💪 ${meal.name.split(' ')[0]} added to cart!`);
   };
 
   // Modify Cart quantities
   const handleUpdateQuantity = (mealId: string, delta: number) => {
     setCart((prev) => {
+      const existingItem = prev.find((item) => item.meal.id === mealId);
+      if (!existingItem && delta > 0) {
+        const mealObj = meals.find((m) => m.id === mealId);
+        if (mealObj) {
+          return [...prev, { meal: mealObj, quantity: 1 }];
+        }
+      }
       return prev
         .map((item) => {
           if (item.meal.id === mealId) {
@@ -1427,16 +1667,6 @@ export default function App() {
     });
     setCartOpen(true);
     showToast('🔄 Meal combo added to active checkout!');
-  };
-
-  // Select active gym
-  const handleSelectGym = (gym: Gym | null) => {
-    setSelectedGym(gym);
-    if (gym) {
-      showToast(`📍 Connected with ${gym.name.split(' - ')[0]}! Partner gym active.`);
-    } else {
-      showToast('📍 Disconnected partner gym.');
-    }
   };
 
   // Select goal and forward to Menu
@@ -1757,8 +1987,6 @@ export default function App() {
         }}
         user={user}
         fbUser={fbUser}
-        allGyms={gyms}
-        gymChains={gymChains}
         allKitchens={kitchens}
       />
     );
@@ -1771,8 +1999,8 @@ export default function App() {
 
       {/* BRAND TOP HEADER */}
       <Header
-        selectedGym={selectedGym}
-        onOpenGymSelector={() => setActiveTab('gyms')}
+        selectedBhatti={selectedBhatti}
+        onOpenBhattiSelector={() => setActiveTab('bhattis')}
         cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
         onOpenCart={() => setCartOpen(true)}
         onOpenDeals={() => {
@@ -1796,7 +2024,122 @@ export default function App() {
           }
         }}
         currentAddress={user.address || user.savedAddresses?.[0] || user.city || 'Muzaffarpur Hub'}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab as any);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
+
+      {/* 🔔 RECEIVER TOP-LEFT BUBBLE DIALOGUE: When a friend wants to order for you */}
+      {incomingBuddyRequest && (
+        <div className="fixed top-18 left-3 sm:left-6 z-50 max-w-[340px] sm:max-w-sm w-[calc(100vw-24px)] bg-stone-900/95 backdrop-blur-md border-2 border-amber-400 rounded-3xl p-4 shadow-2xl animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-400 to-orange-500 text-stone-950 flex items-center justify-center text-xl shrink-0 shadow-md">
+              🃏
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[9px] font-black uppercase tracking-wider text-amber-400 bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-400/30">
+                  BUDDY DECK ALERT
+                </span>
+              </div>
+              <h4 className="text-xs sm:text-sm font-black text-white leading-snug">
+                {incomingBuddyRequest.senderName} wants to order for you!
+              </h4>
+              <p className="text-[11px] text-stone-300 mt-1 leading-relaxed">
+                They want to deal a feast from your saved deck to your address. Accept to generate your 2-hour approval code.
+              </p>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const code = Math.floor(100000 + Math.random() * 900000).toString();
+                    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+                    try {
+                      await updateDoc(doc(db, 'buddy_deck_requests', incomingBuddyRequest.id), {
+                        status: 'accepted',
+                        approvalCode: code,
+                        expiresAt
+                      });
+                    } catch (e) {
+                      console.warn("Could not accept buddy request:", e);
+                    }
+                    setIncomingBuddyRequest(null);
+                    setActiveTab('deck');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    setToastMessage(`🎉 Request accepted! Your 6-digit code is: ${code}`);
+                    setTimeout(() => setToastMessage(null), 6000);
+                  }}
+                  className="flex-1 py-2 px-3 bg-gradient-to-r from-amber-400 to-orange-500 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer hover:scale-105 active:scale-95 transition-all text-center"
+                >
+                  Accept & Open Deck
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await updateDoc(doc(db, 'buddy_deck_requests', incomingBuddyRequest.id), {
+                        status: 'declined'
+                      });
+                    } catch (e) {}
+                    setIncomingBuddyRequest(null);
+                  }}
+                  className="py-2 px-3 bg-white/10 hover:bg-white/20 text-stone-300 font-bold text-xs rounded-xl cursor-pointer transition-all"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🎁 SURPRISE BUDDY ORDER NOTIFICATION: Left-side review-order style bubble */}
+      {incomingBuddyOrderAlert && (
+        <div className="fixed bottom-24 sm:bottom-10 left-3 sm:left-6 z-50 max-w-[360px] w-[calc(100vw-24px)] bg-gradient-to-br from-stone-900 via-amber-950 to-stone-900 border-2 border-amber-400 text-white rounded-3xl p-4 shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-400 to-orange-500 text-stone-950 flex items-center justify-center text-2xl shrink-0 shadow-lg animate-bounce">
+              🎁
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <span className="text-[9px] font-black uppercase tracking-wider text-amber-400 bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-400/30">
+                  SURPRISE ORDER PLACED!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIncomingBuddyOrderAlert(null)}
+                  className="text-stone-400 hover:text-white text-xs font-bold px-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              <h4 className="text-xs sm:text-sm font-black text-white leading-snug">
+                {incomingBuddyOrderAlert.senderName} {incomingBuddyOrderAlert.senderPhone ? `(${incomingBuddyOrderAlert.senderPhone})` : ''} has placed an order for you!
+              </h4>
+              <p className="text-[11px] text-stone-300 mt-1 truncate">
+                📍 Delivering to: <strong className="text-white">{incomingBuddyOrderAlert.address}</strong>
+              </p>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIncomingBuddyOrderAlert(null);
+                  setActiveTab('account');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="mt-3 w-full py-2 px-3 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-orange-500 hover:to-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>Click here to track live</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FLOATING SUCCESS TOAST BAR */}
       {toastMessage && (
@@ -1817,11 +2160,13 @@ export default function App() {
             }}
             onAddToCart={handleAddToCart}
             onQuickView={(meal) => setActiveQuickViewMeal(meal)}
-            selectedGym={selectedGym}
             user={user}
             fbUser={fbUser}
             onRelaunchOnboarding={() => handleShowOnboarding(true)}
             meals={meals}
+            cartMealIds={cart.map((i) => i.meal.id)}
+            cart={cart}
+            onUpdateQuantity={handleUpdateQuantity}
           />
         )}
 
@@ -1830,14 +2175,23 @@ export default function App() {
             onAddToCart={handleAddToCart}
             likedMeals={likedMeals}
             onToggleLike={handleToggleLike}
-            selectedGym={selectedGym}
+            selectedBhatti={selectedBhatti}
+            allBhattis={kitchens}
+            onOpenBhattisTab={() => {
+              setActiveTab('bhattis');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             preSelectedGoal={preSelectedGoal}
             onClearPreSelectedGoal={() => setPreSelectedGoal(null)}
             onOpenDeals={() => {
               setActiveTab('deals');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
+            onOpenGroupOrder={() => setShowGroupOrdering(true)}
             meals={meals}
+            cartMealIds={cart.map((i) => i.meal.id)}
+            cart={cart}
+            onUpdateQuantity={handleUpdateQuantity}
           />
         )}
 
@@ -1880,6 +2234,24 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'buddydeck' && (
+          <BuddyDeckView
+            user={user}
+            fbUser={fbUser}
+            meals={meals}
+            allKitchens={kitchens}
+            onNavigateHome={() => {
+              setActiveTab('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenOrders={() => {
+              setActiveTab('account');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            initialDeckId={initialBuddyDeckId}
+          />
+        )}
+
         {activeTab === 'catering' && (
           <CateringPlannerTab
             onAddToCart={handleAddToCart}
@@ -1890,14 +2262,23 @@ export default function App() {
         {activeTab === 'coach' && (
           <AICoachTab
             onAddToCart={handleAddToCart}
-            selectedGym={selectedGym}
             onQuickView={(meal) => setActiveQuickViewMeal(meal)}
             meals={meals}
+            cart={cart}
+            onUpdateQuantity={handleUpdateQuantity}
           />
         )}
 
-        {activeTab === 'gyms' && (
-          <GymsTab selectedGym={selectedGym} onSelectGym={handleSelectGym} isAuthenticated={!!fbUser} allGyms={gyms} />
+        {(activeTab === 'bhattis' || (activeTab as string) === 'gyms') && (
+          <BhattisTab 
+            selectedBhatti={selectedBhatti}
+            onSelectBhatti={handleSelectBhatti}
+            allKitchens={kitchens}
+            onNavigateToMenu={() => {
+              setActiveTab('menu');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
         )}
 
         {activeTab === 'account' && (
@@ -1921,6 +2302,7 @@ export default function App() {
             authChecking={authChecking}
             onRelaunchOnboarding={() => handleShowOnboarding(true)}
             onOpenMailbox={() => setMailboxOpen(true)}
+            onOpenGroupOrder={handleOpenGroupOrderWithMeals}
           />
         )}
       </main>
@@ -1932,7 +2314,7 @@ export default function App() {
         cartItems={cart}
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveItem}
-        selectedGym={selectedGym}
+        selectedBhatti={selectedBhatti}
         user={user}
         onPlaceOrder={handlePlaceOrder}
         onClearCart={() => setCart([])}
@@ -1948,7 +2330,7 @@ export default function App() {
       />
 
       {/* PERSISTENT MOBILE BOTTOM TAB RAIL */}
-      <BottomNav activeTab={activeTab} onChangeTab={(tab) => {
+      <BottomNav activeTab={activeTab === 'buddydeck' ? 'deck' : activeTab} onChangeTab={(tab) => {
         setActiveTab(tab);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }} />
@@ -2046,15 +2428,15 @@ export default function App() {
                 <span className="text-xl font-black text-brand-charcoal">₹{activeQuickViewMeal.price}</span>
               </div>
 
-              <button
-                onClick={() => {
-                  handleAddToCart(activeQuickViewMeal);
-                  setActiveQuickViewMeal(null);
-                }}
-                className="px-6 py-3 bg-brand-green hover:bg-brand-green/90 text-white font-black text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-              >
-                + Add To Order
-              </button>
+              <CartQuantityButton
+                quantity={cart.find((i) => i.meal.id === activeQuickViewMeal.id)?.quantity || 0}
+                onAdd={() => handleAddToCart(activeQuickViewMeal)}
+                onIncrement={() => handleUpdateQuantity(activeQuickViewMeal.id, 1)}
+                onDecrement={() => handleUpdateQuantity(activeQuickViewMeal.id, -1)}
+                disabled={activeQuickViewMeal.isAvailable === false}
+                disabledLabel="Sold Out"
+                addLabel="Add To Order"
+              />
             </div>
           </div>
         </div>
@@ -2157,6 +2539,53 @@ export default function App() {
         onUpdateFlags={(newFlags) => setFeatureFlags(newFlags)}
         meals={meals}
       />
+
+      {/* 🍢 FLOATING BUBBLE: ACTIVE GROUP ORDER ROOM & ORDER TRACKING */}
+      <GroupOrderFloatingBubble
+        activeRoom={activeGroupRoom}
+        placedGroupOrder={placedGroupOrder}
+        isRoomModalOpen={showGroupOrdering}
+        onOpenRoom={() => setShowGroupOrdering(true)}
+        onTrackOrder={(_orderId) => {
+          setActiveTab('account');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
+
+      {/* 🌟 GROUP ORDERING (TAASH DAWAT) ROOM VIEW */}
+      {showGroupOrdering && (
+        <GroupOrderRoomView
+          user={user}
+          fbUser={fbUser}
+          guestId={getGuestUserId()}
+          meals={meals}
+          kitchens={kitchens}
+          selectedBhatti={selectedBhatti}
+          initialRoomId={urlGroupRoomId}
+          initialPin={urlGroupPin}
+          initialPreloadedMeals={groupOrderPreloadMeals || undefined}
+          onActiveRoomChange={(room) => setActiveGroupRoom(room)}
+          onClose={() => {
+            setShowGroupOrdering(false);
+            setGroupOrderPreloadMeals(null);
+          }}
+          onRequestSignIn={() => {
+            setShowGroupOrdering(false);
+            setActiveTab('account');
+            showToast('🔐 Please sign in to create or join a Taash Feast Room');
+          }}
+          onAddOrderToApp={(newOrder) => {
+            const updated = [newOrder, ...orders];
+            updateOrdersWithCache(updated);
+            setPlacedGroupOrder(newOrder);
+            showToast(`🔥 Group Feast Order #${newOrder.id} placed & sent to woodfire kitchen!`);
+          }}
+          onOpenMenu={() => {
+            setShowGroupOrdering(false);
+            setActiveTab('menu');
+          }}
+        />
+      )}
 
     </div>
   );

@@ -38,21 +38,25 @@ import {
   Percent,
   Timer
 } from 'lucide-react';
-import { Meal, User, HeroBanner } from '../types';
+import { Meal, User, HeroBanner, OrderItem } from '../types';
 import { MEALS_DATA, DEFAULT_HERO_BANNERS } from '../data';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import GoesWellWithExtension from './GoesWellWithExtension';
+import CartQuantityButton from './CartQuantityButton';
 
 interface HomeTabProps {
   onSelectGoal?: (goal: any) => void;
   onSelectTab: (tab: any) => void;
   onAddToCart: (meal: Meal) => void;
   onQuickView: (meal: Meal) => void;
-  selectedGym?: any;
   user?: User;
   fbUser?: any;
   onRelaunchOnboarding?: () => void;
   meals?: Meal[];
+  cartMealIds?: string[];
+  cart?: OrderItem[];
+  onUpdateQuantity?: (mealId: string, delta: number) => void;
 }
 
 // Sparkle/Ember interface for Bhatti Sparks
@@ -70,7 +74,27 @@ export default function HomeTab({
   onQuickView,
   fbUser,
   meals = MEALS_DATA,
+  cartMealIds = [],
+  cart = [],
+  onUpdateQuantity,
 }: HomeTabProps) {
+  const getMealCartQuantity = (mealId: string): number => {
+    const item = cart.find((i) => i.meal.id === mealId);
+    return item ? item.quantity : 0;
+  };
+  // Goes well with pairing expansion state
+  const [expandedPairingMealIds, setExpandedPairingMealIds] = useState<string[]>([]);
+
+  const handleAddMealWithPairings = (meal: Meal) => {
+    onAddToCart(meal);
+    setExpandedPairingMealIds((prev) => (prev.includes(meal.id) ? prev : [...prev, meal.id]));
+  };
+
+  const togglePairingsForMeal = (mealId: string) => {
+    setExpandedPairingMealIds((prev) =>
+      prev.includes(mealId) ? prev.filter((id) => id !== mealId) : [...prev, mealId]
+    );
+  };
   // 1. Craving Filter State
   const [activeCraving, setActiveCraving] = useState<string>('all');
 
@@ -692,20 +716,34 @@ export default function HomeTab({
                     Details
                   </button>
 
-                  {meal.isAvailable === false ? (
-                    <button disabled className="px-3 py-2 rounded-xl text-xs bg-gray-200 text-gray-400 font-bold cursor-not-allowed">
-                      Sold Out
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => onAddToCart(meal)}
-                      className="px-4 py-2 rounded-xl text-xs bg-brand-green text-white font-black hover:bg-brand-green/90 transition-all shadow-xs cursor-pointer flex items-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add
-                    </button>
-                  )}
+                  <CartQuantityButton
+                    quantity={getMealCartQuantity(meal.id)}
+                    onAdd={() => handleAddMealWithPairings(meal)}
+                    onIncrement={() => (onUpdateQuantity ? onUpdateQuantity(meal.id, 1) : onAddToCart(meal))}
+                    onDecrement={() => onUpdateQuantity && onUpdateQuantity(meal.id, -1)}
+                    disabled={meal.isAvailable === false}
+                    disabledLabel="Sold Out"
+                  />
                 </div>
               </div>
+
+              {/* Animated "Goes Well With" extension below the dish */}
+              <AnimatePresence>
+                {expandedPairingMealIds.includes(meal.id) && (
+                  <div className="mt-3 pt-2.5 border-t border-dashed border-brand-green/20">
+                    <GoesWellWithExtension
+                      parentMeal={meal}
+                      allMeals={meals}
+                      onAddToCart={onAddToCart}
+                      cartMealIds={cartMealIds}
+                      cart={cart}
+                      onUpdateQuantity={onUpdateQuantity}
+                      onClose={() => togglePairingsForMeal(meal.id)}
+                      theme="dark"
+                    />
+                  </div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ))}
         </div>

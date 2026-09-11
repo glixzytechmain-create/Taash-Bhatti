@@ -39,7 +39,10 @@ import {
   Share2,
   Copy,
   Wallet,
+  Banknote,
   CheckCircle2,
+  Gift,
+  Users,
 } from 'lucide-react';
 import { User, Order, FAQ, SubscriptionPlan, Meal, SupportTicket, ChatMessage, OrderDeliveryRating, Kitchen, MealReview } from '../types';
 import { FAQS_DATA, SUBSCRIPTIONS_DATA } from '../data';
@@ -63,9 +66,10 @@ const DELIVERY_STAGES = [
   { key: 'prepared', label: 'Prepared', icon: '🍱' },
   { key: 'partner_accepted', label: 'Partner Accepted', icon: '🤝' },
   { key: 'at_kitchen', label: 'Arrived Kitchen', icon: '🏢' },
+  { key: 'motorbike_live', label: 'Motorbike Live', icon: '🛵' },
   { key: 'meal_collected', label: 'Meal Collected', icon: '🎒' },
   { key: 'left_kitchen', label: 'Left Kitchen', icon: '🚀' },
-  { key: 'delivering', label: 'Motorbike Live', icon: '🛵' },
+  { key: 'delivering', label: 'En Route to You', icon: '📍' },
   { key: 'delivered', label: 'Delivered', icon: '✅' },
 ];
 
@@ -94,11 +98,34 @@ function getOrderStageIndex(order: Order): number {
   const pickupStage = (order.kdsPickupStage as string) || '';
   const kdsStage = (order.kdsStage as string) || '';
 
-  if (statusStr === 'delivered') return 9;
-  if (statusStr === 'delivering' || order.riderArrivedAtCustomer) return 8;
-  if (statusStr === 'out_for_delivery' || pickupStage === 'picked_up' || pickupStage === 'left_kitchen') return 7;
-  if (pickupStage === 'meal_collected' || statusStr === 'meal_collected') return 6;
-  if (pickupStage === 'arrived_kitchen' || statusStr === 'at_kitchen') return 5;
+  if (statusStr === 'delivered') return 10;
+  
+  // When rider confirms left kitchen or is out for delivery:
+  // "Left Kitchen" (stage 8) MUST BE CHECKMARKED! So advance to stage 9 ("En Route to You")!
+  if (
+    statusStr === 'out_for_delivery' ||
+    statusStr === 'delivering' ||
+    pickupStage === 'picked_up' ||
+    pickupStage === 'left_kitchen' ||
+    order.riderArrivedAtCustomer
+  ) {
+    return 9;
+  }
+  
+  // Rider has collected meal bag
+  if (pickupStage === 'meal_collected' || statusStr === 'meal_collected') {
+    return 7;
+  }
+  
+  // The moment the rider arrives at the kitchen, show their location and Motorbike Live!
+  // Stage 5 (Arrived Kitchen) is completed, Stage 6 (Motorbike Live) is current!
+  if (
+    pickupStage === 'arrived_kitchen' ||
+    statusStr === 'at_kitchen' ||
+    (order as any).riderStatus === 'arrived_kitchen'
+  ) {
+    return 6;
+  }
   
   // Real check for assigned rider (only if kitchen accepted and rider assigned)
   const hasAssignedRider = Boolean(
@@ -136,9 +163,10 @@ function getSmartDeliveryEta(order: Order): string {
     case 3: return `${18 + extra}-${22 + extra} Mins${extraTag}`;
     case 4: return `${15 + extra}-${18 + extra} Mins${extraTag}`;
     case 5: return `${12 + extra}-${15 + extra} Mins${extraTag}`;
-    case 6: return `${8 + extra}-${12 + extra} Mins${extraTag}`;
-    case 7: return `${5 + extra}-${10 + extra} Mins${extraTag}`;
-    case 8: return 'Arriving at Doorstep';
+    case 6: return `${10 + extra}-${12 + extra} Mins${extraTag}`;
+    case 7: return `${8 + extra}-${10 + extra} Mins${extraTag}`;
+    case 8: return `${5 + extra}-${8 + extra} Mins${extraTag}`;
+    case 9: return order.riderArrivedAtCustomer ? 'Arrived at Doorstep' : `${2 + extra}-${5 + extra} Mins${extraTag}`;
     default: return 'Delivered';
   }
 }
@@ -262,6 +290,15 @@ function getInteractiveCustomerMessage(order: Order): { title: string; desc: str
       };
     case 6:
       return {
+        title: `Motorbike Live GPS Active`,
+        desc: `Delivery Partner ${riderName} is at ${kitchenName} hub. Live motorbike location is online on your tracking map!`,
+        bgClass: "bg-indigo-50/80",
+        borderClass: "border-indigo-300",
+        textClass: "text-indigo-900",
+        icon: "🛵",
+      };
+    case 7:
+      return {
         title: `Meal Collected`,
         desc: `Rider ${riderName} verified your order items, checked hot seals, and collected your meal bag.`,
         bgClass: "bg-purple-50/80",
@@ -269,23 +306,25 @@ function getInteractiveCustomerMessage(order: Order): { title: string; desc: str
         textClass: "text-purple-900",
         icon: "🎒",
       };
-    case 7:
+    case 8:
       return {
-        title: `Left Kitchen - In Transit`,
-        desc: `Rider ${riderName} left ${kitchenName} and is driving to your location.`,
+        title: `Left Kitchen`,
+        desc: `Rider ${riderName} confirmed departure from ${kitchenName} hub and is en route.`,
         bgClass: "bg-indigo-50/80",
         borderClass: "border-indigo-300",
         textClass: "text-indigo-900",
         icon: "🚀",
       };
-    case 8:
+    case 9:
       return {
-        title: `Motorbike Live GPS Active`,
-        desc: `Rider ${riderName} is arriving on motorbike! Keep your 4-Digit Delivery OTP ready.`,
+        title: order.riderArrivedAtCustomer ? `Rider Arrived at Doorstep!` : `En Route to Your Address`,
+        desc: order.riderArrivedAtCustomer
+          ? `Rider ${riderName} has arrived outside! Please share your 4-Digit Delivery OTP to receive your order.`
+          : `Rider ${riderName} left ${kitchenName} and is driving to your location. Keep your 4-Digit Delivery OTP ready.`,
         bgClass: "bg-emerald-50/90",
         borderClass: "border-emerald-400",
         textClass: "text-emerald-950",
-        icon: "🛵",
+        icon: order.riderArrivedAtCustomer ? "📍" : "🛵",
       };
     default:
       return {
@@ -316,6 +355,7 @@ interface AccountTabProps {
   authChecking?: boolean;
   onRelaunchOnboarding?: () => void;
   onOpenMailbox?: () => void;
+  onOpenGroupOrder?: (preloadedItems?: any[]) => void;
 }
 
 
@@ -336,9 +376,21 @@ export default function AccountTab({
   authChecking = false,
   onRelaunchOnboarding,
   onOpenMailbox,
+  onOpenGroupOrder,
 }: AccountTabProps) {
   // Navigation inside Account screen
   const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet'>('profile');
+
+  // Reorder Group Feast modal state
+  const [reorderGroupModalOrder, setReorderGroupModalOrder] = useState<Order | null>(null);
+
+  const handleReorderClick = (order: Order) => {
+    if (order.isGroupOrder) {
+      setReorderGroupModalOrder(order);
+    } else {
+      onReorder(order.items);
+    }
+  };
 
   // Urgent Call Request state
   const [callReason, setCallReason] = useState('');
@@ -405,6 +457,12 @@ export default function AccountTab({
     const target = localOrders.find((o) => o.id === orderId) || orders.find((o) => o.id === orderId);
     if (!target) return;
 
+    if (target.isGroupOrder || target.groupRoomId || target.isNonCancellable) {
+      setStatusToast("🚫 Group orders are non-cancellable once confirmed.");
+      setTimeout(() => setStatusToast(null), 4000);
+      return;
+    }
+
     if (!canCustomerCancelOrder(target)) {
       setStatusToast("❌ Order cannot be cancelled because the kitchen has already commenced cooking.");
       setTimeout(() => setStatusToast(null), 4000);
@@ -416,6 +474,12 @@ export default function AccountTab({
 
   const confirmCancelOrder = async () => {
     if (!orderToCancelModal) return;
+    if (orderToCancelModal.isGroupOrder || orderToCancelModal.groupRoomId || orderToCancelModal.isNonCancellable) {
+      setStatusToast("🚫 Group orders are collaborative and non-cancellable.");
+      setTimeout(() => setStatusToast(null), 4000);
+      setOrderToCancelModal(null);
+      return;
+    }
     const orderId = orderToCancelModal.id;
     setIsCancellingOrder(true);
 
@@ -434,24 +498,36 @@ export default function AccountTab({
         return;
       }
 
-      // Update user wallet balance and ledger locally
-      if (onUpdateUser) {
-        const currentBalance = user.walletBalance || 0;
-        const newBalance = currentBalance + result.refundedAmount;
-        const newTx: any = {
-          id: 'tx-' + Date.now(),
-          type: 'credit',
-          amount: result.refundedAmount,
-          reason: `Instant refund for cancelled Order #${orderId}`,
-          orderId: orderId,
-          createdAt: new Date().toISOString()
-        };
-        const updatedUser: User = {
-          ...user,
-          walletBalance: newBalance,
-          walletTransactions: [newTx, ...(user.walletTransactions || [])]
-        };
-        onUpdateUser(updatedUser);
+      // Update user wallet balance and ledger locally ONLY if refund was actually granted
+      if (result.isRefundGiven && result.refundedAmount > 0) {
+        if (onUpdateUser) {
+          const currentGolden = user.goldenEmberBalance || 0;
+          const currentStandard = user.standardEmberBalance || 0;
+          const newGolden = result.newGoldenBalance || (currentGolden + result.refundedAmount);
+          const newTotal = newGolden + currentStandard;
+
+          const newTx: any = {
+            id: 'tx-gold-ref-' + Date.now(),
+            type: 'credit',
+            amount: result.refundedAmount,
+            emberType: 'golden',
+            description: `Golden Ember Refund for cancelled Order #${orderId.slice(-6)}`,
+            orderId: orderId,
+            createdAt: new Date().toISOString()
+          };
+          const updatedUser: User = {
+            ...user,
+            goldenEmberBalance: newGolden,
+            walletBalance: newTotal,
+            walletTransactions: [newTx, ...(user.walletTransactions || [])]
+          };
+          onUpdateUser(updatedUser);
+        }
+
+        setStatusToast(`💰 Order #${orderId.slice(-6)} cancelled! ₹${result.refundedAmount} refunded to your Bhatti Wallet as Golden Ember Coins.`);
+      } else {
+        // No refund given (e.g. COD, unaccepted/unpaid)
+        setStatusToast(`🚫 Order #${orderId.slice(-6)} cancelled. ${result.refundDenialReason || 'No Ember tokens issued upon cancellation for this order.'}`);
       }
 
       setLocalOrders((prev) =>
@@ -464,14 +540,13 @@ export default function AccountTab({
                 cancelledAt: new Date().toISOString(),
                 cancelledBy: 'customer',
                 cancellationReason: cancellationReason || 'Customer requested cancellation',
-                refundStatus: 'refunded_to_wallet',
-                refundAmount: result.refundedAmount
+                refundStatus: result.isRefundGiven ? 'refunded_to_wallet' : 'no_refund',
+                refundAmount: result.isRefundGiven ? result.refundedAmount : 0
               }
             : o
         )
       );
 
-      setStatusToast(`💰 Order #${orderId} cancelled! ₹${result.refundedAmount} was instantly credited to your FitZaika Wallet.`);
       setTimeout(() => setStatusToast(null), 5000);
       setOrderToCancelModal(null);
     } catch (e) {
@@ -1513,20 +1588,6 @@ export default function AccountTab({
                   </button>
                 </div>
               )}
-
-              {/* Developer Control Switchboard */}
-              <div className="pt-1 text-center">
-                <button
-                  type="button"
-                  onClick={() => (window as any).openDevMenu?.()}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 text-[11px] font-bold transition-colors cursor-pointer border border-slate-200/80 shadow-xs"
-                  title="Open Developer Switchboard (Feature flags, header/nav toggles, kitchen controls)"
-                >
-                  <span>🛠️</span>
-                  <span>Developer Switchboard & Feature Flags</span>
-                  <span className="text-[9px] bg-slate-300/80 px-1.5 py-0.5 rounded text-slate-700 font-mono">Ctrl+Shift+D</span>
-                </button>
-              </div>
             </>
           )}
         </div>
@@ -1596,6 +1657,34 @@ export default function AccountTab({
                           )}
                         </div>
                         <span className="text-sm font-black text-brand-charcoal">{order.id}</span>
+                        {order.isBuddyOrder && (
+                          <div className="mt-1">
+                            {order.senderId === (fbUser?.uid || user.id) ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-[9px]">
+                                <Gift className="w-2.5 h-2.5 text-amber-700" /> Sent to {order.receiverName || 'Friend'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-[9px]">
+                                <Gift className="w-2.5 h-2.5 text-emerald-700" /> Received from {order.senderName || 'Friend'} {order.senderPhone ? `(${order.senderPhone})` : ''}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {order.isGroupOrder && (
+                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-orange-500/20 to-amber-500/20 text-orange-800 border border-orange-400 font-black text-[10px]">
+                              <Users className="w-3 h-3 text-orange-600" /> Group Ordered • Room {order.groupRoomCode || 'Taash Dawat'}
+                            </span>
+                            <span className="text-[9px] font-bold text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200">
+                              {order.groupTreatMode === 'your_treat' ? 'Host Treat 👑' : 'Split Bill 🤝'}
+                            </span>
+                            {order.isNonCancellable && (
+                              <span className="text-[8px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                                Non-Cancellable
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="text-right">
@@ -1641,7 +1730,7 @@ export default function AccountTab({
                       <span className="text-[9px] font-black text-brand-green uppercase tracking-wider block mb-2.5">
                         {order.fulfillmentMode === 'takeaway' ? 'REAL-TIME TAKEAWAY PROGRESSION' : 'REAL-TIME ORDER STAGE PROGRESSION'}
                       </span>
-                      <div className={`grid gap-1.5 text-center ${order.fulfillmentMode === 'takeaway' ? 'grid-cols-5' : 'grid-cols-4 sm:grid-cols-8'}`}>
+                      <div className={`grid gap-1.5 text-center ${order.fulfillmentMode === 'takeaway' ? 'grid-cols-5' : 'grid-cols-4 sm:grid-cols-6 lg:grid-cols-11'}`}>
                         {(order.fulfillmentMode === 'takeaway' ? TAKEAWAY_STAGES : DELIVERY_STAGES).map((stg, sIdx) => {
                           const isCompleted = sIdx < currentStageIdx;
                           const isCurrent = sIdx === currentStageIdx;
@@ -1687,7 +1776,22 @@ export default function AccountTab({
 
                     {/* ORDER CANCELLATION CONTROL BANNER */}
                     <div className="p-3.5 rounded-2xl border transition-all shadow-sm bg-white border-gray-200">
-                      {order.status === 'cooking' || order.kdsStage === 'cooking' || order.cookingStartedAt ? (
+                      {order.isGroupOrder || order.groupRoomId || order.isNonCancellable ? (
+                        <div className="flex items-center justify-between gap-3 text-xs bg-amber-50/90 border border-amber-300 p-3.5 rounded-2xl">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center font-black text-sm shrink-0">👥</span>
+                            <div className="min-w-0">
+                              <span className="font-extrabold text-amber-950 block text-xs">Collaborative Group Feast Order</span>
+                              <span className="text-[10px] text-amber-800 font-medium block truncate">
+                                Group orders are strictly non-cancellable once placed to preserve shared cart and payment integrity.
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 bg-amber-200/90 text-amber-950 border border-amber-300 font-black text-[10px] rounded-xl shrink-0 uppercase tracking-wider">
+                            Non-Cancellable
+                          </span>
+                        </div>
+                      ) : order.status === 'cooking' || order.kdsStage === 'cooking' || order.cookingStartedAt ? (
                         <div className="flex items-center justify-between gap-3 text-xs">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-black text-sm shrink-0">🍳</span>
@@ -1703,23 +1807,57 @@ export default function AccountTab({
                           </span>
                         </div>
                       ) : canCustomerCancelOrder(order) ? (
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/90 border-2 border-emerald-300 p-3.5 rounded-2xl">
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800">
-                              <Wallet className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Self-Service Cancellation & Instant Wallet Refund Available</span>
+                        (() => {
+                          const isCod =
+                            (order.paymentMethod || '').toLowerCase() === 'cod' ||
+                            (order.paymentMethod || '').toLowerCase() === 'cash' ||
+                            (order.paymentMethod || '').toLowerCase() === 'cash_on_delivery' ||
+                            Boolean((order as any).isCOD);
+
+                          if (isCod) {
+                            return (
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-stone-50 border-2 border-stone-300 p-3.5 rounded-2xl">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5 text-xs font-black text-stone-800">
+                                    <Banknote className="w-3.5 h-3.5 text-stone-600" />
+                                    <span>Cash on Delivery (COD) • Cancellation Available</span>
+                                  </div>
+                                  <p className="text-[10px] text-stone-600 font-semibold">
+                                    Kitchen has not started cooking yet. Since this order is Cash on Delivery, no payment was collected upfront and ₹0 refund applies upon cancellation.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelOrder(order.id)}
+                                  className="w-full sm:w-auto px-4 py-2.5 bg-stone-800 hover:bg-stone-900 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+                                >
+                                  <span>🚫 Cancel Order (No Refund - COD)</span>
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/90 border-2 border-emerald-300 p-3.5 rounded-2xl">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800">
+                                  <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Prepaid Order • Verified Instant Wallet Refund Available</span>
+                                </div>
+                                <p className="text-[10px] text-emerald-900/80 font-semibold">
+                                  Kitchen has not started cooking yet. Since you paid ₹{order.total} upfront, canceling now will credit 100% back to your Bhatti Wallet as Golden Ember Coins immediately.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleCancelOrder(order.id)}
+                                className="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+                              >
+                                <span>🚫 Cancel Order (Refund ₹{order.total})</span>
+                              </button>
                             </div>
-                            <p className="text-[10px] text-emerald-900/80 font-semibold">
-                              Kitchen has not started cooking yet. You can cancel now for an instant 100% refund of ₹{order.total} credited directly to your FitZaika Wallet.
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => handleCancelOrder(order.id)}
-                            className="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
-                          >
-                            <span>🚫 Cancel Order (Refund ₹{order.total})</span>
-                          </button>
-                        </div>
+                          );
+                        })()
                       ) : (
                         <div className="flex items-center justify-between gap-3 text-xs">
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -1985,6 +2123,29 @@ export default function AccountTab({
                       <div>
                         <span className="text-[10px] font-bold text-brand-charcoal block">{order.date}</span>
                         <span className="text-[9px] text-brand-charcoal/50 block">ID: {order.id}</span>
+                        {order.isBuddyOrder && (
+                          <div className="mt-0.5">
+                            {order.senderId === (fbUser?.uid || user.id) ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-[8px]">
+                                <Gift className="w-2 h-2 text-amber-700" /> Sent to {order.receiverName || 'Friend'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-[8px]">
+                                <Gift className="w-2 h-2 text-emerald-700" /> Received from {order.senderName || 'Friend'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {order.isGroupOrder && (
+                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-950 border border-orange-300 font-extrabold text-[9px]">
+                              <Users className="w-2.5 h-2.5 text-orange-700" /> Group Ordered {order.groupRoomCode ? `• Room ${order.groupRoomCode}` : ''}
+                            </span>
+                            <span className="text-[8px] font-bold text-stone-600 bg-white/80 px-1.5 py-0.2 rounded border border-stone-200">
+                              {order.groupTreatMode === 'your_treat' ? 'Host Treat 👑' : 'Split Bill 🤝'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
                         order.status === 'delivered' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
@@ -1992,6 +2153,19 @@ export default function AccountTab({
                         {order.status}
                       </span>
                     </div>
+
+                    {order.groupMembersSummary && order.groupMembersSummary.length > 0 && (
+                      <div className="bg-white/80 p-2 rounded-xl border border-orange-200/80 text-[9px] text-stone-700">
+                        <span className="font-extrabold text-orange-900 block mb-1">Feast Members Breakdown:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {order.groupMembersSummary.map((m, mIdx) => (
+                            <span key={mIdx} className="px-2 py-0.5 rounded-md bg-orange-50 border border-orange-200 font-medium">
+                              <strong>{m.memberName}:</strong> {m.itemsCount} dishes (₹{m.paidAmount}) {m.hasPaid ? '✓' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="border-t border-dashed border-brand-green/10 pt-2 flex justify-between items-center">
                       <div className="max-w-[200px] truncate font-medium text-brand-charcoal/80">
@@ -2018,7 +2192,7 @@ export default function AccountTab({
                     {/* Interactive Actions Grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                       <button
-                        onClick={() => onReorder(order.items)}
+                        onClick={() => handleReorderClick(order)}
                         className="bg-brand-green/10 hover:bg-brand-green/15 text-brand-green font-bold text-[10px] py-2 rounded-xl uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all"
                       >
                         <RotateCcw className="w-3 h-3" /> Reorder
@@ -2682,15 +2856,39 @@ export default function AccountTab({
               </button>
             </div>
 
-            <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-4 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
-                <Wallet className="w-4 h-4 text-emerald-600" />
-                <span>Instant FitZaika Wallet Refund</span>
-              </div>
-              <p className="text-xs text-emerald-950 font-medium leading-relaxed">
-                100% of your order value (<strong className="font-black text-emerald-900">₹{orderToCancelModal.total || orderToCancelModal.totalAmount || 0}</strong>) will be credited immediately to your <span className="font-black">FitZaika Wallet balance</span>, usable on any upcoming checkout with zero wait.
-              </p>
-            </div>
+            {(() => {
+              const isModalCod =
+                (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cod' ||
+                (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash' ||
+                (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash_on_delivery' ||
+                Boolean((orderToCancelModal as any).isCOD);
+
+              if (isModalCod) {
+                return (
+                  <div className="bg-stone-100 border border-stone-300 rounded-2xl p-4 space-y-1.5 text-stone-900">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-stone-800 uppercase tracking-wider">
+                      <Banknote className="w-4 h-4 text-stone-600" />
+                      <span>Payment Method: Cash on Delivery (COD)</span>
+                    </div>
+                    <p className="text-xs text-stone-700 font-medium leading-relaxed">
+                      ⚠️ <strong className="font-black text-stone-900">No Wallet Refund Applicable</strong>. Because this order is Cash on Delivery, zero payment was collected from your account. Cancelling will void the order with <span className="font-black text-red-600">₹0 refund</span>.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-4 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
+                    <Wallet className="w-4 h-4 text-emerald-600" />
+                    <span>Prepaid Order • Verified Instant Wallet Refund</span>
+                  </div>
+                  <p className="text-xs text-emerald-950 font-medium leading-relaxed">
+                    100% of your prepaid payment (<strong className="font-black text-emerald-900">₹{orderToCancelModal.total || orderToCancelModal.totalAmount || 0}</strong>) will be credited immediately to your <span className="font-black">Bhatti Wallet as Golden Ember Coins</span> with zero wait.
+                  </p>
+                </div>
+              );
+            })()}
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-brand-charcoal uppercase tracking-wider block">
@@ -2723,7 +2921,16 @@ export default function AccountTab({
                 onClick={confirmCancelOrder}
                 className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                <span>{isCancellingOrder ? 'Cancelling...' : 'Confirm Cancel'}</span>
+                <span>
+                  {isCancellingOrder
+                    ? 'Cancelling...'
+                    : ((orderToCancelModal.paymentMethod || '').toLowerCase() === 'cod' ||
+                       (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash' ||
+                       (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash_on_delivery' ||
+                       Boolean((orderToCancelModal as any).isCOD))
+                    ? 'Confirm Cancel (₹0 Refund)'
+                    : `Confirm Cancel & Refund ₹${orderToCancelModal.total || 0}`}
+                </span>
               </button>
             </div>
           </motion.div>
@@ -2794,6 +3001,98 @@ export default function AccountTab({
           setStatusToast(`📱 Mobile number ${data.user.phone} linked & verified!`);
         }}
       />
+
+      {/* REORDER GROUP FEAST MODAL */}
+      {reorderGroupModalOrder && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-stone-900 text-stone-100 border-2 border-brand-orange/60 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-brand-orange/20 text-brand-orange flex items-center justify-center">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-white">Reorder Group Feast</h3>
+                  <p className="text-[10px] text-stone-400">
+                    Room {reorderGroupModalOrder.groupRoomCode || 'Taash Feast'} • {reorderGroupModalOrder.items.length} items
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReorderGroupModalOrder(null)}
+                className="text-stone-400 hover:text-white p-1.5 rounded-lg hover:bg-stone-800 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-300 leading-relaxed">
+              This was a shared feast with friends. How would you like to reorder these delicious items?
+            </p>
+
+            {/* Items preview */}
+            <div className="max-h-36 overflow-y-auto bg-stone-950/70 p-3 rounded-2xl border border-stone-800 space-y-1.5 text-xs">
+              {reorderGroupModalOrder.items.map((it, idx) => (
+                <div key={idx} className="flex justify-between items-center text-stone-300">
+                  <span className="truncate pr-2 font-medium">{it.meal.name} (x{it.quantity})</span>
+                  <span className="font-mono text-amber-300 shrink-0 font-bold">₹{it.meal.price * it.quantity}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2.5 pt-1">
+              {/* Option 1: Create a room and tell everyone to add these */}
+              <button
+                type="button"
+                onClick={() => {
+                  const items = reorderGroupModalOrder.items;
+                  setReorderGroupModalOrder(null);
+                  if (onOpenGroupOrder) {
+                    onOpenGroupOrder(items);
+                  } else {
+                    onSelectTab('menu');
+                  }
+                }}
+                className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-brand-orange to-amber-500 hover:from-amber-500 hover:to-brand-orange text-stone-950 font-black text-xs flex items-center justify-between cursor-pointer transition-all shadow-md group"
+              >
+                <div className="flex items-center gap-2.5 text-left">
+                  <Users className="w-5 h-5 shrink-0" />
+                  <div>
+                    <div className="font-black text-xs">Create Room & Invite Friends</div>
+                    <div className="text-[10px] text-stone-900/80 font-semibold">
+                      Start a fresh feast room with these items pre-loaded
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+
+              {/* Option 2: Add directly to your own cart */}
+              <button
+                type="button"
+                onClick={() => {
+                  const items = reorderGroupModalOrder.items;
+                  setReorderGroupModalOrder(null);
+                  onReorder(items);
+                }}
+                className="w-full p-3.5 rounded-2xl bg-stone-800 hover:bg-stone-700 text-white font-bold text-xs flex items-center justify-between cursor-pointer transition-all border border-stone-700"
+              >
+                <div className="flex items-center gap-2.5 text-left">
+                  <ShoppingBag className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <div>
+                    <div className="font-black text-xs">Add to Your Own Cart</div>
+                    <div className="text-[10px] text-stone-400">
+                      Order these items directly for yourself
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

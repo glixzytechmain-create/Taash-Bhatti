@@ -64,6 +64,16 @@ button:not(:disabled):active,
   background: var(--color-brand-copper);
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
 /* Custom shimmers and glowing animations */
 @keyframes shimmer {
   0% {
@@ -95,5 +105,19 @@ button:not(:disabled):active,
 .glow-copper {
   box-shadow: 0 0 16px rgba(192, 108, 56, 0.45);
 }
+
+@keyframes fadeInSimple {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in-simple {
+  animation: fadeInSimple 0.2s ease-in-out forwards;
+}
+
 
 

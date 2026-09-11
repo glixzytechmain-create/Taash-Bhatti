@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { KitchenInventoryItem, Meal, Order, CashDepositRequest, KitchenEODReport } from '../types';
+import { KitchenInventoryItem, Meal, Order, CashDepositRequest, KitchenEODReport, KitchenWastageRecord } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -141,6 +141,7 @@ export function computeEODShiftReport({
   orders,
   inventoryItems,
   cashDeposits,
+  wastageRecords = [],
   shiftType = 'full_day',
   notes = '',
   peakRushBufferMinutes = 0
@@ -152,6 +153,7 @@ export function computeEODShiftReport({
   orders: Order[];
   inventoryItems: KitchenInventoryItem[];
   cashDeposits: CashDepositRequest[];
+  wastageRecords?: KitchenWastageRecord[];
   shiftType?: 'morning' | 'evening' | 'full_day';
   notes?: string;
   peakRushBufferMinutes?: number;
@@ -214,6 +216,55 @@ export function computeEODShiftReport({
   const cashReconciliationVariance = cashDepositedAtKitchen - codCollectedByFleet;
   const prepaidRevenue = Math.max(0, grossRevenue - codCollectedByFleet);
 
+  // 4. Food Wastage & Spoilage Metrics Calculation (Enterprise QSR standard)
+  const todayWastage = wastageRecords.filter(w => {
+    if (w.kitchenId !== kitchenId) return false;
+    const wDate = w.reportDate || (w.loggedAt ? w.loggedAt.split('T')[0] : '');
+    return wDate === todayStr || !w.reportDate;
+  });
+
+  const rawMaterialWastageLoss = todayWastage
+    .filter(w => w.type === 'ingredient')
+    .reduce((sum, w) => sum + (w.financialLoss || 0), 0);
+
+  const finishedGoodsWastageLoss = todayWastage
+    .filter(w => w.type === 'whole_dish' || w.type === 'order')
+    .reduce((sum, w) => sum + (w.financialLoss || 0), 0);
+
+  const totalWastageLoss = rawMaterialWastageLoss + finishedGoodsWastageLoss;
+  const totalWastageItemsCount = todayWastage.length;
+  const wastagePctOfRevenue = grossRevenue > 0 
+    ? Number(((totalWastageLoss / grossRevenue) * 100).toFixed(2)) 
+    : 0;
+
+  // Breakdown by reason
+  const reasonMap: Record<string, { count: number; totalLoss: number }> = {};
+  todayWastage.forEach(w => {
+    const key = w.reasonCategory || 'other';
+    if (!reasonMap[key]) {
+      reasonMap[key] = { count: 0, totalLoss: 0 };
+    }
+    reasonMap[key].count += 1;
+    reasonMap[key].totalLoss += (w.financialLoss || 0);
+  });
+
+  const wastageBreakdownByReason = Object.entries(reasonMap).map(([reasonCategory, stats]) => ({
+    reasonCategory,
+    count: stats.count,
+    totalLoss: stats.totalLoss
+  }));
+
+  const wastedItemsList = todayWastage.map(w => ({
+    id: w.id,
+    type: w.type,
+    name: w.targetName,
+    quantity: w.quantity,
+    unit: w.unit,
+    financialLoss: w.financialLoss,
+    reason: w.reasonCategory,
+    loggedAt: w.loggedAt
+  }));
+
   return {
     id: `EOD-${kitchenId}-${todayStr}-${Date.now().toString().slice(-4)}`,
     reportDate: todayStr,
@@ -237,6 +288,13 @@ export function computeEODShiftReport({
     cashDepositedAtKitchen,
     cashReconciliationVariance,
     prepaidRevenue,
+    totalWastageLoss,
+    rawMaterialWastageLoss,
+    finishedGoodsWastageLoss,
+    totalWastageItemsCount,
+    wastagePctOfRevenue,
+    wastageBreakdownByReason,
+    wastedItemsList,
     notes: notes || 'Standard shift closure. All active cooking stations cleaned and sanitized.',
     status: 'settled'
   };

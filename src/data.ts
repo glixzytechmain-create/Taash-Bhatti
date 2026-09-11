@@ -70,6 +70,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'medium',
     popularity: 95,
     prepTimeMinutes: 20,
+    goesWellWith: ['m3', 'm5', 'm4'],
     ingredients: [
       { name: 'Organic Paneer', grams: 120 },
       { name: 'Saffron Quinoa', grams: 150 },
@@ -93,6 +94,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'mild',
     popularity: 98,
     prepTimeMinutes: 25,
+    goesWellWith: ['m3', 'm5', 'm6'],
     ingredients: [
       { name: 'Tender Chicken Breast', grams: 180 },
       { name: 'Steam Broccoli', grams: 120 },
@@ -116,6 +118,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'mild',
     popularity: 88,
     prepTimeMinutes: 10,
+    goesWellWith: ['m1', 'm2', 'm4', 'm7'],
     ingredients: [
       { name: 'Steel Cut Oats', grams: 60 },
       { name: 'Almond Milk', grams: 200 },
@@ -139,6 +142,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'spicy',
     popularity: 92,
     prepTimeMinutes: 20,
+    goesWellWith: ['m3', 'm1', 'm5'],
     ingredients: [
       { name: 'Lean Minced Lamb', grams: 130 },
       { name: 'Whole Wheat Tortilla', grams: 70 },
@@ -162,6 +166,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'mild',
     popularity: 84,
     prepTimeMinutes: 15,
+    goesWellWith: ['m1', 'm2', 'm6', 'm4'],
     ingredients: [
       { name: 'Organic Tofu', grams: 150 },
       { name: 'Hass Avocado', grams: 80 },
@@ -185,6 +190,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'medium',
     popularity: 90,
     prepTimeMinutes: 20,
+    goesWellWith: ['m2', 'm3', 'm5'],
     ingredients: [
       { name: 'Atlantic Prawns', grams: 140 },
       { name: 'Peruvian Quinoa', grams: 120 },
@@ -208,6 +214,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'mild',
     popularity: 81,
     prepTimeMinutes: 15,
+    goesWellWith: ['m3', 'm1'],
     ingredients: [
       { name: 'Fluffy Pancake Mix', grams: 90 },
       { name: 'Culinary Matcha', grams: 5 },
@@ -231,6 +238,7 @@ export const MEALS_DATA: Meal[] = [
     spicyLevel: 'medium',
     popularity: 97,
     prepTimeMinutes: 25,
+    goesWellWith: ['m5', 'm3', 'm6'],
     ingredients: [
       { name: 'Fresh Salmon Steak', grams: 160 },
       { name: 'Sweet Potato Mash', grams: 110 },

@@ -239,9 +239,60 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "name", "email", "assignedKitchenId", "status", "role"]
+    },
+    "KitchenWastageRecord": {
+      "title": "Kitchen Wastage & Food Loss Record",
+      "description": "Log of spoiled raw ingredients, burnt dishes, or discarded customer orders with financial loss tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "kitchenId": { "type": "string" },
+        "kitchenName": { "type": "string" },
+        "type": { "type": "string", "enum": ["ingredient", "whole_dish", "order"] },
+        "targetId": { "type": "string" },
+        "targetName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "financialLoss": { "type": "number" },
+        "reasonCategory": { "type": "string" },
+        "loggedBy": { "type": "string" },
+        "loggedAt": { "type": "string" },
+        "reportDate": { "type": "string" }
+      },
+      "required": ["id", "kitchenId", "type", "targetId", "targetName", "quantity", "financialLoss", "reasonCategory", "loggedBy", "loggedAt", "reportDate"]
+    },
+    "GroupOrderRoom": {
+      "title": "Group Order Feast Room",
+      "description": "Collaborative woodfire feast room with shared cart, live chat, participant tabs, and order OTP.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "pin": { "type": "string" },
+        "name": { "type": "string" },
+        "hostUserId": { "type": "string" },
+        "hostName": { "type": "string" },
+        "treatMode": { "type": "string", "enum": ["group_treat", "your_treat"] },
+        "status": { "type": "string", "enum": ["active", "payment_started", "locked", "ordered", "disbanded"] },
+        "deliveryAddress": { "type": "object" },
+        "members": { "type": "object" },
+        "items": { "type": "array" },
+        "chatMessages": { "type": "array" },
+        "orderOtp": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "code", "pin", "name", "hostUserId", "treatMode", "status", "deliveryAddress", "members", "items"]
     }
   },
   "firestore": {
+    "/group_orders/{roomId}": {
+      "schema": "GroupOrderRoom",
+      "description": "Live group ordering rooms with authenticated creators and members"
+    },
+    "/kitchen_wastage/{wasteId}": {
+      "schema": "KitchenWastageRecord",
+      "description": "Kitchen food wastage and loss logs"
+    },
     "/kitchen_managers/{managerId}": {
       "schema": "KitchenManager",
       "description": "Kitchen manager user profiles and branch credentials"

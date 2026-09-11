@@ -4,138 +4,280 @@
  */
 
 import { User, Order, WalletTransaction } from '../types';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 /**
+ * Checks if an order is eligible for Golden Ember token refund:
+ * Rules per business requirement:
+ * 1. Ember token refund ONLY applies to cancellations from the user side.
+ * 2. ONLY applies if kitchen didn't accept the order yet.
+ * 3. ONLY applies if user already paid for it (prepaid).
+ * 4. NEVER applies to COD (Cash on Delivery) orders of any type.
+ * 5. Kitchen or Admin cancellations do NOT issue Ember tokens.
+ */
+export function isOrderEligibleForEmberRefund(
+  order: Order | null | undefined,
+  cancelledBy: 'customer' | 'kitchen' | 'admin' = 'customer'
+): { eligible: boolean; reason?: string } {
+  if (!order) return { eligible: false, reason: 'Order not found' };
+
+  // Rule 1: Strictly customer-side cancellations only
+  if (cancelledBy !== 'customer') {
+    return {
+      eligible: false,
+      reason: 'Ember token refunds only apply to customer-initiated cancellations.'
+    };
+  }
+
+  // Rule 2: Strictly does NOT apply to COD orders
+  const pMethod = (order.paymentMethod || '').toLowerCase();
+  const isCod =
+    pMethod === 'cod' ||
+    pMethod === 'cash' ||
+    pMethod === 'cash_on_delivery' ||
+    Boolean((order as any).isCOD);
+
+  if (isCod) {
+    return {
+      eligible: false,
+      reason: 'Cash on Delivery (COD) orders do not qualify for wallet refunds as no payment was collected.'
+    };
+  }
+
+  // Rule 3: Must be prepaid (online, card, upi, or wallet)
+  const isPaid =
+    order.paymentStatus === 'paid' ||
+    pMethod === 'online' ||
+    pMethod === 'upi' ||
+    pMethod === 'card' ||
+    pMethod === 'wallet' ||
+    (order.walletUsedAmount && order.walletUsedAmount > 0);
+
+  if (!isPaid) {
+    return {
+      eligible: false,
+      reason: 'Unpaid orders do not qualify for refunds.'
+    };
+  }
+
+  // Rule 4: Kitchen must NOT have accepted or started cooking yet
+  const isKitchenAccepted =
+    Boolean(order.acceptedByKitchenId && order.acceptedByKitchenId.trim().length > 0) ||
+    order.status === 'cooking' ||
+    order.status === 'ready_for_pickup' ||
+    order.status === 'out_for_delivery' ||
+    order.status === 'delivered' ||
+    order.kdsStage === 'cooking' ||
+    order.kdsStage === 'plated' ||
+    order.kdsStage === 'dispatched' ||
+    Boolean(order.cookingStartedAt);
+
+  if (isKitchenAccepted) {
+    return {
+      eligible: false,
+      reason: 'Kitchen has already accepted and prepared this order.'
+    };
+  }
+
+  return { eligible: true };
+}
+
+/**
  * Validates if an order is eligible for customer self-service cancellation:
- * "Enable customers to cancel orders before the kitchen begins cooking, with instant refund credit"
+ * Customers can only self-cancel before the kitchen accepts and begins cooking.
  */
 export function canCustomerCancelOrder(order: Order | null | undefined): boolean {
   if (!order) return false;
   if (order.status === 'cancelled' || order.status === 'delivered') return false;
-  
-  // Only cancellable before the kitchen begins cooking
-  const isCooking = order.status === 'cooking' || order.kdsStage === 'cooking' || Boolean(order.cookingStartedAt);
-  const isPastSent = order.status === 'ready_for_pickup' || order.status === 'out_for_delivery' || order.kdsStage === 'plated' || order.kdsStage === 'dispatched';
+  // Group orders are collaborative and strictly non-cancellable once placed
+  if (order.isGroupOrder || order.groupRoomId || order.isNonCancellable) return false;
 
-  return !isCooking && !isPastSent;
+  // Once accepted by kitchen or cooking commences, customer self-cancellation is locked
+  const isKitchenAccepted =
+    Boolean(order.acceptedByKitchenId && order.acceptedByKitchenId.trim().length > 0) ||
+    order.status === 'cooking' ||
+    order.status === 'ready_for_pickup' ||
+    order.status === 'out_for_delivery' ||
+    order.kdsStage === 'cooking' ||
+    order.kdsStage === 'plated' ||
+    order.kdsStage === 'dispatched' ||
+    Boolean(order.cookingStartedAt);
+
+  return !isKitchenAccepted;
 }
 
 /**
- * Cancels an eligible order and credits the full order total instantly to the user's Bhatti Wallet as Golden Ember Coins.
- * (1 Ember Coin = ₹1. Golden Ember can be used to pay for up to 100% of any bill).
+ * Cancels an order.
+ * Strictly complies with:
+ * - NO ember tokens given upon cancellation of any type EXCEPT:
+ *   cancellation from user side IF kitchen didn't accept AND user already paid for it.
+ * - Does NOT apply to COD orders.
  */
 export async function cancelOrderWithInstantWalletRefund(
   order: Order,
   userId: string,
-  cancellationReason: string = 'Customer cancelled before kitchen cooking'
-): Promise<{ success: boolean; refundedAmount: number; newGoldenBalance: number; error?: string }> {
+  cancellationReason: string = 'Customer cancelled before kitchen acceptance',
+  cancelledBy: 'customer' | 'kitchen' | 'admin' = 'customer'
+): Promise<{
+  success: boolean;
+  refundedAmount: number;
+  newGoldenBalance: number;
+  isRefundGiven: boolean;
+  error?: string;
+  refundDenialReason?: string;
+}> {
   try {
-    if (!canCustomerCancelOrder(order)) {
+    if (cancelledBy === 'customer' && !canCustomerCancelOrder(order)) {
       return {
         success: false,
         refundedAmount: 0,
         newGoldenBalance: 0,
-        error: 'Order has already commenced cooking or dispatch, and cannot be self-cancelled.'
+        isRefundGiven: false,
+        error: 'Order has already been accepted or begun cooking by the kitchen, and cannot be self-cancelled.'
       };
     }
 
-    const refundAmount = order.total || 0;
+    const refundEligibility = isOrderEligibleForEmberRefund(order, cancelledBy);
+    const isRefundGiven = refundEligibility.eligible;
+    const refundAmount = isRefundGiven ? (order.total || 0) : 0;
     const nowIso = new Date().toISOString();
 
     // 1. Mark order cancelled in Firestore
     const orderRef = doc(db, 'orders', order.id);
+    const trackingDescription = isRefundGiven
+      ? `Cancelled prior to kitchen acceptance. 100% prepaid order value (₹${refundAmount}) refunded to Bhatti Wallet as Golden Ember Coins.`
+      : `Order cancelled by ${cancelledBy}. No wallet refund applicable (${refundEligibility.reason || 'Not eligible for refund'}).`;
+
     await updateDoc(orderRef, {
       status: 'cancelled',
       kdsStage: 'cancelled',
       cancelledAt: nowIso,
-      cancelledBy: 'customer',
+      cancelledBy,
       cancellationReason,
-      refundedToWallet: true,
+      refundedToWallet: isRefundGiven,
+      refundStatus: isRefundGiven ? 'refunded_to_wallet' : 'no_refund',
       refundAmount,
       trackingSteps: [
         ...(Array.isArray(order.trackingSteps) ? order.trackingSteps : []),
         {
-          title: 'Order Cancelled & Golden Embers Refunded',
-          description: `Self-cancelled prior to cooking. ${refundAmount} Golden Ember Coins credited to Bhatti Wallet.`,
+          title: isRefundGiven ? 'Order Cancelled & Golden Embers Refunded' : 'Order Cancelled',
+          description: trackingDescription,
           done: true,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]
     });
 
-    // 2. Fetch and credit user Golden Ember balance in Firestore
+    // 2. If eligible for refund, credit user Golden Ember balance in Firestore & LocalStorage
     let currentGolden = 0;
     let currentStandard = 0;
     let currentTx: WalletTransaction[] = [];
 
-    if (userId) {
+    const effectiveUserId = userId || order.userId;
+    if (effectiveUserId) {
       try {
-        const userRef = doc(db, 'users', userId);
+        const userRef = doc(db, 'users', effectiveUserId);
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           const uData = userSnap.data() as User;
           currentGolden = Number(uData.goldenEmberBalance || 0);
           currentStandard = Number(uData.standardEmberBalance || 0);
           currentTx = Array.isArray(uData.walletTransactions) ? uData.walletTransactions : [];
+        } else {
+          try {
+            const cached = localStorage.getItem('fitzaika_cached_user_profile') || localStorage.getItem('fitzaika_user_session');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              currentGolden = Number(parsed.goldenEmberBalance || 0);
+              currentStandard = Number(parsed.standardEmberBalance || 0);
+              currentTx = Array.isArray(parsed.walletTransactions) ? parsed.walletTransactions : [];
+            }
+          } catch (e) {}
         }
+      } catch (e) {}
+    }
 
-        const newGoldenBalance = currentGolden + refundAmount;
-        const newTotalBalance = newGoldenBalance + currentStandard;
+    if (isRefundGiven && refundAmount > 0 && effectiveUserId) {
+      const newGoldenBalance = currentGolden + refundAmount;
+      const newTotalBalance = newGoldenBalance + currentStandard;
 
-        const newTransaction: WalletTransaction = {
-          id: `tx-gold-ref-${order.id.slice(-6)}-${Date.now()}`,
-          type: 'credit',
-          amount: refundAmount,
-          emberType: 'golden',
-          description: `Golden Ember Refund for Order #${order.id.slice(-6)} (100% Bill Eligible)`,
-          orderId: order.id,
-          createdAt: nowIso
-        };
+      const newTransaction: WalletTransaction = {
+        id: `tx-gold-ref-${order.id.slice(-6)}-${Date.now()}`,
+        type: 'credit',
+        amount: refundAmount,
+        emberType: 'golden',
+        description: `Golden Ember Refund for cancelled Order #${order.id.slice(-6)} (100% Bill Eligible)`,
+        orderId: order.id,
+        createdAt: nowIso
+      };
 
-        const updatedTxList = [newTransaction, ...currentTx];
+      const updatedTxList = [newTransaction, ...currentTx];
 
-        await updateDoc(userRef, {
-          goldenEmberBalance: newGoldenBalance,
-          walletBalance: newTotalBalance,
-          walletTransactions: updatedTxList
-        });
+      try {
+        const userRef = doc(db, 'users', effectiveUserId);
+        await setDoc(
+          userRef,
+          {
+            goldenEmberBalance: newGoldenBalance,
+            walletBalance: newTotalBalance,
+            walletTransactions: updatedTxList,
+            updatedAt: nowIso
+          },
+          { merge: true }
+        );
+      } catch (userErr) {
+        console.warn("Could not credit user document in Firestore:", userErr);
+      }
 
-        // Update local cached user if matching
-        try {
-          const cached = localStorage.getItem('fitzaika_user_session');
+      // Update local cached user profile & session
+      try {
+        ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+          const cached = localStorage.getItem(key);
           if (cached) {
             const parsed = JSON.parse(cached);
             parsed.goldenEmberBalance = newGoldenBalance;
             parsed.walletBalance = newTotalBalance;
             parsed.walletTransactions = updatedTxList;
-            localStorage.setItem('fitzaika_user_session', JSON.stringify(parsed));
+            localStorage.setItem(key, JSON.stringify(parsed));
           }
-        } catch (e) {}
+        });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('fitzaika_user_updated', {
+              detail: {
+                goldenEmberBalance: newGoldenBalance,
+                walletBalance: newTotalBalance,
+                walletTransactions: updatedTxList
+              }
+            })
+          );
+        }
+      } catch (e) {}
 
-        return {
-          success: true,
-          refundedAmount: refundAmount,
-          newGoldenBalance
-        };
-      } catch (userErr) {
-        console.warn("Could not credit user document directly, saving locally:", userErr);
-      }
+      return {
+        success: true,
+        refundedAmount: refundAmount,
+        newGoldenBalance,
+        isRefundGiven: true
+      };
     }
 
+    // No refund given (COD, admin/kitchen cancelled, not prepaid, etc.)
     return {
       success: true,
-      refundedAmount: refundAmount,
-      newGoldenBalance: refundAmount
+      refundedAmount: 0,
+      newGoldenBalance: currentGolden,
+      isRefundGiven: false,
+      refundDenialReason: refundEligibility.reason
     };
-
   } catch (err: any) {
-    console.error("Failed to cancel order with Golden Ember refund:", err);
+    console.error("Failed to cancel order:", err);
     return {
       success: false,
       refundedAmount: 0,
       newGoldenBalance: 0,
+      isRefundGiven: false,
       error: err?.message || 'Cancellation failed'
     };
   }
@@ -317,6 +459,17 @@ export async function debitEmberCoinsForOrder({
       currentGolden = Number(uData.goldenEmberBalance || 0);
       currentStandard = Number(uData.standardEmberBalance || 0);
       currentTx = Array.isArray(uData.walletTransactions) ? uData.walletTransactions : [];
+    } else {
+      // Check local cache if user document does not exist in Firestore yet
+      try {
+        const cached = localStorage.getItem('fitzaika_cached_user_profile') || localStorage.getItem('fitzaika_user_session');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          currentGolden = Number(parsed.goldenEmberBalance || 0);
+          currentStandard = Number(parsed.standardEmberBalance || 0);
+          currentTx = Array.isArray(parsed.walletTransactions) ? parsed.walletTransactions : [];
+        }
+      } catch (e) {}
     }
 
     const remainingGolden = Math.max(0, currentGolden - goldenAmount);
@@ -352,23 +505,46 @@ export async function debitEmberCoinsForOrder({
 
     const updatedTxList = [...newTransactions, ...currentTx];
 
-    await updateDoc(userRef, {
-      goldenEmberBalance: remainingGolden,
-      standardEmberBalance: remainingStandard,
-      walletBalance: remainingTotal,
-      walletTransactions: updatedTxList
-    });
-
-    // Update local cache
     try {
-      const cached = localStorage.getItem('fitzaika_user_session');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        parsed.goldenEmberBalance = remainingGolden;
-        parsed.standardEmberBalance = remainingStandard;
-        parsed.walletBalance = remainingTotal;
-        parsed.walletTransactions = updatedTxList;
-        localStorage.setItem('fitzaika_user_session', JSON.stringify(parsed));
+      await setDoc(
+        userRef,
+        {
+          goldenEmberBalance: remainingGolden,
+          standardEmberBalance: remainingStandard,
+          walletBalance: remainingTotal,
+          walletTransactions: updatedTxList,
+          updatedAt: nowIso
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn("Could not set user document in Firestore:", e);
+    }
+
+    // Update local cache and dispatch event for immediate UI updates
+    try {
+      ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+        const cached = localStorage.getItem(key);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          parsed.goldenEmberBalance = remainingGolden;
+          parsed.standardEmberBalance = remainingStandard;
+          parsed.walletBalance = remainingTotal;
+          parsed.walletTransactions = updatedTxList;
+          localStorage.setItem(key, JSON.stringify(parsed));
+        }
+      });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('fitzaika_user_updated', {
+            detail: {
+              goldenEmberBalance: remainingGolden,
+              standardEmberBalance: remainingStandard,
+              walletBalance: remainingTotal,
+              walletTransactions: updatedTxList
+            }
+          })
+        );
       }
     } catch (e) {}
 

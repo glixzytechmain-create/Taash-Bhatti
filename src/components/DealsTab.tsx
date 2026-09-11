@@ -174,7 +174,10 @@ export default function DealsTab({ meals, onAddToCart, onOpenAdminPortal, isAdmi
     // Build Step Selection details
     const selectedStepsData: DealStepSelection[] = steps.map((s) => ({
       stepId: s.id,
-      stepTitle: s.title,
+      stepTitle: s.title
+        .replace(/^(Step|Course)\s*\d+\s*[:\-–.]*\s*/i, '')
+        .replace(/^(Choose|Select)\s+(your\s+)?/i, '')
+        .trim() || s.title,
       items: (deckSelections[s.id] || []).map((m) => ({
         mealId: m.id,
         mealName: m.name,
@@ -197,7 +200,9 @@ export default function DealsTab({ meals, onAddToCart, onOpenAdminPortal, isAdmi
     const customDeckMeal: Meal = {
       id: `custom-deck-${Date.now()}`,
       name: activeDeckDeal.title,
-      description: `Custom 4-Course Royal Box: ${allSelectedMeals.map((m) => m.name).join(', ')}`,
+      description: activeDeckDeal.ctaButtonText?.trim()
+        ? `${activeDeckDeal.ctaButtonText.trim()}: ${allSelectedMeals.map((m) => m.name).join(', ')}`
+        : `Custom ${steps.length}-Course Box: ${allSelectedMeals.map((m) => m.name).join(', ')}`,
       price: activeDeckDeal.packagePrice,
       calories: sumCalories,
       protein: sumProtein,
@@ -361,7 +366,7 @@ export default function DealsTab({ meals, onAddToCart, onOpenAdminPortal, isAdmi
               Handcrafted Deck Boxes & Royal Combo Feasts
             </h1>
             <p className="text-xs sm:text-sm text-stone-300 leading-relaxed max-w-2xl">
-              Build your customized 4-course tandoor banquet, unlock Buy 1 Get 1 privileges, or order chef-curated combos with exclusive package savings.
+              Build your customized gourmet tandoor banquet, unlock Buy 1 Get 1 privileges, or order chef-curated combos with exclusive package savings.
             </p>
           </div>
 
@@ -579,7 +584,7 @@ export default function DealsTab({ meals, onAddToCart, onOpenAdminPortal, isAdmi
                           {isDeck && deal.steps && (
                             <div className="space-y-1.5">
                               <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">
-                                🍱 4 Step-by-Step Courses:
+                                🍱 {deal.steps.length} Step-by-Step Courses:
                               </span>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                 {deal.steps.map((s, idx) => (
@@ -640,7 +645,11 @@ export default function DealsTab({ meals, onAddToCart, onOpenAdminPortal, isAdmi
                         className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-brand-orange via-amber-500 to-amber-400 text-brand-charcoal font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-105 active:scale-98 transition-all cursor-pointer shadow-lg shadow-brand-orange/20 ring-1 ring-amber-300/30"
                       >
                         <Box className="w-4 h-4 text-brand-charcoal stroke-[2.5]" />
-                        <span>Customize 4-Course Box ➜</span>
+                        <span>
+                          {deal.ctaButtonText?.trim()
+                            ? deal.ctaButtonText.trim()
+                            : `Customize ${deal.steps?.length || 3}-Course Box ➜`}
+                        </span>
                       </motion.button>
                     ) : isBogo ? (
                       <motion.button

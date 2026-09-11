@@ -102,6 +102,29 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Match kitchen_wastage collection (raw ingredient, whole dish & order wastage)
+    match /kitchen_wastage/{wasteId} {
+      allow read, write: if true;
+    }
+
+    // Match app_settings collection (feature flags, master kill switches)
+    match /app_settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // Match buddy_deck_requests collection (friend deck approval requests & 6-digit codes)
+    match /buddy_deck_requests/{requestId} {
+      allow read, write: if true;
+    }
+
+    // Match group_orders collection (Group Ordering rooms, shared carts & live chat)
+    match /group_orders/{roomId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+
     // Match test collection for connection validation
     match /test/{testId} {
       allow read, write: if true;

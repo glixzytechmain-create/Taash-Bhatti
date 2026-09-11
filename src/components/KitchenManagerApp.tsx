@@ -56,12 +56,13 @@ import {
   Bike
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal } from '../types';
+import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord } from '../types';
 import { doc, updateDoc, collection, onSnapshot, setDoc, query, where, addDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import InAppDeliveryMap from './InAppDeliveryMap';
 import RainEffect from './RainEffect';
 import KitchenEODSettlementModal from './KitchenEODSettlementModal';
+import KitchenWastageManager from './KitchenWastageManager';
 import { syncLowStockMenuWithFirestore, computeEODShiftReport } from '../lib/kitchenSettlement';
 import { autoDispatchPlatedOrder } from '../lib/proximityDispatch';
 
@@ -341,6 +342,22 @@ export default function KitchenManagerApp({
     return () => unsub();
   }, [activeKitchen?.id]);
 
+  // Wastage records listener for current kitchen
+  const [kitchenWastageRecords, setKitchenWastageRecords] = useState<KitchenWastageRecord[]>([]);
+  useEffect(() => {
+    if (!activeKitchen?.id) return;
+    const q = query(collection(db, 'kitchen_wastage'), where('kitchenId', '==', activeKitchen.id));
+    const unsub = onSnapshot(q, (snap) => {
+      const fetched: KitchenWastageRecord[] = [];
+      snap.forEach((d) => fetched.push({ id: d.id, ...d.data() } as KitchenWastageRecord));
+      fetched.sort((a, b) => new Date(b.loggedAt || 0).getTime() - new Date(a.loggedAt || 0).getTime());
+      setKitchenWastageRecords(fetched);
+    }, (err) => {
+      console.warn("Firestore kitchen_wastage listener error in KM:", err);
+    });
+    return () => unsub();
+  }, [activeKitchen?.id]);
+
   // Low-Stock Menu Auto-Disable Sync State
   const [isSyncingMenu, setIsSyncingMenu] = useState<boolean>(false);
   const [menuSyncNotice, setMenuSyncNotice] = useState<string | null>(null);
@@ -392,6 +409,7 @@ export default function KitchenManagerApp({
       orders: liveOrders,
       inventoryItems: inventoryItems,
       cashDeposits: cashDeposits,
+      wastageRecords: kitchenWastageRecords,
       shiftType: 'full_day',
       peakRushBufferMinutes: activeKitchen?.globalPrepDelayMinutes || 0
     });
@@ -1879,6 +1897,14 @@ export default function KitchenManagerApp({
                 )}
                 <button
                   type="button"
+                  onClick={() => setInvCategoryFilter('wastage')}
+                  className="px-3.5 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Food Wastage Log ({kitchenWastageRecords.length})</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setEditingInventoryItem(null);
                     setInvName('');
@@ -1974,6 +2000,7 @@ export default function KitchenManagerApp({
                   { id: 'vegetables', label: 'Greens & Veg' },
                   { id: 'pantry_spices', label: 'Spices & Oils' },
                   { id: 'packaging', label: 'Packaging' },
+                  { id: 'wastage', label: '⚠️ Wastage & Food Loss Log' },
                 ].map((cat) => (
                   <button
                     key={cat.id}
@@ -2002,8 +2029,21 @@ export default function KitchenManagerApp({
               </div>
             </div>
 
-            {/* Items Grid */}
-            {filteredInventoryItems.length === 0 ? (
+            {/* Items Grid OR Wastage Manager */}
+            {invCategoryFilter === 'wastage' ? (
+              <div className="py-2">
+                <KitchenWastageManager
+                  kitchenId={activeKitchen.id}
+                  kitchenName={activeKitchen.name}
+                  inventoryItems={inventoryItems}
+                  orders={liveOrders}
+                  meals={allMeals}
+                  deliveryPartners={deliveryPartners}
+                  loggedByUserName={activeSession?.name || 'Kitchen Manager'}
+                  onStockUpdated={() => {}}
+                />
+              </div>
+            ) : filteredInventoryItems.length === 0 ? (
               <div className="p-8 text-center bg-[#0A0E13] rounded-2xl border border-white/5 text-xs text-gray-500 space-y-2">
                 <p>No inventory items match current filter.</p>
                 {inventoryItems.length === 0 && (

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Heart, 
   Sparkles, 
@@ -22,9 +22,17 @@ import {
   Clock, 
   Plus, 
   Minus,
-  Utensils
+  Utensils,
+  Gift,
+  Copy,
+  Share2,
+  ShieldCheck,
+  KeyRound,
+  CheckCircle2
 } from 'lucide-react';
-import { Meal, User } from '../types';
+import { Meal, User, BuddyDeckRequest } from '../types';
+import { db } from '../lib/firebase';
+import { collection, query, where, onSnapshot, setDoc, doc } from 'firebase/firestore';
 
 interface MyDeckTabProps {
   user: User;
@@ -90,6 +98,79 @@ export default function MyDeckTab({
       { calories: 0, protein: 0, carbs: 0, fats: 0, price: 0 }
     );
   }, [deckMeals]);
+
+  // Buddy Deck Sharing & Active Approval Codes State
+  const currentUid = fbUser?.uid || user.id || 'guest_deck';
+  const [activeApprovalRequests, setActiveApprovalRequests] = useState<BuddyDeckRequest[]>([]);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [customGeneratedCode, setCustomGeneratedCode] = useState<string | null>(null);
+  const [customExpiresAt, setCustomExpiresAt] = useState<string | null>(null);
+
+  // Subscribe to real-time buddy deck requests where current user is receiver and status is accepted
+  useEffect(() => {
+    if (!currentUid) return;
+
+    try {
+      const q = query(
+        collection(db, 'buddy_deck_requests'),
+        where('receiverId', '==', currentUid)
+      );
+
+      const unsub = onSnapshot(q, (snapshot) => {
+        const list: BuddyDeckRequest[] = [];
+        const now = Date.now();
+        snapshot.forEach((docSnap) => {
+          const req = docSnap.data() as BuddyDeckRequest;
+          if (req.status === 'accepted' && req.approvalCode) {
+            // Check 2-hour expiration window
+            if (req.expiresAt) {
+              const exp = new Date(req.expiresAt).getTime();
+              if (exp > now) {
+                list.push(req);
+              }
+            } else {
+              list.push(req);
+            }
+          }
+        });
+        setActiveApprovalRequests(list);
+      }, (err) => {
+        console.warn("Could not subscribe to buddy approval requests:", err);
+      });
+
+      return () => unsub();
+    } catch (e) {
+      console.warn(e);
+    }
+  }, [currentUid]);
+
+  // Handle generating a direct 2-hour approval code on demand
+  const handleGenerateManualCode = async () => {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    setCustomGeneratedCode(code);
+    setCustomExpiresAt(expires);
+
+    try {
+      const reqId = `manual_${currentUid}_${Date.now()}`;
+      await setDoc(doc(db, 'buddy_deck_requests', reqId), {
+        id: reqId,
+        receiverId: currentUid,
+        receiverName: user.name || 'Friend',
+        senderId: 'any_friend',
+        senderName: 'Your Buddy',
+        status: 'accepted',
+        approvalCode: code,
+        createdAt: new Date().toISOString(),
+        expiresAt: expires,
+      });
+      setDealSuccessMsg("✨ Generated a 2-hour approval code! Share it with your friend.");
+      setTimeout(() => setDealSuccessMsg(null), 3500);
+    } catch (err) {
+      console.warn("Could not store manual approval code:", err);
+    }
+  };
 
   // Toggle 3D Card Flip
   const handleToggleFlip = (mealId: string, e?: React.MouseEvent) => {
@@ -304,6 +385,192 @@ export default function MyDeckTab({
               </button>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 1.5 BUDDY DECK SHARING & ACTIVE APPROVAL CODES */}
+      <div className="space-y-4">
+        {/* ACTIVE CODES BANNER: Generated for friend orders, valid for 2 hours */}
+        {(activeApprovalRequests.length > 0 || customGeneratedCode) && (
+          <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-amber-400/80 rounded-3xl p-5 sm:p-6 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl animate-bounce">🔐</span>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-brand-charcoal uppercase tracking-wider flex items-center gap-1.5">
+                    <span>Active Buddy Approval Code</span>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold">
+                      VALID 2 HOURS
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-brand-charcoal/70">
+                    Share this 6-digit code with your sender friend. They must enter it in their Buddy Cart before completing prepaid payment.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* List all active requests codes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {activeApprovalRequests.map((req) => (
+                <div key={req.id} className="bg-white p-4 rounded-2xl border border-amber-400/30 shadow-xs flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[9px] font-black uppercase text-brand-charcoal/50 block">
+                      Requested by: <strong className="text-brand-charcoal">{req.senderName}</strong>
+                    </span>
+                    <div className="text-2xl font-black font-mono tracking-widest text-amber-600 mt-0.5">
+                      {req.approvalCode}
+                    </div>
+                    <span className="text-[9px] text-brand-charcoal/50 font-medium">
+                      Valid for 2 hours from acceptance
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (req.approvalCode) {
+                        navigator.clipboard.writeText(req.approvalCode);
+                        setCopiedCode(req.approvalCode);
+                        setDealSuccessMsg(`📋 Copied code "${req.approvalCode}" to clipboard!`);
+                        setTimeout(() => {
+                          setCopiedCode(null);
+                          setDealSuccessMsg(null);
+                        }, 2500);
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-brand-charcoal font-black text-xs uppercase flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+                  >
+                    {copiedCode === req.approvalCode ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-800" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              ))}
+
+              {/* Manual on-demand generated code */}
+              {customGeneratedCode && (
+                <div className="bg-white p-4 rounded-2xl border border-amber-400/30 shadow-xs flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[9px] font-black uppercase text-brand-charcoal/50 block">
+                      Direct Share Code
+                    </span>
+                    <div className="text-2xl font-black font-mono tracking-widest text-amber-600 mt-0.5">
+                      {customGeneratedCode}
+                    </div>
+                    <span className="text-[9px] text-brand-charcoal/50 font-medium">
+                      Expires in 2 hours
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(customGeneratedCode);
+                      setCopiedCode(customGeneratedCode);
+                      setDealSuccessMsg(`📋 Copied code "${customGeneratedCode}" to clipboard!`);
+                      setTimeout(() => {
+                        setCopiedCode(null);
+                        setDealSuccessMsg(null);
+                      }, 2500);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-brand-charcoal font-black text-xs uppercase flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+                  >
+                    {copiedCode === customGeneratedCode ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-800" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SHAREABLE DECK HUB & ORDER FOR A BUDDY */}
+        <div className="bg-white border border-brand-green/10 rounded-3xl p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Gift className="w-4 h-4 text-brand-orange" />
+              <span className="text-[10px] font-black uppercase tracking-wider text-brand-charcoal/60">
+                Shareable Deck & Buddy Gifting
+              </span>
+            </div>
+            <h3 className="text-base font-black text-brand-charcoal">
+              Let Friends & Family Order Your Deck
+            </h3>
+            <p className="text-xs text-brand-charcoal/70 max-w-xl">
+              Friends can connect via your Deck ID, deal meals to their Buddy Cart, and have them delivered to your saved address. No account access is granted!
+            </p>
+            <div className="pt-1 flex items-center gap-2 text-xs font-mono">
+              <span className="text-brand-charcoal/50 text-[11px]">Your Deck ID:</span>
+              <code className="bg-brand-cream/60 px-2 py-0.5 rounded-lg border border-brand-green/15 font-bold text-brand-charcoal text-[11px]">
+                {currentUid}
+              </code>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                const url = `${window.location.origin}/buddydeck?deckId=${currentUid}`;
+                navigator.clipboard.writeText(url);
+                setCopiedLink(true);
+                setDealSuccessMsg("📋 Copied your shareable Buddy Deck URL!");
+                setTimeout(() => {
+                  setCopiedLink(false);
+                  setDealSuccessMsg(null);
+                }, 2500);
+              }}
+              className="px-3.5 py-2.5 rounded-xl border border-brand-green/20 hover:bg-brand-cream/40 text-brand-charcoal font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              {copiedLink ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-brand-green" />
+                  <span>Link Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-3.5 h-3.5 text-brand-green" />
+                  <span>Share Deck Link</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleGenerateManualCode}
+              className="px-3.5 py-2.5 rounded-xl border border-amber-400/40 hover:bg-amber-50 text-amber-900 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+              <span>Get 2h Code</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectTab('buddydeck')}
+              className="px-4 py-2.5 rounded-xl bg-brand-charcoal hover:bg-black text-amber-400 font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-md transition-all cursor-pointer"
+            >
+              <Gift className="w-3.5 h-3.5 text-amber-400" />
+              <span>Order For A Buddy</span>
+            </button>
+          </div>
         </div>
       </div>
 

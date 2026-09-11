@@ -28,7 +28,12 @@ import {
   Star,
   ThumbsUp,
   X,
-  CloudRain
+  CloudRain,
+  Search,
+  Crosshair,
+  Plus,
+  Minus,
+  Minimize2
 } from 'lucide-react';
 import RainEffect from './RainEffect';
 import {
@@ -37,7 +42,9 @@ import {
   LIGHT_MAP_STYLE,
   calculateBearing,
   calculateHaversineDistanceKm,
+  isGoogleMapsAuthFailed,
 } from '../lib/googleMaps';
+import { LeafletMap } from './LeafletMap';
 import { ChatMessage, OrderDeliveryRating } from '../types';
 
 interface InAppDeliveryMapProps {
@@ -142,6 +149,14 @@ export default function InAppDeliveryMap({
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+
+  useEffect(() => {
+    const handleAuthFail = () => setUseLeaflet(true);
+    window.addEventListener('fitzaika_maps_auth_failed', handleAuthFail);
+    return () => window.removeEventListener('fitzaika_maps_auth_failed', handleAuthFail);
+  }, []);
+
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [liveDistanceKm, setLiveDistanceKm] = useState<number>(2.4);
   const [liveEtaMinutes, setLiveEtaMinutes] = useState<string>('12-15 Mins');
@@ -149,6 +164,33 @@ export default function InAppDeliveryMap({
   const [cameraMode, setCameraMode] = useState<'fit' | 'rider'>('fit');
   const [userHasPanned, setUserHasPanned] = useState<boolean>(false);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [fullscreenSearchQuery, setFullscreenSearchQuery] = useState<string>('');
+  const [fullscreenZoomLevel, setFullscreenZoomLevel] = useState<number>(15);
+  const [isFullscreenSearching, setIsFullscreenSearching] = useState<boolean>(false);
+
+  const handleFullscreenSearch = async () => {
+    if (!fullscreenSearchQuery.trim()) return;
+    setIsFullscreenSearching(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullscreenSearchQuery + ', Muzaffarpur, Bihar')}&limit=3`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const lat = parseFloat(data[0].lat);
+          const lng = parseFloat(data[0].lon);
+          setCustomerCoords({ lat, lng });
+          setFullscreenZoomLevel(16);
+        }
+      }
+    } catch (e) {
+      console.warn("Fullscreen search fallback error:", e);
+    } finally {
+      setIsFullscreenSearching(false);
+    }
+  };
 
   // Takeaway Live Device GPS Permission State
   const [deviceGpsCoords, setDeviceGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -224,26 +266,44 @@ export default function InAppDeliveryMap({
     riderName !== 'Searching...'
   );
 
+  // The moment the rider arrives at the kitchen or beyond, their location is live and tracking starts!
+  const isRiderAtKitchenOrBeyond = Boolean(
+    riderStatus === 'arrived_kitchen' ||
+    riderStatus === 'meal_collected' ||
+    riderStatus === 'picked_up' ||
+    riderStatus === 'out_for_delivery' ||
+    riderStatus === 'delivering' ||
+    currentStatus.includes('arrived_kitchen') ||
+    currentStatus.includes('at_kitchen') ||
+    currentStatus.includes('meal_collected') ||
+    currentStatus.includes('picked_up') ||
+    currentStatus.includes('out_for_delivery') ||
+    currentStatus.includes('delivering')
+  );
+
   // Check if Rider is actively sharing live location (online) vs offline
   const isRiderLiveOnline = useMemo(() => {
     if (isRiderView) return true;
     if (!isRiderAssigned) return false;
+    // The moment the rider arrives at the kitchen or beyond, their location is always live
+    if (isRiderAtKitchenOrBeyond) return true;
+
     if (!riderLat || !riderLng || isNaN(riderLat) || isNaN(riderLng) || riderLat === 0) return false;
 
-    // Check freshness of rider timestamp if provided - only show if active live GPS ping within last 5 minutes
+    // Check freshness of rider timestamp if provided - only show if active live GPS ping within last 15 minutes
     if (riderLastUpdated) {
       try {
         const lastUpdatedDate = new Date(riderLastUpdated);
         if (!isNaN(lastUpdatedDate.getTime())) {
           const diffMinutes = (Date.now() - lastUpdatedDate.getTime()) / (1000 * 60);
-          return diffMinutes <= 5; // Live if pinged within last 5 minutes
+          return diffMinutes <= 15; // Live if pinged within last 15 minutes
         }
       } catch (e) {
         return false;
       }
     }
-    return false;
-  }, [isRiderView, isRiderAssigned, riderLat, riderLng, riderLastUpdated]);
+    return Boolean(riderLat && riderLng && riderLat !== 0);
+  }, [isRiderView, isRiderAssigned, isRiderAtKitchenOrBeyond, riderLat, riderLng, riderLastUpdated]);
 
   // Voluntary device location handler for Takeaway orders only
   const requestDeviceLocation = () => {
@@ -561,8 +621,36 @@ export default function InAppDeliveryMap({
         });
         riderMarkerRef.current = riderMarker;
       } else {
-        riderMarkerRef.current.setPosition(currentRiderPos);
-        riderMarkerRef.current.setMap(map);
+        const marker = riderMarkerRef.current;
+        const currentPos = marker.getPosition();
+        if (currentPos && typeof window !== 'undefined' && window.requestAnimationFrame) {
+          const startLat = currentPos.lat();
+          const startLng = currentPos.lng();
+          const destLat = currentRiderPos.lat;
+          const destLng = currentRiderPos.lng;
+          const distanceDiff = Math.abs(startLat - destLat) + Math.abs(startLng - destLng);
+          if (distanceDiff > 0.00002 && distanceDiff < 0.2) {
+            let start: number | null = null;
+            const duration = 1200; // 1.2s smooth glide
+            const step = (timestamp: number) => {
+              if (!start) start = timestamp;
+              const progress = Math.min((timestamp - start) / duration, 1);
+              const ease = 1 - Math.pow(1 - progress, 3);
+              const lat = startLat + (destLat - startLat) * ease;
+              const lng = startLng + (destLng - startLng) * ease;
+              marker.setPosition({ lat, lng });
+              if (progress < 1) {
+                window.requestAnimationFrame(step);
+              }
+            };
+            window.requestAnimationFrame(step);
+          } else {
+            marker.setPosition(currentRiderPos);
+          }
+        } else {
+          marker.setPosition(currentRiderPos);
+        }
+        marker.setMap(map);
       }
     } else if (riderMarkerRef.current) {
       riderMarkerRef.current.setMap(null);
@@ -1116,9 +1204,45 @@ export default function InAppDeliveryMap({
         </div>
       )}
 
-      {/* Interactive Google Map Canvas */}
-      <div className="relative w-full h-80 sm:h-96 bg-[#121820] rounded-2xl border border-white/10 overflow-hidden shadow-inner my-2">
-        <div ref={mapContainerRef} className="w-full h-full z-0 cursor-grab active:cursor-grabbing" />
+      {/* Interactive Map Canvas */}
+      <div 
+        onClick={() => setIsFullscreen(true)}
+        className="relative w-full h-80 sm:h-96 bg-[#121820] rounded-2xl border border-white/10 overflow-hidden shadow-inner my-2 cursor-pointer group"
+        title="Click to view full-screen live tracking"
+      >
+        {useLeaflet || isGoogleMapsAuthFailed() || (mapError && !mapLoaded) ? (
+          <LeafletMap
+            center={currentRiderPos || customerCoords}
+            zoom={14}
+            interactive={true}
+            points={[
+              ...(customerCoords ? [{ lat: customerCoords.lat, lng: customerCoords.lng, label: customerName ? `${customerName} (Customer)` : 'Delivery Address', type: 'customer' as const }] : []),
+              ...(kitchenCoords ? [{ lat: kitchenCoords.lat, lng: kitchenCoords.lng, label: kitchenName ? `${kitchenName} (Kitchen)` : 'Bhatti Kitchen', type: 'kitchen' as const }] : []),
+              ...(!isTakeaway && isRiderAssigned && (isRiderLiveOnline || isRiderAtKitchenOrBeyond) && currentRiderPos ? [{ lat: currentRiderPos.lat, lng: currentRiderPos.lng, label: riderName ? `${riderName} (Rider)` : 'Delivery Partner', type: 'rider' as const }] : [])
+            ]}
+            className="w-full h-full"
+          />
+        ) : (
+          <div ref={mapContainerRef} className="w-full h-full z-0 cursor-grab active:cursor-grabbing" />
+        )}
+
+        {/* Short message on map to tap to make the map bigger in good language */}
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsFullscreen(true);
+          }}
+          className="absolute bottom-3 inset-x-3 z-10 bg-slate-900/95 hover:bg-slate-900 text-white backdrop-blur-md px-3.5 py-2 rounded-xl border border-emerald-500/40 flex items-center justify-between text-xs font-bold cursor-pointer transition-all shadow-2xl group-hover:border-emerald-400"
+        >
+          <div className="flex items-center gap-2 text-emerald-300 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+            <span className="truncate">✨ Tap map to view full-screen live tracking & street search</span>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 shrink-0 shadow-sm">
+            <Maximize2 className="w-3 h-3" />
+            <span>Enlarge Map</span>
+          </span>
+        </div>
 
         {/* Currently Raining Animation & Floating Radar Badge (Only after kitchen acceptance) */}
         {isRaining && isKitchenAccepted && (
@@ -1131,17 +1255,20 @@ export default function InAppDeliveryMap({
           </>
         )}
 
-        {mapError && (
-          <div className="absolute inset-0 bg-[#0F1419]/90 flex items-center justify-center p-6 text-center z-20">
-            <div className="max-w-md space-y-3">
-              <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
-              <p className="text-xs text-amber-200 font-bold">{mapError}</p>
-            </div>
-          </div>
-        )}
-
         {/* Floating Map Action Buttons */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5 bg-black/85 backdrop-blur-md border border-white/15 p-1.5 rounded-2xl shadow-2xl">
+          {/* Fullscreen Expand Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFullscreen(true);
+            }}
+            title="Expand Fullscreen Map"
+            className="p-2.5 bg-white/10 hover:bg-white/20 text-white hover:text-emerald-400 rounded-xl transition-all border border-white/10"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
           {/* Rider Mode Controls */}
           {isRiderView ? (
             <>
@@ -1818,16 +1945,16 @@ export default function InAppDeliveryMap({
                   Order has been {currentStatus.includes('delivered') ? 'delivered' : 'cancelled'}. Live customer-rider chat is now disabled.
                 </p>
               </div>
-            ) : (!isRiderView && !(isRiderView || currentStatus.includes('out_for_delivery') || currentStatus.includes('dispatched') || riderStatus === 'out_for_delivery' || riderStatus === 'en_route')) ? (
+            ) : (!isRiderView && !isRiderAtKitchenOrBeyond) ? (
               <div className="p-4 rounded-2xl bg-amber-950/60 border-2 border-amber-500/40 text-amber-200 text-xs text-center font-bold font-mono space-y-2">
                 <div className="flex items-center justify-center gap-2">
                   <span className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400 text-amber-300 flex items-center justify-center font-black text-sm">
                     🛵🔒
                   </span>
-                  <span className="text-sm font-black text-amber-300">RIDER STILL AT KITCHEN</span>
+                  <span className="text-sm font-black text-amber-300">RIDER EN ROUTE TO KITCHEN</span>
                 </div>
                 <p className="text-[11px] text-gray-300 font-sans font-medium leading-relaxed">
-                  Messaging your delivery captain will unlock as soon as your order is picked up and your rider departs from the kitchen branch en route to your location.
+                  Direct messaging will unlock automatically the moment your delivery captain reaches the kitchen counter.
                 </p>
               </div>
             ) : (
@@ -1896,8 +2023,8 @@ export default function InAppDeliveryMap({
               )}
             </div>
 
-            {/* Custom Input (Only enabled if active & rider left kitchen) */}
-            {(!currentStatus.includes('delivered') && !currentStatus.includes('cancelled') && (isRiderView || (currentStatus.includes('out_for_delivery') || currentStatus.includes('dispatched') || riderStatus === 'out_for_delivery' || riderStatus === 'en_route'))) && (
+            {/* Custom Input (Enabled if active & rider has reached kitchen or beyond) */}
+            {(!currentStatus.includes('delivered') && !currentStatus.includes('cancelled') && (isRiderView || isRiderAtKitchenOrBeyond)) && (
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -2017,6 +2144,173 @@ export default function InAppDeliveryMap({
               <ThumbsUp className="w-4 h-4" />
               <span>Submit Delivery Rating</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* FULLSCREEN MAP OVERLAY */}
+      {isFullscreen && (
+        <div 
+          className="fixed inset-0 z-[99999] bg-slate-950 text-slate-100 flex flex-col select-none overflow-hidden animate-fade-in"
+          id="fullscreen-delivery-tracking-modal"
+        >
+          {/* Top Bar */}
+          <div className="bg-slate-900/95 border-b border-slate-800 p-3 sm:p-4 backdrop-blur-md z-30 shrink-0 shadow-lg">
+            <div className="max-w-5xl mx-auto space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Bike className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                        FitZaika Live Delivery Radar
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-300 text-[9px] font-bold border border-emerald-500/20">
+                        <Sparkles className="w-2.5 h-2.5" /> Full-Screen Tracking
+                      </span>
+                    </div>
+                    <h2 className="text-sm sm:text-base font-black text-white truncate">
+                      {orderId ? `Order #${orderId.slice(-6).toUpperCase()} • ` : ''}
+                      {currentStatus.replace(/_/g, ' ').toUpperCase()}
+                    </h2>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreen(false)}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700 shrink-0 cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                  aria-label="Minimize Map"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Minimize</span>
+                </button>
+              </div>
+
+              {/* Search Bar for Landmarks & Streets in Fullscreen */}
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search street, society, landmark in Muzaffarpur..."
+                    value={fullscreenSearchQuery}
+                    onChange={(e) => setFullscreenSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleFullscreenSearch();
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-9 py-2 text-xs font-semibold text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                  {fullscreenSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setFullscreenSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFullscreenSearch}
+                  disabled={isFullscreenSearching || !fullscreenSearchQuery.trim()}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  {isFullscreenSearching ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  <span>Search</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Fullscreen Map Canvas */}
+          <div className="relative flex-1 w-full bg-slate-950 overflow-hidden">
+            <LeafletMap
+              center={currentRiderPos || customerCoords}
+              zoom={fullscreenZoomLevel}
+              interactive={true}
+              isDarkMode={true}
+              points={[
+                ...(customerCoords ? [{ lat: customerCoords.lat, lng: customerCoords.lng, label: customerName ? `${customerName} (Customer)` : 'Delivery Address', type: 'customer' as const }] : []),
+                ...(kitchenCoords ? [{ lat: kitchenCoords.lat, lng: kitchenCoords.lng, label: kitchenName ? `${kitchenName} (Kitchen)` : 'Bhatti Kitchen', type: 'kitchen' as const }] : []),
+                ...(!isTakeaway && isRiderAssigned && (isRiderLiveOnline || isRiderAtKitchenOrBeyond) && currentRiderPos ? [{ lat: currentRiderPos.lat, lng: currentRiderPos.lng, label: riderName ? `${riderName} (Rider)` : 'Delivery Partner', type: 'rider' as const }] : [])
+              ]}
+              className="w-full h-full"
+            />
+
+            {/* Floating Live Telemetry Badge */}
+            <div className="absolute left-4 top-4 z-20 pointer-events-none">
+              <div className="px-3.5 py-2 rounded-2xl bg-slate-900/90 border border-slate-700/80 backdrop-blur-md shadow-xl flex items-center gap-3">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 block">
+                    Live Telemetry
+                  </span>
+                  <span className="text-xs font-bold text-white">
+                    ETA: {liveEtaMinutes} • Distance: {liveDistanceKm} km
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Map Controls Overlay */}
+            <div className="absolute right-4 top-4 z-20 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setFullscreenZoomLevel(prev => Math.min(prev + 1, 19))}
+                className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700 flex items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-all"
+                title="Zoom In"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setFullscreenZoomLevel(prev => Math.max(prev - 1, 11))}
+                className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700 flex items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-all"
+                title="Zoom Out"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              {currentRiderPos && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFullscreenZoomLevel(17);
+                  }}
+                  className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-400 border border-slate-700 flex items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-all"
+                  title="Focus Rider"
+                >
+                  <Bike className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Info Footer */}
+          <div className="bg-slate-900 border-t border-slate-800 p-3 sm:p-4 z-30 shrink-0 shadow-2xl">
+            <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  Delivery Destination
+                </span>
+                <p className="text-xs sm:text-sm font-bold text-white truncate">
+                  {customerAddress || 'Customer Doorstep Location'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(false)}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shrink-0"
+              >
+                Back to Tracking
+              </button>
+            </div>
           </div>
         </div>
       )}

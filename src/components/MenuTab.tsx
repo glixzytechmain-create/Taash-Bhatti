@@ -23,10 +23,13 @@ import {
   Sparkles,
   Check,
   MessageSquare,
+  Users,
 } from 'lucide-react';
-import { Meal, Gym } from '../types';
+import { Meal, Kitchen, OrderItem } from '../types';
 import { MEALS_DATA } from '../data';
 import MealReviewsSection from './MealReviewsSection';
+import GoesWellWithExtension from './GoesWellWithExtension';
+import CartQuantityButton from './CartQuantityButton';
 
 interface FlyingCardAnimation {
   id: string;
@@ -43,23 +46,39 @@ interface MenuTabProps {
   onAddToCart: (meal: Meal) => void;
   likedMeals: string[];
   onToggleLike: (mealId: string) => void;
-  selectedGym: Gym | null;
+  selectedBhatti?: Kitchen | null;
+  allBhattis?: Kitchen[];
+  onOpenBhattisTab?: () => void;
   preSelectedGoal: string | null;
   onClearPreSelectedGoal: () => void;
   onOpenDeals?: () => void;
+  onOpenGroupOrder?: () => void;
   meals?: Meal[];
+  cartMealIds?: string[];
+  cart?: OrderItem[];
+  onUpdateQuantity?: (mealId: string, delta: number) => void;
 }
 
 export default function MenuTab({
   onAddToCart,
   likedMeals,
   onToggleLike,
-  selectedGym,
+  selectedBhatti,
+  allBhattis = [],
+  onOpenBhattisTab,
   preSelectedGoal,
   onClearPreSelectedGoal,
   onOpenDeals,
+  onOpenGroupOrder,
   meals = MEALS_DATA,
+  cartMealIds = [],
+  cart = [],
+  onUpdateQuantity,
 }: MenuTabProps) {
+  const getMealCartQuantity = (mealId: string): number => {
+    const item = cart.find((i) => i.meal.id === mealId);
+    return item ? item.quantity : 0;
+  };
   // Filter States
   const [vegMode, setVegMode] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,6 +91,21 @@ export default function MenuTab({
 
   // Quick view Modal State
   const [selectedQuickView, setSelectedQuickView] = useState<Meal | null>(null);
+
+  // Goes well with interactive extension state (auto opens when dish added to cart)
+  const [expandedPairingMealIds, setExpandedPairingMealIds] = useState<string[]>([]);
+
+  const handleAddMealWithPairings = (meal: Meal) => {
+    onAddToCart(meal);
+    // Pop up the interactive animated extension below this dish
+    setExpandedPairingMealIds((prev) => (prev.includes(meal.id) ? prev : [...prev, meal.id]));
+  };
+
+  const togglePairingsForMeal = (mealId: string) => {
+    setExpandedPairingMealIds((prev) =>
+      prev.includes(mealId) ? prev.filter((id) => id !== mealId) : [...prev, mealId]
+    );
+  };
 
   // Flying Cards Animation State
   const [flyingCards, setFlyingCards] = useState<FlyingCardAnimation[]>([]);
@@ -126,6 +160,46 @@ export default function MenuTab({
     }
 
     onToggleLike(meal.id);
+  };
+
+  // Sold Out calculation based on selected Bhatti or All Bhattis in geofence
+  const checkMealSoldOut = (meal: Meal): { isSoldOut: boolean; reason?: string } => {
+    if (meal.isAvailable === false) {
+      return { isSoldOut: true, reason: meal.soldOutReason || 'Sold Out' };
+    }
+
+    if (selectedBhatti) {
+      const isBhattiDisabled = 
+        selectedBhatti.disabledDishIds?.includes(meal.id) || 
+        selectedBhatti.soldOutDishIds?.includes(meal.id) ||
+        selectedBhatti.isTakingOrders === false;
+      if (isBhattiDisabled) {
+        return { 
+          isSoldOut: true, 
+          reason: `Sold Out at ${selectedBhatti.name.split(' ')[0]} Bhatti` 
+        };
+      }
+      return { isSoldOut: false };
+    }
+
+    // Auto-dispatch mode: Only sold out if ALL active Bhattis have it disabled
+    const activeBhattis = (allBhattis && allBhattis.length > 0)
+      ? allBhattis.filter(b => b.isActive !== false)
+      : [];
+
+    if (activeBhattis.length > 0) {
+      const allSoldOut = activeBhattis.every(bhatti => {
+        const isClosed = bhatti.isTakingOrders === false;
+        const isDisabled = bhatti.disabledDishIds?.includes(meal.id) || bhatti.soldOutDishIds?.includes(meal.id);
+        return isClosed || isDisabled;
+      });
+
+      if (allSoldOut) {
+        return { isSoldOut: true, reason: 'Sold Out Across All Bhattis' };
+      }
+    }
+
+    return { isSoldOut: false };
   };
 
   // Handle pre-selected goal from homepage click
@@ -207,6 +281,43 @@ export default function MenuTab({
 
   return (
     <div className="pb-24 max-w-6xl mx-auto px-4 pt-4">
+      {/* 🌟 GROUP ORDERING (TAASH DAWAT) BANNER - TOP OF MENU PAGE */}
+      {onOpenGroupOrder && (
+        <div
+          id="group-ordering-menu-header-btn"
+          onClick={onOpenGroupOrder}
+          className="mb-3.5 p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-stone-900 via-[#1e1713] to-stone-900 text-white shadow-xl shadow-orange-950/20 cursor-pointer flex items-center justify-between gap-3 hover:scale-[1.01] transition-all group border-2 border-brand-orange/40 hover:border-brand-orange relative overflow-hidden"
+        >
+          <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-brand-orange/15 rounded-full blur-2xl pointer-events-none" />
+          <div className="flex items-center gap-3 relative z-10">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-orange to-amber-500 text-stone-950 flex items-center justify-center shrink-0 text-xl font-black shadow-md shadow-orange-500/20 group-hover:rotate-6 transition-transform">
+              <Users className="w-6 h-6 text-stone-950" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+                  <span>Taash Dawat</span>
+                  <span className="text-brand-orange">Group Ordering</span>
+                </h3>
+                <span className="text-[8px] bg-brand-orange/20 font-black px-1.5 py-0.5 rounded text-brand-orange border border-brand-orange/40 uppercase tracking-widest">
+                  Fun Feature
+                </span>
+              </div>
+              <p className="text-[10px] sm:text-xs text-stone-300 font-medium">
+                Create a 4-digit PIN room, share link, split the bill or treat everyone with 10-min payment timer!
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-orange to-amber-500 text-stone-950 font-black text-[10px] sm:text-xs uppercase tracking-wider shrink-0 group-hover:from-amber-500 group-hover:to-brand-orange transition-all flex items-center gap-1.5 shadow-md shadow-orange-500/25 relative z-10"
+          >
+            <span>Feast Room</span>
+            <span>🔥</span>
+          </button>
+        </div>
+      )}
+
       {/* DEALS & COMBOS QUICK EXPLORE BANNER */}
       {onOpenDeals && (
         <div
@@ -453,6 +564,7 @@ export default function MenuTab({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredMeals.map((meal, mealIdx) => {
             const isLiked = likedMeals.includes(meal.id);
+            const soldOutInfo = checkMealSoldOut(meal);
 
             return (
               <div
@@ -465,7 +577,7 @@ export default function MenuTab({
                     <img
                       src={meal.image}
                       alt={meal.name}
-                      className={`w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-105 ${meal.isAvailable === false ? 'grayscale contrast-75 opacity-70' : ''}`}
+                      className={`w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-105 ${soldOutInfo.isSoldOut ? 'grayscale contrast-75 opacity-70' : ''}`}
                       referrerPolicy="no-referrer"
                     />
 
@@ -504,14 +616,14 @@ export default function MenuTab({
                     </button>
 
                     {/* Sold out overlay */}
-                    {meal.isAvailable === false && (
-                      <div className="absolute inset-0 bg-brand-charcoal/50 backdrop-blur-xs flex flex-col items-center justify-center p-2 text-center">
+                    {soldOutInfo.isSoldOut && (
+                      <div className="absolute inset-0 bg-brand-charcoal/60 backdrop-blur-xs flex flex-col items-center justify-center p-2 text-center z-10">
                         <span className="bg-red-600 text-white text-[11px] font-black px-3.5 py-1.5 rounded-xl shadow-lg border border-red-500 uppercase tracking-widest">
                           SOLD OUT
                         </span>
-                        {meal.soldOutReason && (
-                          <span className="mt-1.5 text-[9px] font-bold text-red-100 bg-red-950/80 px-2 py-0.5 rounded-md max-w-[85%] truncate">
-                            {meal.soldOutReason}
+                        {soldOutInfo.reason && (
+                          <span className="mt-1.5 text-[9px] font-bold text-red-100 bg-red-950/90 px-2.5 py-1 rounded-md max-w-[90%] truncate">
+                            {soldOutInfo.reason}
                           </span>
                         )}
                       </div>
@@ -523,11 +635,7 @@ export default function MenuTab({
                       {meal.isVegan ? '🌱 VEGAN' : meal.isVeg ? '🌿 VEGETARIAN' : '🥩 NON-VEGETARIAN'}
                     </div>
 
-                    {meal.partnerGymExclusive && (
-                      <div className="absolute bottom-3 right-3 bg-brand-orange text-brand-charcoal font-black text-[9px] px-2 py-1 rounded-lg tracking-wider">
-                        ⭐ GYM ELITE
-                      </div>
-                    )}
+
                   </div>
 
                   {/* Details Area */}
@@ -548,15 +656,31 @@ export default function MenuTab({
                     <h4 className="font-extrabold text-base text-brand-charcoal leading-snug">{meal.name}</h4>
                     <p className="text-xs text-brand-charcoal/60 mt-1 line-clamp-2">{meal.description}</p>
 
-                    {/* View Details & Nutrition trigger */}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedQuickView(meal)}
-                      className="mt-2 text-[11px] font-bold text-brand-green hover:text-brand-green/80 flex items-center gap-1 cursor-pointer transition-colors group/link"
-                    >
-                      <span>View details & nutrition</span>
-                      <span className="text-xs transition-transform group-hover/link:translate-x-0.5">→</span>
-                    </button>
+                    {/* View Details & Nutrition trigger and Goes Well With toggle */}
+                    <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedQuickView(meal)}
+                        className="text-[11px] font-bold text-brand-green hover:text-brand-green/80 flex items-center gap-1 cursor-pointer transition-colors group/link"
+                      >
+                        <span>View details & nutrition</span>
+                        <span className="text-xs transition-transform group-hover/link:translate-x-0.5">→</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => togglePairingsForMeal(meal.id)}
+                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 border transition-all cursor-pointer ${
+                          expandedPairingMealIds.includes(meal.id)
+                            ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`}
+                        title="Tap to see dishes that go well with this"
+                      >
+                        <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                        <span>Goes well with {expandedPairingMealIds.includes(meal.id) ? '▲' : '▼'}</span>
+                      </button>
+                    </div>
 
                     {/* Verified Diner Reviews strip: STRICTLY ONLY shown on meal cards for dishes that have been rated */}
                     {meal.rating && meal.rating > 0 && meal.reviewsCount && meal.reviewsCount > 0 ? (
@@ -622,23 +746,34 @@ export default function MenuTab({
                       <span className="text-xs">🃏</span>
                     </button>
 
-                    {meal.isAvailable === false ? (
-                      <button
-                        disabled
-                        className="px-3.5 py-2.5 bg-brand-charcoal/10 text-brand-charcoal/40 font-black text-xs rounded-xl cursor-not-allowed flex items-center gap-1 border border-brand-charcoal/5"
-                      >
-                        Sold Out
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => onAddToCart(meal)}
-                        className="px-3.5 py-2.5 bg-brand-green hover:bg-brand-green/90 text-white font-black text-xs rounded-xl transition-all shadow-xs flex items-center gap-1 cursor-pointer active:scale-95"
-                      >
-                        <Plus className="w-4 h-4 stroke-[3px]" /> Add
-                      </button>
-                    )}
+                    <CartQuantityButton
+                      quantity={getMealCartQuantity(meal.id)}
+                      onAdd={() => handleAddMealWithPairings(meal)}
+                      onIncrement={() => (onUpdateQuantity ? onUpdateQuantity(meal.id, 1) : onAddToCart(meal))}
+                      onDecrement={() => onUpdateQuantity && onUpdateQuantity(meal.id, -1)}
+                      disabled={soldOutInfo.isSoldOut}
+                      disabledLabel="Sold Out"
+                    />
                   </div>
                 </div>
+
+                {/* Animated "Goes Well With" extension below the dish */}
+                <AnimatePresence>
+                  {expandedPairingMealIds.includes(meal.id) && (
+                    <div className="mt-3 pt-2.5 border-t border-dashed border-brand-green/20">
+                      <GoesWellWithExtension
+                        parentMeal={meal}
+                        allMeals={meals}
+                        onAddToCart={onAddToCart}
+                        cartMealIds={cartMealIds}
+                        cart={cart}
+                        onUpdateQuantity={onUpdateQuantity}
+                        onClose={() => togglePairingsForMeal(meal.id)}
+                        theme="dark"
+                      />
+                    </div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
@@ -789,24 +924,15 @@ export default function MenuTab({
                 <span className="text-xl font-black text-brand-charcoal">₹{selectedQuickView.price}</span>
               </div>
 
-              {selectedQuickView.isAvailable === false ? (
-                <button
-                  disabled
-                  className="px-6 py-3 bg-brand-charcoal/10 text-brand-charcoal/40 font-black text-xs rounded-xl cursor-not-allowed border border-brand-charcoal/5"
-                >
-                  Item Sold Out
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    onAddToCart(selectedQuickView);
-                    setSelectedQuickView(null);
-                  }}
-                  className="px-6 py-3 bg-brand-green hover:bg-brand-green/90 text-white font-black text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4 stroke-[3.5px]" /> Add To Order
-                </button>
-              )}
+              <CartQuantityButton
+                quantity={getMealCartQuantity(selectedQuickView.id)}
+                onAdd={() => onAddToCart(selectedQuickView)}
+                onIncrement={() => (onUpdateQuantity ? onUpdateQuantity(selectedQuickView.id, 1) : onAddToCart(selectedQuickView))}
+                onDecrement={() => onUpdateQuantity && onUpdateQuantity(selectedQuickView.id, -1)}
+                disabled={selectedQuickView.isAvailable === false}
+                disabledLabel="Item Sold Out"
+                addLabel="Add To Order"
+              />
             </div>
 
           </div>

@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, ChefHat, CheckCircle2, AlertTriangle, X, Search, Navigation, Compass, Building2, LocateFixed, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react';
+import { MapPin, ChefHat, CheckCircle2, AlertTriangle, X, Search, Navigation, Compass, Building2, LocateFixed, ZoomIn, ZoomOut, RefreshCw, Maximize2 } from 'lucide-react';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap } from '@vis.gl/react-google-maps';
 import { Kitchen } from '../types';
-
-const GOOGLE_MAPS_API_KEY =
-  (typeof process !== 'undefined' ? process.env?.GOOGLE_MAPS_PLATFORM_KEY : '') ||
-  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
-  (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
-  '';
+import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed } from '../lib/googleMaps';
+import { LeafletMap } from './LeafletMap';
+import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 
 // MapController component to smoothly handle dynamic center updates and smart zoom transitions
 function MapController({
@@ -109,6 +106,14 @@ export default function CityGeofenceSelectorModal({
   const [mapZoom, setMapZoom] = useState<number>(12); // Default city level zoom
 
   const [addressLabel, setAddressLabel] = useState<string>(`Selected Pin, ${selectedCity}`);
+  const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
+  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+
+  useEffect(() => {
+    const handleAuthFail = () => setUseLeaflet(true);
+    window.addEventListener('fitzaika_maps_auth_failed', handleAuthFail);
+    return () => window.removeEventListener('fitzaika_maps_auth_failed', handleAuthFail);
+  }, []);
 
   // When city changes, update center & pin, zoom to city level
   const handleSelectCity = (cityName: string) => {
@@ -466,8 +471,27 @@ export default function CityGeofenceSelectorModal({
             </div>
 
             <div className="relative w-full h-64 sm:h-72 rounded-2xl overflow-hidden border-2 border-brand-green/25 bg-[#12181E] shadow-inner">
-              {GOOGLE_MAPS_API_KEY ? (
-                <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+              {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
+                <LeafletMap
+                  center={customerPos}
+                  zoom={mapZoom}
+                  interactive={true}
+                  draggableCustomerPin={true}
+                  points={[
+                    { lat: customerPos.lat, lng: customerPos.lng, label: 'Your Address', type: 'customer' },
+                    ...relevantKitchens.map((k) => ({
+                      lat: k.lat,
+                      lng: k.lng,
+                      label: k.name,
+                      type: 'kitchen' as const,
+                      geofenceRadiusKm: k.geofenceRadius,
+                    })),
+                  ]}
+                  onPositionSelect={(coords) => handleMapPointSelect(coords.lat, coords.lng)}
+                  className="w-full h-full"
+                />
+              ) : (
+                <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
                   <GoogleMap
                     defaultCenter={customerPos}
                     defaultZoom={12}
@@ -475,11 +499,13 @@ export default function CityGeofenceSelectorModal({
                     disableDefaultUI={false}
                     onClick={(e) => {
                       if (e.detail.latLng) {
-                        handleMapPointSelect(e.detail.latLng.lat, e.detail.latLng.lng);
+                        const lat = typeof (e.detail.latLng as any).lat === 'function' ? (e.detail.latLng as any).lat() : e.detail.latLng.lat;
+                        const lng = typeof (e.detail.latLng as any).lng === 'function' ? (e.detail.latLng as any).lng() : e.detail.latLng.lng;
+                        handleMapPointSelect(lat, lng);
                       }
                     }}
-                    mapId="city_geofence_map"
-                    internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+                    mapId="DEMO_MAP_ID"
+                    internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
                     style={{ width: '100%', height: '100%' }}
                   >
                     {/* Inner controller to keep zoom level & position smoothly synced without fighting user drag */}
@@ -508,7 +534,9 @@ export default function CityGeofenceSelectorModal({
                       draggable={true}
                       onDragEnd={(e) => {
                         if (e.latLng) {
-                          handleMapPointSelect(e.latLng.lat, e.latLng.lng);
+                          const lat = typeof (e.latLng as any).lat === 'function' ? (e.latLng as any).lat() : (e.latLng as any).lat;
+                          const lng = typeof (e.latLng as any).lng === 'function' ? (e.latLng as any).lng() : (e.latLng as any).lng;
+                          handleMapPointSelect(lat, lng);
                         }
                       }}
                     >
@@ -521,58 +549,19 @@ export default function CityGeofenceSelectorModal({
                     </AdvancedMarker>
                   </GoogleMap>
                 </APIProvider>
-              ) : (
-                /* High quality interactive map simulation fallback */
-                <div
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = (e.clientX - rect.left) / rect.width;
-                    const y = (e.clientY - rect.top) / rect.height;
-                    const baseLat = initialCityObj.lat;
-                    const baseLng = initialCityObj.lng;
-                    const newLat = baseLat + (0.5 - y) * 0.05;
-                    const newLng = baseLng + (x - 0.5) * 0.05;
-                    handleMapPointSelect(newLat, newLng);
-                  }}
-                  className="w-full h-full relative cursor-crosshair bg-[radial-gradient(#1A232E_2px,transparent_2px)] [background-size:16px_16px] flex flex-col items-center justify-center p-4 text-center select-none"
-                >
-                  <div className="absolute inset-0 bg-brand-green/5 pointer-events-none" />
-                  
-                  {/* Simulated Kitchen Geofence Circles */}
-                  {relevantKitchens.map((k, idx) => (
-                    <div
-                      key={`geo-sim-${k.id || idx}-${idx}`}
-                      className="absolute rounded-full border-2 border-brand-orange/40 bg-brand-orange/10 pointer-events-none flex items-center justify-center"
-                      style={{
-                        top: `${30 + (idx * 20)}%`,
-                        left: `${35 + (idx * 15)}%`,
-                        width: '120px',
-                        height: '120px',
-                        transform: 'translate(-50%, -50%)',
-                      }}
-                    >
-                      <span className="text-[8px] font-black text-brand-orange uppercase bg-black/60 px-1.5 py-0.5 rounded">
-                        {k.name} ({k.geofenceRadius}km)
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Customer Marker Simulation */}
-                  <div className="relative z-10 flex flex-col items-center animate-bounce">
-                    <div className="bg-brand-green text-brand-charcoal font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white">
-                      📍 Your Selected Address Pin
-                    </div>
-                    <MapPin className="w-8 h-8 text-brand-green fill-brand-green/30 drop-shadow-md" />
-                  </div>
-
-                  <p className="absolute bottom-2 left-2 right-2 text-[9px] text-gray-400 bg-black/80 px-2 py-1 rounded-lg">
-                    💡 Click anywhere on the map grid to position your home/office address pin.
-                  </p>
-                </div>
               )}
 
-              {/* Floating Manual Controls Overlay (Zoom In, Zoom Out, GPS Locate) */}
+              {/* Floating Manual Controls Overlay (Zoom In, Zoom Out, GPS Locate, Fullscreen) */}
               <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5 bg-black/80 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-xl">
+                <button
+                  type="button"
+                  title="Expand Map Fullscreen"
+                  onClick={() => setIsEnlargedMapOpen(true)}
+                  className="p-1.5 hover:bg-brand-green/30 text-white rounded-lg transition-all cursor-pointer flex items-center justify-center"
+                >
+                  <Maximize2 className="w-4 h-4 text-emerald-400" />
+                </button>
+                <div className="h-px bg-white/15 my-0.5" />
                 <button
                   type="button"
                   title="Zoom In"
@@ -599,7 +588,44 @@ export default function CityGeofenceSelectorModal({
                   <LocateFixed className={`w-4 h-4 text-brand-orange ${gpsLoading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
+
+              {/* Short message on map to tap to make the map bigger */}
+              <div 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEnlargedMapOpen(true);
+                }}
+                className="absolute bottom-3 inset-x-3 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3.5 py-2 rounded-xl border border-emerald-500/30 flex items-center justify-between text-xs font-bold cursor-pointer transition-all shadow-xl group-hover:border-emerald-400"
+              >
+                <div className="flex items-center gap-2 text-emerald-300 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                  <span className="truncate">✨ Tap map to view full-screen & search location</span>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-sm">
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Enlarge Map</span>
+                </span>
+              </div>
             </div>
+
+            {/* FULLSCREEN PIN & LOCATION SEARCH MODAL */}
+            {isEnlargedMapOpen && (
+              <FullScreenAddressPinModal
+                isOpen={isEnlargedMapOpen}
+                onClose={() => setIsEnlargedMapOpen(false)}
+                initialCoords={customerPos}
+                initialAddress={addressLabel}
+                kitchenCoords={{ lat: relevantKitchens[0]?.lat || 26.1209, lng: relevantKitchens[0]?.lng || 85.3647 }}
+                kitchenName={relevantKitchens[0]?.name || 'FitZaika Kitchen'}
+                onConfirmPin={(coords, address) => {
+                  handleMapPointSelect(coords.lat, coords.lng);
+                  if (address) {
+                    setAddressLabel(address);
+                  }
+                  setIsEnlargedMapOpen(false);
+                }}
+              />
+            )}
           </div>
 
           {/* GEOFENCE SERVICE COVERAGE STATUS BANNER */}

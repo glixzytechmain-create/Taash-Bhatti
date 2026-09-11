@@ -3,12 +3,21 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+const mapsKey =
+  process.env.GOOGLE_MAPS_PLATFORM_KEY ||
+  process.env.VITE_GOOGLE_MAPS_API_KEY ||
+  process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
+  'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE';
+
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GOOGLE_MAPS_PLATFORM_KEY': JSON.stringify(process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE'),
-      'process.env.VITE_GOOGLE_MAPS_API_KEY': JSON.stringify(process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE')
+      'process.env.GOOGLE_MAPS_PLATFORM_KEY': JSON.stringify(mapsKey),
+      'process.env.VITE_GOOGLE_MAPS_API_KEY': JSON.stringify(mapsKey),
+      'process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY': JSON.stringify(mapsKey),
+      'import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY': JSON.stringify(mapsKey),
+      'import.meta.env.VITE_GOOGLE_MAPS_API_KEY': JSON.stringify(mapsKey),
     },
     resolve: {
       alias: {

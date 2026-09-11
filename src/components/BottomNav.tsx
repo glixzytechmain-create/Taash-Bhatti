@@ -5,11 +5,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Home, Utensils, Tag, Sparkles, PartyPopper, User, MapPin, Layers } from 'lucide-react';
+import { Home, Utensils, Tag, Sparkles, PartyPopper, User, Flame, Layers, Menu } from 'lucide-react';
 import { getStoredFeatureFlags, subscribeFeatureFlags } from '../lib/featureFlags';
 import { AppFeatureFlags } from '../types';
 
-export type TabType = 'home' | 'menu' | 'deals' | 'deck' | 'catering' | 'coach' | 'account' | 'gyms';
+export type TabType = 'home' | 'menu' | 'deals' | 'deck' | 'catering' | 'coach' | 'account' | 'bhattis';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -67,9 +67,9 @@ export default function BottomNav({ activeTab, onChangeTab }: BottomNavProps) {
       tapRotate: [0, -10, 10, 0],
     },
     { 
-      id: 'gyms' as TabType, 
-      label: 'Kitchens', 
-      icon: MapPin,
+      id: 'bhattis' as TabType, 
+      label: 'Our Bhattis', 
+      icon: Flame,
       tapRotate: [0, 10, -10, 0],
     },
     { 
@@ -78,7 +78,12 @@ export default function BottomNav({ activeTab, onChangeTab }: BottomNavProps) {
       icon: User,
       tapRotate: [0, 8, -6, 0],
     },
-  ].filter((item) => !featureFlags.tabDisables?.[item.id]);
+  ].filter((item) => {
+    if (item.id === 'bhattis') {
+      return !featureFlags.tabDisables?.bhattis && !featureFlags.tabDisables?.gyms;
+    }
+    return !featureFlags.tabDisables?.[item.id];
+  });
 
   const handleTabClick = (tabId: TabType) => {
     setTappedTab(tabId);
@@ -87,8 +92,8 @@ export default function BottomNav({ activeTab, onChangeTab }: BottomNavProps) {
   };
 
   return (
-    <nav className="fixed bottom-0 sm:bottom-4 left-0 right-0 sm:left-1/2 sm:-translate-x-1/2 z-40 bg-white/95 backdrop-blur-xl border-t sm:border border-stone-200/90 pb-safe-bottom sm:pb-0 sm:rounded-3xl w-full sm:max-w-xl shadow-[0_12px_40px_rgba(0,0,0,0.1)] transition-all">
-      <div className="w-full px-1.5 sm:px-3 py-1.5 sm:py-2 flex items-center justify-around relative">
+    <nav className="fixed bottom-0 sm:bottom-4 left-0 right-0 sm:left-1/2 sm:-translate-x-1/2 z-40 bg-white/95 backdrop-blur-xl border-t sm:border border-stone-200/90 pb-safe-bottom sm:pb-0 sm:rounded-3xl w-full sm:max-w-2xl shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition-all overflow-hidden">
+      <div className="w-full px-2 py-1.5 flex items-center overflow-x-auto no-scrollbar scroll-smooth justify-start xs:justify-center sm:justify-around gap-1 sm:gap-2 snap-x">
         {navItems.map((item) => {
           const IconComponent = item.icon;
           const isActive = activeTab === item.id;
@@ -102,7 +107,7 @@ export default function BottomNav({ activeTab, onChangeTab }: BottomNavProps) {
               whileHover={{ scale: 1.08, y: -2 }}
               whileTap={{ scale: 0.82, y: 2 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-              className="relative flex flex-col items-center justify-center py-1.5 px-1.5 sm:px-2 rounded-2xl focus:outline-none cursor-pointer select-none group min-w-[50px] sm:min-w-[58px]"
+              className="relative flex flex-col items-center justify-center py-1.5 px-2 rounded-2xl focus:outline-none cursor-pointer select-none group shrink-0 snap-center min-w-[58px] sm:min-w-[64px]"
             >
               {/* Active Background Pill with layout animation */}
               {isActive && (
@@ -151,14 +156,13 @@ export default function BottomNav({ activeTab, onChangeTab }: BottomNavProps) {
                   />
                 </motion.div>
 
-                {/* Sophisticated Deals Micro-Accent Dot */}
+                {/* Micro-Accent Dot */}
                 {item.isDeals && (
                   <span className={`absolute -top-0.5 -right-1 w-1.5 h-1.5 rounded-full ring-1 ring-white ${
                     isActive ? 'bg-amber-500 shadow-xs' : 'bg-amber-400/80'
                   }`} />
                 )}
 
-                {/* Tasteful AI Sparkle indicator dot (no huge aura) */}
                 {item.isAI && (
                   <motion.span
                     animate={{ scale: [1, 1.2, 1], opacity: [0.7, 1, 0.7] }}

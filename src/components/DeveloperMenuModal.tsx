@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Sliders,
@@ -59,6 +59,13 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  // Local state for instant responsive interactions without stale props
+  const [currentFlags, setCurrentFlags] = useState<AppFeatureFlags>(flags);
+
+  useEffect(() => {
+    setCurrentFlags(flags);
+  }, [flags]);
+
   // Editable messages
   const [closedNotice, setClosedNotice] = useState<string>(
     flags.closedOrderMessage || 'TAASH BHATTI is temporarily paused for new orders. Please check back shortly!'
@@ -67,18 +74,24 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
     flags.maintenanceMessage || 'TAASH BHATTI is currently performing kitchen maintenance. Orders will reopen shortly.'
   );
 
+  useEffect(() => {
+    if (flags.closedOrderMessage) setClosedNotice(flags.closedOrderMessage);
+    if (flags.maintenanceMessage) setMaintNotice(flags.maintenanceMessage);
+  }, [flags.closedOrderMessage, flags.maintenanceMessage]);
+
   // Dish search
   const [dishSearch, setDishSearch] = useState('');
 
   if (!isOpen) return null;
 
   const handleToggle = async <K extends keyof AppFeatureFlags>(key: K, value: AppFeatureFlags[K]) => {
-    const updated: AppFeatureFlags = { ...flags, [key]: value };
+    const updated: AppFeatureFlags = { ...currentFlags, [key]: value };
+    setCurrentFlags(updated);
     onUpdateFlags(updated);
     setSaving(true);
     try {
       await saveFeatureFlags(updated);
-      setFeedback(`Updated ${String(key)}!`);
+      setFeedback(`Globally updated ${String(key)}!`);
       setTimeout(() => setFeedback(null), 2500);
     } catch (e) {
       setFeedback('Saved locally');
@@ -88,20 +101,29 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
     }
   };
 
-  const isTabVisible = (tabId: string) => !flags.tabDisables?.[tabId];
+  const isTabVisible = (tabId: string) => {
+    if (tabId === 'bhattis' || tabId === 'gyms') {
+      return !currentFlags.tabDisables?.bhattis && !currentFlags.tabDisables?.gyms;
+    }
+    return !currentFlags.tabDisables?.[tabId];
+  };
 
   const handleToggleTab = async (tabId: string) => {
-    const currentDisables = flags.tabDisables || {};
-    const isCurrentlyDisabled = !!currentDisables[tabId];
+    const currentDisables = currentFlags.tabDisables || {};
+    const isCurrentlyDisabled = tabId === 'bhattis' || tabId === 'gyms'
+      ? (!!currentDisables.bhattis || !!currentDisables.gyms)
+      : !!currentDisables[tabId];
+    const nextVal = !isCurrentlyDisabled;
     const updatedDisables = {
       ...currentDisables,
-      [tabId]: !isCurrentlyDisabled,
+      [tabId]: nextVal,
+      ...(tabId === 'bhattis' || tabId === 'gyms' ? { bhattis: nextVal, gyms: nextVal } : {})
     };
     await handleToggle('tabDisables', updatedDisables);
   };
 
   const handleSetAllTabs = async (visible: boolean) => {
-    const allTabKeys = ['home', 'menu', 'deals', 'coach', 'catering', 'deck', 'gyms', 'account'];
+    const allTabKeys = ['home', 'menu', 'deals', 'coach', 'catering', 'deck', 'bhattis', 'gyms', 'account'];
     const updatedDisables: Record<string, boolean> = {};
     if (!visible) {
       // Disable all except home so user is not completely stuck
@@ -113,11 +135,11 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
   };
 
   const isHeaderVisible = (comp: keyof NonNullable<AppFeatureFlags['headerComponents']>) => {
-    return flags.headerComponents?.[comp] !== false;
+    return currentFlags.headerComponents?.[comp] !== false;
   };
 
   const handleToggleHeader = async (comp: keyof NonNullable<AppFeatureFlags['headerComponents']>) => {
-    const currentComponents = flags.headerComponents || {
+    const currentComponents = currentFlags.headerComponents || {
       logo: true,
       location: true,
       deck: true,
@@ -134,7 +156,7 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
   };
 
   const handleToggleCategory = async (cat: string) => {
-    const existing = flags.disabledCategories || [];
+    const existing = currentFlags.disabledCategories || [];
     const updatedList = existing.includes(cat)
       ? existing.filter(c => c !== cat)
       : [...existing, cat];
@@ -143,6 +165,7 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
 
   const handleResetDefaults = async () => {
     if (window.confirm('Reset all feature flags, header components, and bottom nav menu items to standard defaults?')) {
+      setCurrentFlags(DEFAULT_FEATURE_FLAGS);
       onUpdateFlags(DEFAULT_FEATURE_FLAGS);
       await saveFeatureFlags(DEFAULT_FEATURE_FLAGS);
       setClosedNotice(DEFAULT_FEATURE_FLAGS.closedOrderMessage || '');
@@ -258,9 +281,9 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
       color: 'text-amber-500',
     },
     {
-      id: 'gyms',
-      label: 'Kitchens Map Tab',
-      sublabel: 'Live delivery geofence and hub locations interactive map',
+      id: 'bhattis',
+      label: 'Our Bhattis & Kitchens Map Tab',
+      sublabel: 'Live delivery geofences, kitchen hub locations, and interactive map',
       icon: MapPin,
       color: 'text-teal-400',
     },
@@ -531,36 +554,36 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
 
               {/* Master Accepting Orders */}
               <div className={`p-4 rounded-2xl border transition-all ${
-                flags.acceptingOrders
+                currentFlags.acceptingOrders
                   ? 'bg-emerald-950/25 border-emerald-500/40'
                   : 'bg-rose-950/30 border-rose-500/50'
               }`}>
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
-                      flags.acceptingOrders ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                      currentFlags.acceptingOrders ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
                     }`}>
                       <Power className="w-4 h-4" />
                     </div>
                     <div>
                       <h4 className="font-bold text-white text-xs">
-                        Kitchen Order Acceptance: {flags.acceptingOrders ? 'ONLINE' : 'PAUSED (CLOSED)'}
+                        Kitchen Order Acceptance: {currentFlags.acceptingOrders ? 'ONLINE' : 'PAUSED (CLOSED)'}
                       </h4>
                       <p className="text-[11px] text-slate-400">
-                        {flags.acceptingOrders ? 'Diners can place delivery and takeaway orders' : 'Checkout button is disabled with your custom message'}
+                        {currentFlags.acceptingOrders ? 'Diners can place delivery and takeaway orders' : 'Checkout button is disabled with your custom message'}
                       </p>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleToggle('acceptingOrders', !flags.acceptingOrders)}
+                    onClick={() => handleToggle('acceptingOrders', !currentFlags.acceptingOrders)}
                     className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      flags.acceptingOrders
+                      currentFlags.acceptingOrders
                         ? 'bg-emerald-500 text-black shadow-xs hover:bg-emerald-400'
                         : 'bg-rose-600 text-white shadow-xs hover:bg-rose-500'
                     }`}
                   >
-                    {flags.acceptingOrders ? 'Online' : 'Paused'}
+                    {currentFlags.acceptingOrders ? 'Online' : 'Paused'}
                   </button>
                 </div>
 
@@ -591,20 +614,20 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
 
               {/* Maintenance Banner Switch */}
               <div className={`p-4 rounded-2xl border transition-all ${
-                flags.maintenanceMode
+                currentFlags.maintenanceMode
                   ? 'bg-amber-950/25 border-amber-500/40'
                   : 'bg-slate-800/40 border-slate-700/50'
               }`}>
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
-                      flags.maintenanceMode ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700/50 text-slate-400'
+                      currentFlags.maintenanceMode ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700/50 text-slate-400'
                     }`}>
                       <ShieldAlert className="w-4 h-4" />
                     </div>
                     <div>
                       <h4 className="font-bold text-white text-xs">
-                        Maintenance Banner: {flags.maintenanceMode ? 'ACTIVE' : 'INACTIVE'}
+                        Maintenance Banner: {currentFlags.maintenanceMode ? 'ACTIVE' : 'INACTIVE'}
                       </h4>
                       <p className="text-[11px] text-slate-400">
                         Shows persistent announcement banner at the top of the customer app
@@ -613,14 +636,14 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleToggle('maintenanceMode', !flags.maintenanceMode)}
+                    onClick={() => handleToggle('maintenanceMode', !currentFlags.maintenanceMode)}
                     className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      flags.maintenanceMode
+                      currentFlags.maintenanceMode
                         ? 'bg-amber-500 text-black shadow-xs hover:bg-amber-400'
                         : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                     }`}
                   >
-                    {flags.maintenanceMode ? 'Enabled' : 'Disabled'}
+                    {currentFlags.maintenanceMode ? 'Enabled' : 'Disabled'}
                   </button>
                 </div>
 
@@ -657,19 +680,19 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
                     <Package className="w-4 h-4 text-blue-400" />
                     <div>
                       <span className="font-bold text-slate-200 block">Takeaway Fulfillment</span>
-                      <span className="text-[10px] text-slate-400">{flags.enableTakeawayOrdering ? 'Active' : 'Locked'}</span>
+                      <span className="text-[10px] text-slate-400">{currentFlags.enableTakeawayOrdering ? 'Active' : 'Locked'}</span>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleToggle('enableTakeawayOrdering', !flags.enableTakeawayOrdering)}
+                    onClick={() => handleToggle('enableTakeawayOrdering', !currentFlags.enableTakeawayOrdering)}
                     className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer ${
-                      flags.enableTakeawayOrdering
+                      currentFlags.enableTakeawayOrdering
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                     }`}
                   >
-                    {flags.enableTakeawayOrdering ? 'Active' : 'Locked'}
+                    {currentFlags.enableTakeawayOrdering ? 'Active' : 'Locked'}
                   </button>
                 </div>
 
@@ -679,19 +702,19 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
                     <Bike className="w-4 h-4 text-emerald-400" />
                     <div>
                       <span className="font-bold text-slate-200 block">Delivery Fulfillment</span>
-                      <span className="text-[10px] text-slate-400">{flags.enableDeliveryOrdering ? 'Active' : 'Locked'}</span>
+                      <span className="text-[10px] text-slate-400">{currentFlags.enableDeliveryOrdering ? 'Active' : 'Locked'}</span>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleToggle('enableDeliveryOrdering', !flags.enableDeliveryOrdering)}
+                    onClick={() => handleToggle('enableDeliveryOrdering', !currentFlags.enableDeliveryOrdering)}
                     className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer ${
-                      flags.enableDeliveryOrdering
+                      currentFlags.enableDeliveryOrdering
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                     }`}
                   >
-                    {flags.enableDeliveryOrdering ? 'Active' : 'Locked'}
+                    {currentFlags.enableDeliveryOrdering ? 'Active' : 'Locked'}
                   </button>
                 </div>
 
@@ -701,19 +724,19 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
                     <Tag className="w-4 h-4 text-orange-400" />
                     <div>
                       <span className="font-bold text-slate-200 block">Coupon Engine</span>
-                      <span className="text-[10px] text-slate-400">{flags.enableCoupons ? 'Active' : 'Locked'}</span>
+                      <span className="text-[10px] text-slate-400">{currentFlags.enableCoupons ? 'Active' : 'Locked'}</span>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleToggle('enableCoupons', !flags.enableCoupons)}
+                    onClick={() => handleToggle('enableCoupons', !currentFlags.enableCoupons)}
                     className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer ${
-                      flags.enableCoupons
+                      currentFlags.enableCoupons
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                     }`}
                   >
-                    {flags.enableCoupons ? 'Active' : 'Locked'}
+                    {currentFlags.enableCoupons ? 'Active' : 'Locked'}
                   </button>
                 </div>
 
@@ -723,19 +746,19 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
                     <Wallet className="w-4 h-4 text-amber-400" />
                     <div>
                       <span className="font-bold text-slate-200 block">Bhatti Wallet & Embers</span>
-                      <span className="text-[10px] text-slate-400">{flags.enableWalletSection ? 'Enabled' : 'Disabled'}</span>
+                      <span className="text-[10px] text-slate-400">{currentFlags.enableWalletSection ? 'Enabled' : 'Disabled'}</span>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleToggle('enableWalletSection', !flags.enableWalletSection)}
+                    onClick={() => handleToggle('enableWalletSection', !currentFlags.enableWalletSection)}
                     className={`px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer ${
-                      flags.enableWalletSection
+                      currentFlags.enableWalletSection
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                     }`}
                   >
-                    {flags.enableWalletSection ? 'Active' : 'Locked'}
+                    {currentFlags.enableWalletSection ? 'Active' : 'Locked'}
                   </button>
                 </div>
               </div>
@@ -765,7 +788,7 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {standardCategories.map((cat) => {
-                  const isDisabled = (flags.disabledCategories || []).includes(cat);
+                  const isDisabled = (currentFlags.disabledCategories || []).includes(cat);
                   return (
                     <div
                       key={cat}

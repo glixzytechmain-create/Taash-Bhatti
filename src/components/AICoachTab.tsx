@@ -13,20 +13,25 @@ import {
   ChefHat,
   Award,
 } from 'lucide-react';
-import { Meal } from '../types';
+import { Meal, OrderItem } from '../types';
 import { MEALS_DATA } from '../data';
+import CartQuantityButton from './CartQuantityButton';
 
 interface AICoachTabProps {
   onAddToCart: (meal: Meal) => void;
   selectedGym?: any;
   onQuickView: (meal: Meal) => void;
   meals?: Meal[];
+  cart?: OrderItem[];
+  onUpdateQuantity?: (mealId: string, delta: number) => void;
 }
 
 export default function AICoachTab({
   onAddToCart,
   onQuickView,
   meals = MEALS_DATA,
+  cart = [],
+  onUpdateQuantity,
 }: AICoachTabProps) {
   // Input states
   const [flavorProfile, setFlavorProfile] = useState<string>('spicy');
@@ -357,19 +362,24 @@ export default function AICoachTab({
                   <div className="flex flex-col justify-between items-end shrink-0 pl-1">
                     <span className="text-xs font-black text-brand-charcoal">₹{meal.price}</span>
                     
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={() => onQuickView(meal)}
                         className="p-1 rounded-lg border border-brand-green/10 text-brand-green hover:bg-brand-green/5 transition-all cursor-pointer"
+                        title="Quick View"
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                      <button
-                        onClick={() => onAddToCart(meal)}
-                        className="bg-brand-green text-white font-black text-[9px] px-2.5 py-1.5 rounded-lg hover:bg-brand-green/90 transition-all flex items-center gap-0.5 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" /> Add +
-                      </button>
+                      <CartQuantityButton
+                        size="sm"
+                        quantity={cart.find((i) => i.meal.id === meal.id)?.quantity || 0}
+                        onAdd={() => onAddToCart(meal)}
+                        onIncrement={() => (onUpdateQuantity ? onUpdateQuantity(meal.id, 1) : onAddToCart(meal))}
+                        onDecrement={() => onUpdateQuantity && onUpdateQuantity(meal.id, -1)}
+                        disabled={meal.isAvailable === false}
+                        disabledLabel="Sold Out"
+                        addLabel="Add"
+                      />
                     </div>
                   </div>
                 </div>

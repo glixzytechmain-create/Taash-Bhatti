@@ -43,6 +43,7 @@ export interface Meal {
   isFeatured?: boolean;
   ingredients?: { name: string; grams: number }[];
   prepTimeMinutes?: number;
+  goesWellWith?: string[]; // IDs of menu items / meals that pair well with this dish
 }
 
 export interface User {
@@ -185,6 +186,7 @@ export interface DealOffer {
   description: string;
   badge?: string;                // e.g. "CHEF SPECIAL", "SAVE 35%", "BOGO FREE", "BESTSELLER"
   image: string;
+  ctaButtonText?: string;        // Custom button CTA label (e.g. "Customize 3-Course Box ➜")
   offerType: DealOfferType;
 
   // Pricing Architecture
@@ -246,6 +248,7 @@ export interface Order {
   userId?: string;
   kitchenId?: string;
   kitchenName?: string;
+  preferredKitchenId?: string;
   eligibleKitchenIds?: string[];
   acceptedByKitchenId?: string;
   acceptedKitchenName?: string;
@@ -276,6 +279,7 @@ export interface Order {
   customerName?: string;
   customerPhone?: string;
   deliveryOtp?: string;
+  orderOtp?: string;
   riderLat?: number;
   riderLng?: number;
   riderLastUpdated?: string;
@@ -305,6 +309,113 @@ export interface Order {
   autoDispatched?: boolean;
   dispatchBroadcastAt?: string;
   dispatchStatus?: 'pending_dispatch' | 'dispatched_to_nearest' | 'accepted_by_rider';
+  // Buddy Deck Gifts / Cross-Account Ordering
+  isBuddyOrder?: boolean;
+  senderId?: string;
+  senderName?: string;
+  senderPhone?: string;
+  receiverId?: string;
+  receiverName?: string;
+  receiverPhone?: string;
+  buddyApprovalCode?: string;
+  // Group Ordering Room
+  isGroupOrder?: boolean;
+  groupRoomId?: string;
+  groupRoomCode?: string;
+  groupTreatMode?: 'group_treat' | 'your_treat';
+  participantUserIds?: string[]; // All participant userIds for shared order history (revenue calculated once per orderId)
+  groupMembersSummary?: { memberName: string; itemsCount: number; paidAmount: number; hasPaid: boolean }[];
+  isNonCancellable?: boolean;
+}
+
+export interface GroupOrderMember {
+  id: string; // userId or guestId
+  name: string;
+  avatar?: string;
+  isHost: boolean;
+  hasPaid: boolean;
+  paymentMode?: 'online' | 'cod';
+  paidAt?: string;
+  joinedAt: string;
+  subtotal: number;
+  itemsCount: number;
+}
+
+export interface GroupCartItem {
+  id: string;
+  mealId: string;
+  meal: Meal;
+  quantity: number;
+  addedByUserId: string;
+  addedByName: string;
+  addedAt: string;
+  customization?: string;
+}
+
+export interface GroupChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  isHost?: boolean;
+  text: string;
+  type: 'chat' | 'system' | 'food_added' | 'payment_made';
+  timestamp: string;
+  reactions?: { [emoji: string]: string[] }; // emoji -> userIds
+}
+
+export interface GroupOrderRoom {
+  id: string;
+  code: string; // 6-character room code (e.g. "TB-7291")
+  pin: string;  // 4-digit numeric PIN
+  name: string; // e.g. "Dawat with Friends"
+  hostUserId: string;
+  hostName: string;
+  hostAvatar?: string;
+  treatMode: 'group_treat' | 'your_treat'; // 'group_treat' (split/everyone pays for own) or 'your_treat' (host treats & pays)
+  status: 'active' | 'payment_started' | 'locked' | 'ordered' | 'disbanded';
+  kitchenId?: string;
+  kitchenName?: string;
+  deliveryAddress: {
+    street: string;
+    city: string;
+    pincode: string;
+    landmark?: string;
+    lat?: number;
+    lng?: number;
+  };
+  members: { [userId: string]: GroupOrderMember };
+  items: GroupCartItem[];
+  chatMessages: GroupChatMessage[];
+  firstPaymentTime?: string; // ISO string when first payment occurred
+  paymentExpiryTime?: string; // ISO string = firstPaymentTime + 10 mins
+  paymentModeLock?: 'online' | 'cod' | null; // Determined by 1st payment
+  firstPayerId?: string;
+  firstPayerName?: string;
+  createdAt: string;
+  finalOrderId?: string;
+  orderOtp?: string; // 4-digit Delivery Verification OTP generated upon placing order
+  savedAddressLabel?: string; // e.g. "Home", "Office", "Gym"
+  deliveryFee: number; // 0 if >= 200, else 40 (on creator)
+  isNonCancellable: boolean;
+  cartLocked?: boolean;
+}
+
+export interface BuddyDeckRequest {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderPhone?: string;
+  receiverId: string;
+  receiverName?: string;
+  status: 'pending' | 'accepted' | 'used' | 'declined' | 'expired';
+  approvalCode?: string;
+  createdAt: string;
+  expiresAt?: string;
+  selectedAddress?: string;
+  selectedBhattiId?: string;
+  selectedBhattiName?: string;
+  itemsCount?: number;
 }
 
 export interface DeliveryPartner {
@@ -426,18 +537,24 @@ export interface Kitchen {
   registeredAt?: string;
   isActive?: boolean;
   isTakingOrders?: boolean;
-  globalPrepDelayMinutes?: number; // Kitchen-wide prep time adjustment/delay in minutes
-  isRaining?: boolean; // Kitchen Manager toggle: Currently Raining Mode
+  disabledDishIds?: string[]; // Dishes currently sold out at this specific Bhatti
+  soldOutDishIds?: string[]; // Dishes currently sold out at this specific Bhatti
+  globalPrepDelayMinutes?: number; // Bhatti-wide prep time adjustment/delay in minutes
+  isRaining?: boolean; // Bhatti Manager toggle: Currently Raining Mode
   rainDelayMinutes?: number; // Extra delay minutes when raining
   phone?: string;
   managerName?: string;
+  rating?: number;
+  specialties?: string[];
+  image?: string;
+  description?: string;
 }
 
 export interface KitchenInventoryItem {
   id: string;
   kitchenId: string;
   name: string;
-  category: 'raw_ingredients' | 'proteins' | 'dairy' | 'vegetables' | 'pantry_spices' | 'packaging' | 'beverages';
+  category: 'raw_ingredients' | 'proteins' | 'dairy' | 'vegetables' | 'pantry_spices' | 'packaging' | 'beverages' | 'wastage';
   quantity: number;
   unit: 'kg' | 'g' | 'liters' | 'ml' | 'units' | 'packs' | 'boxes';
   minThreshold: number; // Low stock threshold
@@ -449,6 +566,71 @@ export interface KitchenInventoryItem {
   notes?: string;
   connectedMealIds?: string[]; // Menu items / dishes requiring this ingredient
   startingShiftQuantity?: number; // Starting stock when shift opened
+}
+
+export type WastageReasonCategory = 
+  | 'expired_spoiled'            // Storage expiry, sour, mold or rot
+  | 'prep_trim_error'            // Trim waste, slicing defect, kitchen spill
+  | 'burnt_overcooked'           // Burnt on grill/tandoor or overcooked
+  | 'wrong_preparation'         // Incorrect dish cooked or customer allergy/mod missed
+  | 'transit_spill_damage'       // Rider dropped / container seal burst in transit
+  | 'customer_cancellation'     // Cancelled after kitchen completed or dispatched
+  | 'customer_rejected_return'  // Customer refused delivery / food cold dispute
+  | 'storage_temp_breach'        // Deep freezer / refrigerator temperature breach
+  | 'packaging_defect'           // Punctured packaging or seal damage
+  | 'contamination';             // Sanitation reject or foreign object
+
+export interface WastageOrderMetadata {
+  orderId: string;
+  orderDate?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  address?: string;
+  deliveryPartnerId?: string;
+  deliveryPartnerName?: string;
+  deliveryPartnerPhone?: string;
+  deliveryPartnerVehicle?: string;
+  deliveryVehicleNumber?: string;
+  orderTotal?: number;
+  itemsSummary?: string;
+  orderStatus?: string;
+  fulfillmentMode?: 'delivery' | 'takeaway';
+  quickActionTaken?: string;
+}
+
+export interface KitchenWastageRecord {
+  id: string;
+  kitchenId: string;
+  kitchenName?: string;
+  type: 'ingredient' | 'whole_dish' | 'order';
+  
+  // Target item details
+  targetId: string; // ingredientId, mealId, or orderId
+  targetName: string; // e.g. "Chicken Breast Trimmed", "Tandoori Bhatti Paneer Tikka", or "Order #TB-94182"
+  category?: string; // e.g. 'proteins', 'vegetables', 'raw_ingredients', 'Main Course', etc.
+  
+  quantity: number; // e.g. 1.5 kg or 2 dishes or 1 order
+  unit: string; // 'kg', 'g', 'liters', 'units', 'dishes', 'orders'
+  
+  // Financial loss
+  unitCost?: number; // Cost per unit (e.g. ₹220/kg or ₹180 dish cost)
+  financialLoss: number; // Total loss in ₹
+  
+  // Wastage reasoning & disposition
+  reasonCategory: WastageReasonCategory;
+  reasonNotes?: string;
+  dispositionAction: 'discarded' | 'returned_to_vendor' | 'composted' | 'staff_meal' | 'bio_waste';
+  
+  // If whole order waste
+  orderMetadata?: WastageOrderMetadata;
+  
+  // Audit trail
+  loggedBy: string; // Kitchen Manager name or Admin name
+  loggedAt: string; // ISO string
+  reportDate: string; // YYYY-MM-DD
+  shiftType?: 'morning' | 'evening' | 'full_day';
+  status: 'logged' | 'verified_by_audit' | 'written_off';
 }
 
 export interface KitchenEODReport {
@@ -481,6 +663,28 @@ export interface KitchenEODReport {
   cashReconciliationVariance: number; // cashDepositedAtKitchen - codCollectedByFleet
   prepaidRevenue: number;
   
+  // 4. Wastage & Food Loss Reconciliation (Enterprise QSR Standard)
+  totalWastageLoss: number; // Total ₹ lost to waste
+  rawMaterialWastageLoss: number; // ₹ lost in raw ingredients/prep
+  finishedGoodsWastageLoss: number; // ₹ lost in whole dishes/orders
+  totalWastageItemsCount: number; // Total items/entries wasted
+  wastagePctOfRevenue: number; // (totalWastageLoss / grossRevenue) * 100
+  wastageBreakdownByReason?: {
+    reasonCategory: string;
+    count: number;
+    totalLoss: number;
+  }[];
+  wastedItemsList?: {
+    id: string;
+    type: 'ingredient' | 'whole_dish' | 'order';
+    name: string;
+    quantity: number;
+    unit: string;
+    financialLoss: number;
+    reason: string;
+    loggedAt: string;
+  }[];
+
   // Shift Remarks & Inventory Metrics
   depletedStockItems?: {
     name: string;

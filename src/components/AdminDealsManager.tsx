@@ -79,6 +79,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
   const [title, setTitle] = useState('');
   const [tagline, setTagline] = useState('');
   const [description, setDescription] = useState('');
+  const [ctaButtonText, setCtaButtonText] = useState('');
   const [badge, setBadge] = useState('CHEF SPECIAL');
   const [image, setImage] = useState(PRESET_DEAL_IMAGES[0]);
   const [offerType, setOfferType] = useState<DealOfferType>('build_your_deck');
@@ -150,6 +151,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
     setTitle('');
     setTagline('');
     setDescription('');
+    setCtaButtonText('');
     setBadge('CHEF SPECIAL');
     setImage(PRESET_DEAL_IMAGES[0]);
     setOfferType('build_your_deck');
@@ -167,7 +169,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
       {
         id: 'step-' + Date.now() + '-1',
         stepNumber: 1,
-        title: 'Step 1: Choose Your Royal Main Course',
+        title: 'Choose Your Royal Main Course',
         description: 'Select 1 signature charcoal-smoked delicacy',
         minSelection: 1,
         maxSelection: 1,
@@ -177,7 +179,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
       {
         id: 'step-' + Date.now() + '-2',
         stepNumber: 2,
-        title: 'Step 2: Choose Artisanal Breads / Rice',
+        title: 'Choose Artisanal Breads / Rice',
         description: 'Select 1 carbohydrate accompaniment',
         minSelection: 1,
         maxSelection: 1,
@@ -187,7 +189,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
       {
         id: 'step-' + Date.now() + '-3',
         stepNumber: 3,
-        title: 'Step 3: Choose Refreshing Drink or Dessert',
+        title: 'Choose Refreshing Drink or Dessert',
         description: 'Select 1 refreshing drink or artisanal sweet',
         minSelection: 1,
         maxSelection: 1,
@@ -217,6 +219,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
     setTitle(deal.title || '');
     setTagline(deal.tagline || '');
     setDescription(deal.description || '');
+    setCtaButtonText(deal.ctaButtonText || '');
     setBadge(deal.badge || 'CHEF SPECIAL');
     setImage(deal.image || PRESET_DEAL_IMAGES[0]);
     setOfferType(deal.offerType || 'build_your_deck');
@@ -311,7 +314,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
     const newStep: DealStep = {
       id: 'step-' + Date.now(),
       stepNumber: nextNum,
-      title: `Step ${nextNum}: Custom Selection`,
+      title: `Course ${nextNum}: Custom Selection`,
       description: `Select your preferred item`,
       minSelection: 1,
       maxSelection: 1,
@@ -326,7 +329,6 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
     const updated = steps.filter((_, i) => i !== idx).map((s, i) => ({
       ...s,
       stepNumber: i + 1,
-      title: s.title.startsWith('Step ') ? `Step ${i + 1}: ` + s.title.replace(/^Step \d+:\s*/, '') : s.title
     }));
     setSteps(updated);
     setActiveStepEditingIdx(Math.max(0, idx - 1));
@@ -342,7 +344,6 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
     const renumbered = updated.map((s, i) => ({
       ...s,
       stepNumber: i + 1,
-      title: s.title.startsWith('Step ') ? `Step ${i + 1}: ` + s.title.replace(/^Step \d+:\s*/, '') : s.title
     }));
     setSteps(renumbered);
     setActiveStepEditingIdx(targetIdx);
@@ -433,6 +434,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
       description: description.trim(),
       badge: badge.trim(),
       image: image.trim() || PRESET_DEAL_IMAGES[0],
+      ctaButtonText: ctaButtonText.trim(),
       offerType,
       pricingMode,
       packagePrice: Number(packagePrice),
@@ -1005,15 +1007,40 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-300">Tagline / Quick Subtitle</label>
-                      <input
-                        type="text"
-                        value={tagline}
-                        onChange={(e) => setTagline(e.target.value)}
-                        placeholder="e.g. Craft your personalized 4-course royal meal box with chef tandoor specials"
-                        className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-green"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-300">Tagline / Quick Subtitle</label>
+                        <input
+                          type="text"
+                          value={tagline}
+                          onChange={(e) => setTagline(e.target.value)}
+                          placeholder="e.g. Craft your personalized meal box with chef tandoor specials"
+                          className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-green"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-300 flex items-center justify-between">
+                          <span>Action Button / Box CTA Label</span>
+                          <span className="text-[10px] text-amber-400 font-bold">Creator Custom Label</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={ctaButtonText}
+                          onChange={(e) => setCtaButtonText(e.target.value)}
+                          placeholder={
+                            offerType === 'build_your_deck'
+                              ? `e.g. Customize ${steps.length || 3}-Course Box ➜`
+                              : 'e.g. Add Deal ➜'
+                          }
+                          className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-green"
+                        />
+                        <p className="text-[10px] text-gray-400">
+                          {offerType === 'build_your_deck'
+                            ? `Write whatever you want here (e.g. "Customize ${steps.length || 3}-Course Box ➜", "Build Your Box ➜"). Leave empty to auto-label as "Customize ${steps.length || 3}-Course Box ➜".`
+                            : 'Leave blank to use standard button label.'}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="space-y-1.5">
@@ -1163,7 +1190,7 @@ export default function AdminDealsManager({ deals: propDeals, meals, onRefresh }
                                       return copy;
                                     });
                                   }}
-                                  placeholder="e.g. Step 1: Choose Your Royal Bhatti Main"
+                                  placeholder="e.g. Choose Your Royal Bhatti Main Course"
                                   className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green"
                                 />
                               </div>

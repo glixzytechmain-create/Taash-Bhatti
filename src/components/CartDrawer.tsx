@@ -29,6 +29,7 @@ import {
   Coins,
   Zap,
   ShieldCheck,
+  Maximize2,
 } from 'lucide-react';
 import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder } from '../lib/walletService';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -36,12 +37,10 @@ import { db, auth } from '../lib/firebase';
 import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags } from '../types';
 import { getStoredFeatureFlags, subscribeFeatureFlags } from '../lib/featureFlags';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-
-const GOOGLE_MAPS_API_KEY =
-  (typeof process !== 'undefined' ? process.env?.GOOGLE_MAPS_PLATFORM_KEY : '') ||
-  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
-  (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
-  '';
+import { GOOGLE_MAPS_API_KEY, reverseGeocodeCoords, isGoogleMapsAuthFailed } from '../lib/googleMaps';
+import { LeafletMap } from './LeafletMap';
+import FullScreenAddressPinModal from './FullScreenAddressPinModal';
+import GoesWellWithExtension from './GoesWellWithExtension';
 
 // High-fidelity fallback locations in Muzaffarpur, Bihar for map searching
 const MUZAFFARPUR_LOCATIONS = [
@@ -68,20 +67,163 @@ function CustomerLocationPicker({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+  const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
+
+  useEffect(() => {
+    const handleFail = () => setUseLeaflet(true);
+    window.addEventListener('fitzaika_maps_auth_failed', handleFail);
+    return () => window.removeEventListener('fitzaika_maps_auth_failed', handleFail);
+  }, []);
+
+  const handleLeafletSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setLoading(true);
+    const q = searchQuery.toLowerCase();
+    const matched = MUZAFFARPUR_LOCATIONS.find((loc) => loc.name.toLowerCase().includes(q));
+    if (matched) {
+      setMapCoords({ lat: matched.lat, lng: matched.lng });
+      setMapAddress(matched.name);
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + ', Muzaffarpur')}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data[0]) {
+          const lat = parseFloat(data[0].lat);
+          const lng = parseFloat(data[0].lon);
+          setMapCoords({ lat, lng });
+          setMapAddress(data[0].display_name);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (e) {}
+
+    setMapAddress(`${searchQuery}, Muzaffarpur, Bihar`);
+    setLoading(false);
+  };
+
+  if (useLeaflet || !GOOGLE_MAPS_API_KEY) {
+    return (
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-charcoal/40" />
+            <input
+              type="text"
+              placeholder="Search address, landmark or area..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleLeafletSearch();
+                }
+              }}
+              className="w-full bg-white border border-brand-green/20 rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-brand-charcoal placeholder-brand-charcoal/40 focus:outline-none focus:border-brand-green"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleLeafletSearch}
+            disabled={loading}
+            className="px-4 py-2 bg-brand-green text-white font-bold text-xs rounded-xl hover:bg-brand-green/90 cursor-pointer disabled:opacity-50 transition-all flex items-center gap-1.5"
+          >
+            {loading ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <>
+                <Search className="w-3.5 h-3.5" />
+                <span>Search</span>
+              </>
+            )}
+          </button>
+        </div>
+        <div 
+          onClick={() => setIsFullScreenOpen(true)}
+          className="h-44 w-full rounded-2xl overflow-hidden border border-brand-green/15 relative shadow-sm cursor-pointer group"
+          title="Click to expand map to full screen"
+        >
+          <LeafletMap
+            center={mapCoords}
+            zoom={14}
+            interactive={true}
+            draggableCustomerPin={true}
+            points={[{ lat: mapCoords.lat, lng: mapCoords.lng, label: 'Delivery Location', type: 'customer' }]}
+            onPositionSelect={async (coords) => {
+              setMapCoords(coords);
+              const addr = await reverseGeocodeCoords(coords.lat, coords.lng);
+              setMapAddress(addr);
+            }}
+            className="w-full h-full"
+          />
+
+          {/* TAP TO MAKE MAP BIGGER MESSAGE BADGE */}
+          <div 
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFullScreenOpen(true);
+            }}
+            className="absolute bottom-2 inset-x-2 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3 py-1.5 rounded-xl border border-emerald-500/30 flex items-center justify-between text-[10px] font-bold cursor-pointer transition-all shadow-md group-hover:border-emerald-400"
+          >
+            <span className="flex items-center gap-1.5 text-emerald-300">
+              <Sparkles className="w-3 h-3 text-emerald-400" />
+              <span>✨ Tap map to enlarge full-screen for precise doorstep pin & address search</span>
+            </span>
+            <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1 group-hover:bg-emerald-500 shrink-0">
+              <Maximize2 className="w-2.5 h-2.5" /> Enlarge
+            </span>
+          </div>
+        </div>
+
+        {/* FULLSCREEN DOORSTEP PIN MODAL */}
+        <FullScreenAddressPinModal
+          isOpen={isFullScreenOpen}
+          onClose={() => setIsFullScreenOpen(false)}
+          initialCoords={mapCoords}
+          initialAddress={mapAddress}
+          onConfirmPin={(coords, address) => {
+            setMapCoords(coords);
+            setMapAddress(address);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
-    <APIProvider apiKey={GOOGLE_MAPS_API_KEY || ''}>
-      <CustomerMapAndSearchContent
-        mapCoords={mapCoords}
-        setMapCoords={setMapCoords}
-        mapAddress={mapAddress}
-        setMapAddress={setMapAddress}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        loading={loading}
-        setLoading={setLoading}
+    <>
+      <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
+        <CustomerMapAndSearchContent
+          mapCoords={mapCoords}
+          setMapCoords={setMapCoords}
+          mapAddress={mapAddress}
+          setMapAddress={setMapAddress}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          loading={loading}
+          setLoading={setLoading}
+          onOpenFullScreen={() => setIsFullScreenOpen(true)}
+        />
+      </APIProvider>
+
+      {/* FULLSCREEN DOORSTEP PIN MODAL */}
+      <FullScreenAddressPinModal
+        isOpen={isFullScreenOpen}
+        onClose={() => setIsFullScreenOpen(false)}
+        initialCoords={mapCoords}
+        initialAddress={mapAddress}
+        onConfirmPin={(coords, address) => {
+          setMapCoords(coords);
+          setMapAddress(address);
+        }}
       />
-    </APIProvider>
+    </>
   );
 }
 
@@ -93,6 +235,7 @@ function CustomerMapAndSearchContent({
   setSearchQuery,
   loading,
   setLoading,
+  onOpenFullScreen,
 }: any) {
   const map = useMap();
   const placesLib = useMapsLibrary('places');
@@ -161,27 +304,13 @@ function CustomerMapAndSearchContent({
     setLoading(false);
   };
 
-  const handleMapClick = (e: any) => {
+  const handleMapClick = async (e: any) => {
     if (e.detail && e.detail.latLng) {
       const lat = e.detail.latLng.lat;
       const lng = e.detail.latLng.lng;
       setMapCoords({ lat, lng });
-      if (typeof window !== 'undefined' && (window as any).google && (window as any).google.maps) {
-        try {
-          const geocoder = new (window as any).google.maps.Geocoder();
-          geocoder.geocode({ location: { lat, lng } }, (results: any, status: any) => {
-            if (status === 'OK' && results && results[0]) {
-              setMapAddress(results[0].formatted_address);
-            } else {
-              setMapAddress(`Pinpoint (${lat.toFixed(4)}, ${lng.toFixed(4)}), Muzaffarpur`);
-            }
-          });
-        } catch (err) {
-          setMapAddress(`Pinpoint (${lat.toFixed(4)}, ${lng.toFixed(4)}), Muzaffarpur`);
-        }
-      } else {
-        setMapAddress(`Pinpoint (${lat.toFixed(4)}, ${lng.toFixed(4)}), Muzaffarpur`);
-      }
+      const address = await reverseGeocodeCoords(lat, lng);
+      setMapAddress(address);
     }
   };
 
@@ -222,14 +351,18 @@ function CustomerMapAndSearchContent({
       </div>
 
       {GOOGLE_MAPS_API_KEY ? (
-        <div className="h-44 w-full rounded-2xl overflow-hidden border border-brand-green/15 relative shadow-sm">
+        <div 
+          onClick={onOpenFullScreen}
+          className="h-44 w-full rounded-2xl overflow-hidden border border-brand-green/15 relative shadow-sm cursor-pointer group"
+          title="Click to expand map to full screen"
+        >
           <GoogleMap
             center={mapCoords}
             zoom={14}
             gestureHandling={'cooperative'}
             disableDefaultUI={true}
             mapId="DEMO_MAP_ID"
-            internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+            internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
             style={{ width: '100%', height: '100%' }}
             onClick={handleMapClick}
           >
@@ -237,6 +370,23 @@ function CustomerMapAndSearchContent({
               <Pin background={'#2E7D32'} borderColor={'#FFF'} glyphColor={'#FFF'} />
             </AdvancedMarker>
           </GoogleMap>
+
+          {/* TAP TO MAKE MAP BIGGER MESSAGE BADGE */}
+          <div 
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenFullScreen?.();
+            }}
+            className="absolute bottom-2 inset-x-2 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3 py-1.5 rounded-xl border border-emerald-500/30 flex items-center justify-between text-[10px] font-bold cursor-pointer transition-all shadow-md group-hover:border-emerald-400"
+          >
+            <span className="flex items-center gap-1.5 text-emerald-300">
+              <Sparkles className="w-3 h-3 text-emerald-400" />
+              <span>✨ Tap map to enlarge full-screen for precise doorstep pin & address search</span>
+            </span>
+            <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1 group-hover:bg-emerald-500 shrink-0">
+              <Maximize2 className="w-2.5 h-2.5" /> Enlarge
+            </span>
+          </div>
         </div>
       ) : (
         <div
@@ -248,8 +398,9 @@ function CustomerMapAndSearchContent({
             const simLng = 85.3647 + (x - 0.5) * 0.05;
             setMapCoords({ lat: simLat, lng: simLng });
             setMapAddress(`Pinpoint (${simLat.toFixed(4)}, ${simLng.toFixed(4)}), Muzaffarpur`);
+            onOpenFullScreen?.();
           }}
-          className="h-44 w-full rounded-2xl bg-[#0F172A] border border-brand-green/20 relative overflow-hidden flex flex-col justify-between p-3.5 font-mono text-[9px] text-emerald-400 cursor-crosshair select-none shadow-inner"
+          className="h-44 w-full rounded-2xl bg-[#0F172A] border border-brand-green/20 relative overflow-hidden flex flex-col justify-between p-3.5 font-mono text-[9px] text-emerald-400 cursor-crosshair select-none shadow-inner group"
         >
           <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:20px_20px] opacity-40" />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -264,6 +415,24 @@ function CustomerMapAndSearchContent({
             <MapPin className="w-6 h-6 text-brand-orange drop-shadow-[0_0_8px_rgba(244,163,26,0.6)]" />
             <span className="bg-brand-charcoal text-brand-cream border border-brand-green/20 px-1.5 py-0.5 rounded text-[8px] mt-1 font-bold whitespace-nowrap">Home target locked</span>
           </div>
+
+          {/* TAP TO MAKE MAP BIGGER MESSAGE BADGE */}
+          <div 
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenFullScreen?.();
+            }}
+            className="relative z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3 py-1.5 rounded-xl border border-emerald-500/30 flex items-center justify-between text-[10px] font-bold cursor-pointer transition-all shadow-md group-hover:border-emerald-400"
+          >
+            <span className="flex items-center gap-1.5 text-emerald-300">
+              <Sparkles className="w-3 h-3 text-emerald-400" />
+              <span>✨ Tap map to enlarge full-screen for precise doorstep pin & address search</span>
+            </span>
+            <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1 group-hover:bg-emerald-500 shrink-0">
+              <Maximize2 className="w-2.5 h-2.5" /> Enlarge
+            </span>
+          </div>
+
           <div className="relative flex justify-between items-end pointer-events-none">
             <div>
               <span className="block text-emerald-500/60 font-semibold text-[8px]">COORDINATES</span>
@@ -284,7 +453,7 @@ interface CartDrawerProps {
   cartItems: OrderItem[];
   onUpdateQuantity: (mealId: string, delta: number) => void;
   onRemoveItem: (mealId: string) => void;
-  selectedGym: Gym | null;
+  selectedBhatti?: Kitchen | null;
   user: User;
   onPlaceOrder: (newOrder: Order) => void;
   onClearCart: () => void;
@@ -302,7 +471,7 @@ export default function CartDrawer({
   cartItems,
   onUpdateQuantity,
   onRemoveItem,
-  selectedGym,
+  selectedBhatti,
   user,
   onPlaceOrder,
   onClearCart,
@@ -339,6 +508,9 @@ export default function CartDrawer({
   // Item Customizations Map: { [itemIdx: number]: OrderItemCustomization }
   const [itemCustomizations, setItemCustomizations] = useState<Record<number, any>>({});
   const [customizingItemIndex, setCustomizingItemIndex] = useState<number | null>(null);
+
+  // Goes Well With Extension dismissed state per item key
+  const [dismissedPairingItemKeys, setDismissedPairingItemKeys] = useState<string[]>([]);
 
   // User Deck / Favorite Meals Suggestions shown below added items in cart
   // ONLY show what is actually in user's deck (no fallback mock/dummy items)
@@ -610,15 +782,18 @@ export default function CartDrawer({
     let dealSum = 0;
 
     cartItems.forEach((item, idx) => {
-      const custom = itemCustomizations[idx] || item.customization;
+      const isDealItem = Boolean(item.isDeal || item.dealId);
+      const custom = isDealItem ? null : (itemCustomizations[idx] || item.customization);
       let extra = 0;
-      if (custom?.portionSize === 'large') extra += 40;
-      if (custom?.portionSize === 'jumbo') extra += 80;
-      if (custom?.addOns && Array.isArray(custom.addOns)) {
-        extra += custom.addOns.reduce((aSum: number, addon: any) => aSum + (addon.price || 0), 0);
+      if (!isDealItem) {
+        if (custom?.portionSize === 'large') extra += 40;
+        if (custom?.portionSize === 'jumbo') extra += 80;
+        if (custom?.addOns && Array.isArray(custom.addOns)) {
+          extra += custom.addOns.reduce((aSum: number, addon: any) => aSum + (addon.price || 0), 0);
+        }
       }
       const itemPrice = (item.meal.price + extra) * item.quantity;
-      if (item.isDeal || item.dealId) {
+      if (isDealItem) {
         dealSum += itemPrice;
       } else {
         regSum += itemPrice;
@@ -773,10 +948,7 @@ export default function CartDrawer({
       }
 
       if (couponData.scope === 'gym_only') {
-        if (!selectedGym || selectedGym.id !== couponData.targetGymId) {
-          setCouponError('Exclusive to orders connected with specific gym terminals.');
-          return;
-        }
+        // Obsolete gym scope
       }
 
       // 3. Stacking Validations
@@ -899,21 +1071,11 @@ export default function CartDrawer({
       }
     }
 
-    const eligibleKitchens = allKitchens.filter((kitchen) => {
-      if (kitchen.isActive === false || kitchen.isTakingOrders === false) return false;
-      if (!kitchen.lat || !kitchen.lng) return true;
-      const dist = getDistanceKm(activeDeliveryCoords.lat, activeDeliveryCoords.lng, kitchen.lat, kitchen.lng);
-      const radius = kitchen.geofenceRadius || 15;
-      return dist <= radius;
-    });
-
-    const primaryKitchen = eligibleKitchens.length > 0
-      ? eligibleKitchens[0]
-      : (deliveryKitchenInfo.closestKitchen || allKitchens[0]);
-
-    const eligibleKitchenIds = eligibleKitchens.length > 0
-      ? eligibleKitchens.map(k => k.id)
-      : (primaryKitchen ? [primaryKitchen.id] : (allKitchens.length > 0 ? allKitchens.map(k => k.id) : ['k1']));
+    // Kitchen targeting: If preferred Bhatti is selected, target it exclusively.
+    // Otherwise, broadcast to all active kitchens (no auto-dispatch; first to accept proceeds).
+    const eligibleKitchenIds = selectedBhatti 
+      ? [selectedBhatti.id] 
+      : allKitchens.map(k => k.id);
 
     // Derive sauté lane assignment for KDS based strictly on Veg/Non-Veg
     let lane: 'lane_a' | 'lane_b' | 'lane_c' = 'lane_a';
@@ -926,10 +1088,10 @@ export default function CartDrawer({
       }
     }
 
-    // Attach custom options to items
+    // Attach custom options to items (deals do not have portion/ingredient customization)
     const enrichedItems: OrderItem[] = cartItems.map((item, idx) => ({
       ...item,
-      customization: itemCustomizations[idx] || item.customization,
+      customization: (item.isDeal || item.dealId) ? undefined : (itemCustomizations[idx] || item.customization),
     }));
 
     const slotLabel = orderTiming === 'scheduled' ? `Scheduled: ${scheduledSlot}` : 'ASAP (15-25 mins)';
@@ -974,14 +1136,15 @@ export default function CartDrawer({
             { title: destinationTitle, description: destinationDesc, done: false },
           ],
       gymId: "",
-      kitchenId: primaryKitchen?.id || "",
-      kitchenName: primaryKitchen?.name || "Cloud Kitchen",
+      preferredKitchenId: selectedBhatti ? selectedBhatti.id : undefined,
+      kitchenId: selectedBhatti ? selectedBhatti.id : "",
+      kitchenName: selectedBhatti ? selectedBhatti.name : "All Available Bhattis",
       eligibleKitchenIds: eligibleKitchenIds,
       deliveryLat: activeDeliveryCoords.lat,
       deliveryLng: activeDeliveryCoords.lng,
       acceptedByKitchenId: "",
       acceptedKitchenName: "",
-      acceptedKitchenAddress: primaryKitchen?.address || "",
+      acceptedKitchenAddress: selectedBhatti ? selectedBhatti.address : "",
       rejectedByKitchenIds: [],
       customerName: user.name || 'Athlete Customer',
       customerPhone: user.phone || 'N/A',
@@ -1019,22 +1182,52 @@ export default function CartDrawer({
     }
 
     // Debit Ember coins if used
-    if (emberCheckout.totalEmberDiscount > 0 && user.id) {
+    if (emberCheckout.totalEmberDiscount > 0) {
+      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('fitzaika_guest_user_id') || 'guest_user';
+      const newGolden = Math.max(0, goldenBalance - emberCheckout.goldenDeduction);
+      const newStandard = Math.max(0, standardBalance - emberCheckout.standardDeduction);
+      const newTotal = newGolden + newStandard;
+
+      const updatedUser: User = {
+        ...user,
+        goldenEmberBalance: newGolden,
+        standardEmberBalance: newStandard,
+        walletBalance: newTotal
+      };
+
+      if (onUpdateUser) {
+        onUpdateUser(updatedUser);
+      }
+
+      try {
+        ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+          const cached = localStorage.getItem(key);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            parsed.goldenEmberBalance = newGolden;
+            parsed.standardEmberBalance = newStandard;
+            parsed.walletBalance = newTotal;
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
+        });
+        window.dispatchEvent(
+          new CustomEvent('fitzaika_user_updated', {
+            detail: {
+              goldenEmberBalance: newGolden,
+              standardEmberBalance: newStandard,
+              walletBalance: newTotal
+            }
+          })
+        );
+      } catch (e) {}
+
       try {
         await debitEmberCoinsForOrder({
-          userId: user.id,
+          userId: activeUserId,
           orderId,
           goldenAmount: emberCheckout.goldenDeduction,
           standardAmount: emberCheckout.standardDeduction
         });
-        if (onUpdateUser) {
-          onUpdateUser({
-            ...user,
-            goldenEmberBalance: Math.max(0, goldenBalance - emberCheckout.goldenDeduction),
-            standardEmberBalance: Math.max(0, standardBalance - emberCheckout.standardDeduction),
-            walletBalance: Math.max(0, (goldenBalance - emberCheckout.goldenDeduction) + (standardBalance - emberCheckout.standardDeduction))
-          });
-        }
       } catch (emberErr) {
         console.warn("Could not debit ember coins:", emberErr);
       }
@@ -1289,15 +1482,18 @@ export default function CartDrawer({
               {/* CART ITEMS LIST WITH CUSTOMIZATIONS */}
               <div className="space-y-3">
                 {cartItems.map((item, idx) => {
-                  const custom = itemCustomizations[idx] || item.customization || {};
+                  const isDealItem = Boolean(item.isDeal || item.dealId);
+                  const custom = isDealItem ? {} : (itemCustomizations[idx] || item.customization || {});
                   let extraPrice = 0;
-                  if (custom.portionSize === 'large') extraPrice += 40;
-                  if (custom.portionSize === 'jumbo') extraPrice += 80;
-                  if (custom.addOns && Array.isArray(custom.addOns)) {
-                    extraPrice += custom.addOns.reduce((sum: number, a: any) => sum + (a.price || 0), 0);
+                  if (!isDealItem) {
+                    if (custom.portionSize === 'large') extraPrice += 40;
+                    if (custom.portionSize === 'jumbo') extraPrice += 80;
+                    if (custom.addOns && Array.isArray(custom.addOns)) {
+                      extraPrice += custom.addOns.reduce((sum: number, a: any) => sum + (a.price || 0), 0);
+                    }
                   }
                   const itemUnitPrice = item.meal.price + extraPrice;
-                  const isCustomizingThis = customizingItemIndex === idx;
+                  const isCustomizingThis = !isDealItem && customizingItemIndex === idx;
 
                   return (
                     <div
@@ -1327,12 +1523,24 @@ export default function CartDrawer({
                             </div>
                             {item.isDeal && item.dealSelectedSteps && (
                               <div className="text-[9px] text-gray-500 font-medium mt-0.5 space-y-0.5">
-                                {item.dealSelectedSteps.map((st, sIdx) => (
-                                  <div key={sIdx} className="truncate">
-                                    <span className="font-bold text-brand-charcoal">• {st.stepTitle}:</span>{' '}
-                                    {st.items.map((it) => it.mealName).join(', ')}
-                                  </div>
-                                ))}
+                                {item.dealSelectedSteps.map((st, sIdx) => {
+                                  const cleanTitle = (st.stepTitle || '')
+                                    .replace(/^(Step|Course)\s*\d+\s*[:\-–.]*\s*/i, '')
+                                    .replace(/^(Choose|Select)\s+(your\s+)?/i, '')
+                                    .trim();
+                                  const itemsList = st.items.map((it) => it.mealName).join(', ');
+                                  return (
+                                    <div key={sIdx} className="truncate flex items-start gap-1">
+                                      <span className="font-bold text-brand-orange shrink-0">•</span>
+                                      <span className="truncate">
+                                        {cleanTitle && (
+                                          <span className="font-bold text-brand-charcoal">{cleanTitle}: </span>
+                                        )}
+                                        <span className="text-stone-600">{itemsList}</span>
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                             {item.isDeal && item.dealComboItemsSummary && (
@@ -1377,8 +1585,8 @@ export default function CartDrawer({
                         </div>
                       </div>
 
-                      {/* Display Customization Summary Badge if set */}
-                      {(custom.portionSize || custom.spiceLevel || (custom.addOns && custom.addOns.length > 0) || custom.cookingInstruction) && (
+                      {/* Display Customization Summary Badge if set (for regular dishes only, not deals) */}
+                      {!isDealItem && (custom.portionSize || custom.spiceLevel || (custom.addOns && custom.addOns.length > 0) || custom.cookingInstruction) && (
                         <div className="bg-white/80 p-2 rounded-xl border border-brand-green/10 text-[10px] space-y-0.5 text-brand-charcoal/80 font-medium">
                           <div className="flex flex-wrap gap-1 font-bold">
                             {custom.portionSize && (
@@ -1403,17 +1611,19 @@ export default function CartDrawer({
                         </div>
                       )}
 
-                      {/* Customize Meal Toggle Button */}
-                      <button
-                        type="button"
-                        onClick={() => setCustomizingItemIndex(isCustomizingThis ? null : idx)}
-                        className="text-[10px] font-black text-brand-green hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        {isCustomizingThis ? '✕ Close Customization' : '✨ Customize Portion, Spice & Add-ons'}
-                      </button>
+                      {/* Customize Meal Toggle Button - Only for non-deal dishes */}
+                      {!isDealItem && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomizingItemIndex(isCustomizingThis ? null : idx)}
+                          className="text-[10px] font-black text-brand-green hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          {isCustomizingThis ? '✕ Close Customization' : '✨ Customize Portion, Spice & Add-ons'}
+                        </button>
+                      )}
 
-                      {/* Expanded Customization Form for Item */}
-                      {isCustomizingThis && (
+                      {/* Expanded Customization Form for Item - Only for non-deal dishes */}
+                      {!isDealItem && isCustomizingThis && (
                         <div className="p-3 bg-white border border-brand-green/20 rounded-xl space-y-3 animate-fade-in text-xs font-semibold">
                           {/* Portion size */}
                           <div>
@@ -1534,6 +1744,47 @@ export default function CartDrawer({
                           >
                             Done Customizing
                           </button>
+                        </div>
+                      )}
+
+                      {/* 🌟 Goes Well With Extension: Interactive Animated Horizontal Pairing Ribbon */}
+                      {!isDealItem && (
+                        <div className="pt-2 border-t border-brand-green/10">
+                          {dismissedPairingItemKeys.includes(`cart-pair-${item.meal.id}-${idx}`) ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDismissedPairingItemKeys((prev) =>
+                                  prev.filter((k) => k !== `cart-pair-${item.meal.id}-${idx}`)
+                                )
+                              }
+                              className="text-[10px] font-black text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer py-1"
+                            >
+                              <Sparkles className="w-3 h-3 text-emerald-600 animate-pulse" />
+                              <span>Show &quot;Goes Well With&quot; for {item.meal.name.split(' ')[0]}</span>
+                            </button>
+                          ) : (
+                            <GoesWellWithExtension
+                              parentMeal={item.meal}
+                              allMeals={allMeals || []}
+                              onAddToCart={(pairingMeal) => {
+                                if (onAddToCart) {
+                                  onAddToCart(pairingMeal);
+                                } else {
+                                  onUpdateQuantity(pairingMeal.id, 1);
+                                }
+                              }}
+                              cartMealIds={cartItems.map((c) => c.meal.id)}
+                              onClose={() =>
+                                setDismissedPairingItemKeys((prev) => [
+                                  ...prev,
+                                  `cart-pair-${item.meal.id}-${idx}`,
+                                ])
+                              }
+                              theme="light"
+                              title={`Goes well with ${item.meal.name.split(' ')[0]}:`}
+                            />
+                          )}
                         </div>
                       )}
                     </div>
@@ -2065,13 +2316,6 @@ export default function CartDrawer({
                 </div>
               )}
               
-              {selectedGym && (
-                <div className="flex justify-between text-brand-green">
-                  <span>📍 Connected Locker Discount (-{selectedGym.discountPct}%)</span>
-                  <span>-₹{gymDiscountVal}</span>
-                </div>
-              )}
-
               {appliedCoupons.length > 0 && (
                 <div className="flex flex-col text-brand-green gap-1 bg-brand-green/5 p-2.5 rounded-xl border border-brand-green/10">
                   <div className="flex justify-between font-bold">

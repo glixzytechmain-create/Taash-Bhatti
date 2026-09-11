@@ -80,21 +80,18 @@ import {
   CloudRain,
   Printer,
   Sliders,
+  Maximize2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import InAppDeliveryMap from './InAppDeliveryMap';
+import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 import { ImageUploader } from './ImageUploader';
 import { DeveloperMenuModal } from './DeveloperMenuModal';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from '../lib/featureFlags';
 import { AppFeatureFlags } from '../types';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-
-const GOOGLE_MAPS_API_KEY =
-  (typeof process !== 'undefined' ? process.env?.GOOGLE_MAPS_PLATFORM_KEY : '') ||
-  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
-  (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
-  '';
-import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, arrayUnion, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { GOOGLE_MAPS_API_KEY } from '../lib/googleMaps';
+import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, arrayUnion, arrayRemove, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -108,11 +105,12 @@ function getSecondaryAuth() {
   }
   return getAuth(secondaryApp);
 }
-import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport } from '../types';
+import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord } from '../types';
 import { MEALS_DATA, GYMS_DATA, INITIAL_DELIVERY_PARTNERS, DEFAULT_HERO_BANNERS } from '../data';
 import AdminDealsManager from './AdminDealsManager';
 import { KdsRiderCashSection } from './KdsRiderCashSection';
 import KitchenEODSettlementModal from './KitchenEODSettlementModal';
+import KitchenWastageManager from './KitchenWastageManager';
 import { syncLowStockMenuWithFirestore, computeEODShiftReport } from '../lib/kitchenSettlement';
 
 enum OperationType {
@@ -304,6 +302,7 @@ interface GymLocationPickerProps {
 function GymLocationPicker({ lat, lng, onSelectLocation }: GymLocationPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
 
   return (
     <div className="space-y-3">
@@ -323,10 +322,33 @@ function GymLocationPicker({ lat, lng, onSelectLocation }: GymLocationPickerProp
         <SearchButton searchQuery={searchQuery} onSelectLocation={onSelectLocation} setLoading={setLoading} loading={loading} />
       </div>
 
-      <div className="h-48 w-full rounded-xl border border-brand-green/15 overflow-hidden relative">
+      <div 
+        onClick={() => setIsEnlargedMapOpen(true)}
+        className="h-48 w-full rounded-xl border border-brand-green/15 overflow-hidden relative cursor-pointer group"
+        title="Tap to enlarge map & search location"
+      >
         <GymFormMap lat={lat} lng={lng} onSelectLocation={onSelectLocation} />
+
+        {/* Short message on map to tap to make the map bigger */}
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsEnlargedMapOpen(true);
+          }}
+          className="absolute bottom-2 inset-x-2 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-emerald-500/30 flex items-center justify-between text-[11px] font-bold cursor-pointer transition-all shadow-xl group-hover:border-emerald-400"
+        >
+          <div className="flex items-center gap-1.5 text-emerald-300 min-w-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+            <span className="truncate">✨ Tap map to view full-screen & search location</span>
+          </div>
+          <span className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1 shrink-0">
+            <Maximize2 className="w-2.5 h-2.5" />
+            <span>Enlarge</span>
+          </span>
+        </div>
+
         {loading && (
-          <div className="absolute inset-0 bg-[#0F1419]/80 flex items-center justify-center">
+          <div className="absolute inset-0 bg-[#0F1419]/80 flex items-center justify-center z-20">
             <div className="flex items-center gap-2 text-brand-green text-xs font-bold uppercase">
               <RefreshCw className="w-4 h-4 animate-spin" />
               Locating...
@@ -334,6 +356,19 @@ function GymLocationPicker({ lat, lng, onSelectLocation }: GymLocationPickerProp
           </div>
         )}
       </div>
+
+      {isEnlargedMapOpen && (
+        <FullScreenAddressPinModal
+          isOpen={isEnlargedMapOpen}
+          onClose={() => setIsEnlargedMapOpen(false)}
+          initialCoords={{ lat: lat || 26.1209, lng: lng || 85.3647 }}
+          initialAddress="Selected Gym Location"
+          onConfirmPin={(coords, address) => {
+            onSelectLocation(coords.lat, coords.lng, address);
+            setIsEnlargedMapOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -416,6 +451,7 @@ interface KitchenLocationPickerProps {
 function KitchenLocationPicker({ lat, lng, onSelectLocation }: KitchenLocationPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
 
   return (
     <div className="space-y-3">
@@ -435,10 +471,33 @@ function KitchenLocationPicker({ lat, lng, onSelectLocation }: KitchenLocationPi
         <SearchButton searchQuery={searchQuery} onSelectLocation={onSelectLocation} setLoading={setLoading} loading={loading} />
       </div>
 
-      <div className="h-48 w-full rounded-xl border border-brand-green/15 overflow-hidden relative">
+      <div 
+        onClick={() => setIsEnlargedMapOpen(true)}
+        className="h-48 w-full rounded-xl border border-brand-green/15 overflow-hidden relative cursor-pointer group"
+        title="Tap to enlarge map & search location"
+      >
         <KitchenFormMap lat={lat} lng={lng} onSelectLocation={onSelectLocation} />
+
+        {/* Short message on map to tap to make the map bigger */}
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsEnlargedMapOpen(true);
+          }}
+          className="absolute bottom-2 inset-x-2 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-emerald-500/30 flex items-center justify-between text-[11px] font-bold cursor-pointer transition-all shadow-xl group-hover:border-emerald-400"
+        >
+          <div className="flex items-center gap-1.5 text-emerald-300 min-w-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+            <span className="truncate">✨ Tap map to view full-screen & search location</span>
+          </div>
+          <span className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1 shrink-0">
+            <Maximize2 className="w-2.5 h-2.5" />
+            <span>Enlarge</span>
+          </span>
+        </div>
+
         {loading && (
-          <div className="absolute inset-0 bg-[#0F1419]/80 flex items-center justify-center">
+          <div className="absolute inset-0 bg-[#0F1419]/80 flex items-center justify-center z-20">
             <div className="flex items-center gap-2 text-brand-green text-xs font-bold uppercase">
               <RefreshCw className="w-4 h-4 animate-spin" />
               Locating...
@@ -446,6 +505,19 @@ function KitchenLocationPicker({ lat, lng, onSelectLocation }: KitchenLocationPi
           </div>
         )}
       </div>
+
+      {isEnlargedMapOpen && (
+        <FullScreenAddressPinModal
+          isOpen={isEnlargedMapOpen}
+          onClose={() => setIsEnlargedMapOpen(false)}
+          initialCoords={{ lat: lat || 26.1209, lng: lng || 85.3647 }}
+          initialAddress="Selected Kitchen Outlet Location"
+          onConfirmPin={(coords, address) => {
+            onSelectLocation(coords.lat, coords.lng, address);
+            setIsEnlargedMapOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -977,7 +1049,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   });
   const [tickedPrepSteps, setTickedPrepSteps] = useState<Record<string, Record<string, boolean>>>({});
   const [expandedRecipes, setExpandedRecipes] = useState<Record<string, boolean>>({});
-  const [meals, setMeals] = useState<Meal[]>([]);
+  const [meals, setMeals] = useState<Meal[]>(() => MEALS_DATA);
   const [ingredients, setIngredients] = useState<IngredientStock[]>(INITIAL_INGREDIENTS);
   const [coupons, setCoupons] = useState<any[]>([]);
   const [couponSubTab, setCouponSubTab] = useState<'campaigns' | 'analytics' | 'stacking'>('campaigns');
@@ -1065,6 +1137,9 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [formIsHidden, setFormIsHidden] = useState(false);
   const [formIsFeatured, setFormIsFeatured] = useState(false);
   const [formPartnerGymExclusive, setFormPartnerGymExclusive] = useState(false);
+  const [formGoesWellWith, setFormGoesWellWith] = useState<string[]>([]);
+  const [pairingSearchTerm, setPairingSearchTerm] = useState<string>('');
+  const [autoReciprocalPairing, setAutoReciprocalPairing] = useState<boolean>(true);
   
   // Kitchen Management states
   const [selectedKdsKitchenId, setSelectedKdsKitchenId] = useState<string>('all');
@@ -1113,12 +1188,18 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     return allKitchens.find(k => k.id === selectedKdsKitchenId) || allKitchens[0];
   }, [allKitchens, selectedKdsKitchenId]);
 
+  const [toastState, setToastState] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
   const toast = useMemo(() => ({
     success: (msg: string) => {
       console.log("KDS SUCCESS:", msg);
+      setToastState({ message: msg, type: 'success' });
+      setTimeout(() => setToastState(null), 3500);
     },
     error: (msg: string) => {
       console.error("KDS ERROR:", msg);
+      setToastState({ message: msg, type: 'error' });
+      setTimeout(() => setToastState(null), 4500);
     }
   }), []);
 
@@ -1580,31 +1661,17 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
         return false;
       }
 
-      // 3. For unaccepted orders: if assigned, eligible, or geofenced, or general broadcast, display on terminal
-      if (o.kitchenId && o.kitchenId === activeId) {
-        return true;
+      // 3. If a specific preferred kitchen was selected, ONLY that kitchen receives the order
+      if (o.preferredKitchenId && o.preferredKitchenId.trim() !== "") {
+        return o.preferredKitchenId === activeId;
       }
 
+      // 4. If restricted to specific eligible kitchens (e.g. preferred kitchen only)
       if (o.eligibleKitchenIds && o.eligibleKitchenIds.length > 0) {
-        if (o.eligibleKitchenIds.includes(activeId)) {
-          return true;
-        }
+        return o.eligibleKitchenIds.includes(activeId);
       }
 
-      // 4. Geofence distance check fallback
-      const kLat = activeKdsKitchen.lat;
-      const kLng = activeKdsKitchen.lng;
-      const radius = activeKdsKitchen.geofenceRadius || 25;
-
-      const dLat = o.deliveryLat || (o as any).lat;
-      const dLng = o.deliveryLng || (o as any).lng;
-
-      if (dLat && dLng && kLat && kLng) {
-        const dist = getDistanceKm(dLat, dLng, kLat, kLng);
-        if (dist <= radius) return true;
-      }
-
-      // 5. Broadcast fallback: if unaccepted, display so no order is ever lost
+      // 5. Broadcast to all kitchens: all active kitchens receive the incoming order until the first one accepts
       return true;
     });
   }, [orders, activeKdsKitchen, selectedKdsKitchenId]);
@@ -1633,6 +1700,8 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormIsHidden(false);
     setFormIsFeatured(false);
     setFormPartnerGymExclusive(false);
+    setFormGoesWellWith([]);
+    setPairingSearchTerm('');
     setShowFormModal(true);
   };
 
@@ -1657,6 +1726,8 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormIsHidden(meal.isHidden === true);
     setFormIsFeatured(meal.isFeatured === true);
     setFormPartnerGymExclusive(meal.partnerGymExclusive === true);
+    setFormGoesWellWith(meal.goesWellWith || []);
+    setPairingSearchTerm('');
     setShowFormModal(true);
   };
 
@@ -1679,6 +1750,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     };
 
     const nextMeal: Meal = {
+      ...(editingMeal || {}),
       id: mealId,
       name: formName.trim(),
       description: formDescription.trim(),
@@ -1693,25 +1765,107 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       spicyLevel: formSpicyLevel,
       timings: formTimings,
       goals: formGoals,
-      rating: editingMeal?.rating,
-      popularity: editingMeal ? editingMeal.popularity : 100,
+      rating: editingMeal?.rating ?? 4.8,
+      popularity: editingMeal ? (editingMeal.popularity ?? 100) : 100,
       partnerGymExclusive: formPartnerGymExclusive,
       isAvailable: formIsAvailable,
       isHidden: formIsHidden,
       isFeatured: formIsFeatured,
       ingredients: parseIngredients(formIngredientsText),
+      goesWellWith: formGoesWellWith || [],
     };
 
     try {
-      await setDoc(doc(db, 'meals', mealId), nextMeal, { merge: true });
+      const sanitizedPayload = sanitizeForFirestore(nextMeal);
+      await setDoc(doc(db, 'meals', mealId), sanitizedPayload, { merge: true });
+
+      const previousPairs: string[] = editingMeal?.goesWellWith || [];
+      const currentPairs: string[] = formGoesWellWith || [];
+      const addedPairs = currentPairs.filter(id => !previousPairs.includes(id));
+      const removedPairs = previousPairs.filter(id => !currentPairs.includes(id));
+
+      // Auto-create/link: when dish B is added to dish A's pairings, auto-add dish A to dish B's goesWellWith
+      if (autoReciprocalPairing) {
+        // Two-way Reciprocal Addition
+        for (const pairedId of addedPairs) {
+          try {
+            const pairedMealObj = meals.find(m => m.id === pairedId);
+            const pairedRef = doc(db, 'meals', pairedId);
+            if (pairedMealObj) {
+              const currentPairedList = pairedMealObj.goesWellWith || [];
+              const nextPairedList = currentPairedList.includes(mealId)
+                ? currentPairedList
+                : [...currentPairedList, mealId];
+              await setDoc(pairedRef, sanitizeForFirestore({
+                ...pairedMealObj,
+                goesWellWith: nextPairedList,
+              }), { merge: true });
+            } else {
+              await setDoc(pairedRef, {
+                id: pairedId,
+                goesWellWith: arrayUnion(mealId),
+              }, { merge: true });
+            }
+          } catch (pairErr) {
+            console.warn(`Could not sync reciprocal pairing for meal ${pairedId}:`, pairErr);
+          }
+        }
+
+        // Two-way Reciprocal Removal
+        for (const pairedId of removedPairs) {
+          try {
+            const pairedMealObj = meals.find(m => m.id === pairedId);
+            const pairedRef = doc(db, 'meals', pairedId);
+            if (pairedMealObj) {
+              const nextPairedList = (pairedMealObj.goesWellWith || []).filter(id => id !== mealId);
+              await setDoc(pairedRef, sanitizeForFirestore({
+                ...pairedMealObj,
+                goesWellWith: nextPairedList,
+              }), { merge: true });
+            } else {
+              await updateDoc(pairedRef, {
+                goesWellWith: arrayRemove(mealId),
+              }).catch(() => {});
+            }
+          } catch (removeErr) {
+            console.warn(`Could not sync reciprocal unpairing for meal ${pairedId}:`, removeErr);
+          }
+        }
+      }
+
       setMeals(prev => {
+        const updated = prev.map(m => {
+          if (m.id === mealId) {
+            return { ...m, ...nextMeal, goesWellWith: currentPairs };
+          }
+          if (autoReciprocalPairing) {
+            if (addedPairs.includes(m.id)) {
+              const cur = m.goesWellWith || [];
+              return { ...m, goesWellWith: cur.includes(mealId) ? cur : [...cur, mealId] };
+            }
+            if (removedPairs.includes(m.id)) {
+              const cur = m.goesWellWith || [];
+              return { ...m, goesWellWith: cur.filter(id => id !== mealId) };
+            }
+          }
+          return m;
+        });
         const exists = prev.some(m => m.id === mealId);
-        if (exists) return prev.map(m => m.id === mealId ? nextMeal : m);
-        return [nextMeal, ...prev];
+        if (exists) return updated;
+        return [nextMeal, ...updated];
       });
+
       setShowFormModal(false);
-    } catch (err) {
+      toast.success(
+        `Saved "${nextMeal.name}"! ${
+          autoReciprocalPairing && addedPairs.length > 0
+            ? `Two-way linked with ${addedPairs.length} paired dish(es).`
+            : ''
+        }`
+      );
+    } catch (err: any) {
       console.error("Error saving meal:", err);
+      toast.error(`Failed to save dish to database: ${err?.message || err}`);
       handleFirestoreError(err, editingMeal ? OperationType.UPDATE : OperationType.CREATE, `meals/${mealId}`);
     }
   };
@@ -2428,15 +2582,28 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   // Sync / Real-time meals
   useEffect(() => {
     const mealsCol = collection(db, 'meals');
-    const unsubscribe = onSnapshot(mealsCol, (snapshot) => {
+    const unsubscribe = onSnapshot(mealsCol, async (snapshot) => {
       if (!snapshot.empty) {
         const loadedMeals: Meal[] = [];
-        snapshot.forEach((doc) => {
-          loadedMeals.push(doc.data() as Meal);
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as Meal;
+          loadedMeals.push({
+            ...data,
+            id: docSnap.id || data.id,
+            goesWellWith: Array.isArray(data.goesWellWith) ? data.goesWellWith : [],
+          });
         });
         setMeals(loadedMeals);
       } else {
-        setMeals([]);
+        setMeals(MEALS_DATA);
+        // Seed default meals to Firestore so documents exist for updating
+        try {
+          for (const m of MEALS_DATA) {
+            await setDoc(doc(db, 'meals', m.id), sanitizeForFirestore(m), { merge: true });
+          }
+        } catch (e) {
+          console.error("Failed seeding meals:", e);
+        }
       }
     }, (error) => {
       console.error("Error loading meals in admin portal:", error);
@@ -5542,6 +5709,33 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                 <span className="text-gray-600">|</span>
                                 <span className="capitalize">Spicy: <b className="text-white">{m.spicyLevel || 'medium'}</b></span>
                               </div>
+
+                              {/* Goes Well With Pairings indicator */}
+                              {m.goesWellWith && m.goesWellWith.length > 0 && (
+                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                  <span className="text-[9px] font-black text-emerald-400 flex items-center gap-1 bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                                    <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                                    Goes well with ({m.goesWellWith.length}):
+                                  </span>
+                                  {m.goesWellWith.slice(0, 3).map((pId) => {
+                                    const pMeal = meals.find((item) => item.id === pId);
+                                    if (!pMeal) return null;
+                                    return (
+                                      <span
+                                        key={pId}
+                                        className="text-[8px] font-bold text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded border border-white/5"
+                                      >
+                                        {pMeal.name.split(' ')[0]}
+                                      </span>
+                                    );
+                                  })}
+                                  {m.goesWellWith.length > 3 && (
+                                    <span className="text-[8px] text-gray-500 font-bold">
+                                      +{m.goesWellWith.length - 3} more
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -9889,7 +10083,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                           </div>
 
                           {GOOGLE_MAPS_API_KEY ? (
-                            <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+                            <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
                               <KitchenLocationPicker
                                 lat={kitchenLat}
                                 lng={kitchenLng}
@@ -10211,7 +10405,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                           </div>
 
                           {GOOGLE_MAPS_API_KEY ? (
-                            <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+                            <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
                               <GymLocationPicker
                                 lat={gymLat}
                                 lng={gymLng}
@@ -10797,6 +10991,154 @@ Free express delivery directly to trainer desks"
                               </button>
                             );
                           })}
+                        </div>
+                      </div>
+
+                      {/* Section E2: "Goes Well With" Pairings Config */}
+                      <div className="bg-brand-charcoal/20 border border-emerald-500/30 p-4 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-black text-white block uppercase tracking-wider">
+                                "Goes Well With" Pairings
+                              </label>
+                              <span className="text-[9px] text-gray-400 block">
+                                When customers add this dish, these complement items pop up in an animated horizontal scroll.
+                              </span>
+                            </div>
+                          </div>
+
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            {formGoesWellWith.length} Paired
+                          </span>
+                        </div>
+
+                        {/* Reciprocal auto-link checkbox */}
+                        <label className="flex items-center gap-2 text-[11px] font-bold text-emerald-300 cursor-pointer bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-500/20">
+                          <input
+                            type="checkbox"
+                            checked={autoReciprocalPairing}
+                            onChange={(e) => setAutoReciprocalPairing(e.target.checked)}
+                            className="w-4 h-4 text-emerald-500 bg-slate-900 border-gray-600 rounded-sm focus:ring-emerald-400"
+                          />
+                          <div>
+                            <span>Auto-Link Bidirectionally (Reciprocal Pairing)</span>
+                            <span className="text-[9px] text-gray-400 block font-normal">
+                              Automatically add this dish to the paired dish&apos;s &quot;Goes Well With&quot; section so both recommend each other!
+                            </span>
+                          </div>
+                        </label>
+
+                        {/* Selected pairings chips */}
+                        {formGoesWellWith.length > 0 && (
+                          <div>
+                            <span className="text-[9px] font-bold text-gray-400 uppercase block mb-1.5">Currently Linked Items:</span>
+                            <div className="flex flex-wrap gap-2">
+                              {formGoesWellWith.map((pairId) => {
+                                const pairMeal = meals.find((m) => m.id === pairId);
+                                if (!pairMeal) return null;
+                                return (
+                                  <div
+                                    key={pairId}
+                                    className="flex items-center gap-2 bg-slate-800 border border-emerald-500/40 px-2.5 py-1.5 rounded-xl shadow-xs"
+                                  >
+                                    <img
+                                      src={pairMeal.image}
+                                      alt={pairMeal.name}
+                                      className="w-6 h-6 rounded-lg object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="text-left">
+                                      <span className="text-[11px] font-bold text-white block max-w-[130px] truncate leading-tight">
+                                        {pairMeal.name}
+                                      </span>
+                                      <span className="text-[9px] text-emerald-400 font-black">₹{pairMeal.price}</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setFormGoesWellWith((prev) => prev.filter((id) => id !== pairId))}
+                                      className="text-gray-400 hover:text-rose-400 p-0.5 ml-1 transition-colors cursor-pointer"
+                                      title="Remove pairing"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Search & Select paired dishes */}
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              placeholder="Search dish to add as pairing..."
+                              value={pairingSearchTerm}
+                              onChange={(e) => setPairingSearchTerm(e.target.value)}
+                              className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-emerald-500/20 rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-emerald-400"
+                            />
+                          </div>
+
+                          {/* Quick selection grid of dishes */}
+                          <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border border-white/5 rounded-xl p-2 bg-slate-900/50">
+                            {meals
+                              .filter((m) => {
+                                if (editingMeal && m.id === editingMeal.id) return false;
+                                if (!pairingSearchTerm.trim()) return true;
+                                return m.name.toLowerCase().includes(pairingSearchTerm.toLowerCase());
+                              })
+                              .map((m) => {
+                                const isPaired = formGoesWellWith.includes(m.id);
+                                return (
+                                  <div
+                                    key={m.id}
+                                    onClick={() => {
+                                      if (isPaired) {
+                                        setFormGoesWellWith((prev) => prev.filter((id) => id !== m.id));
+                                      } else {
+                                        setFormGoesWellWith((prev) => [...prev, m.id]);
+                                      }
+                                    }}
+                                    className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer ${
+                                      isPaired
+                                        ? 'bg-emerald-950/60 border-emerald-500/60 text-white'
+                                        : 'bg-slate-800/60 hover:bg-slate-800 border-white/5 text-gray-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <img
+                                        src={m.image}
+                                        alt={m.name}
+                                        className="w-8 h-8 rounded-lg object-cover shrink-0"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-bold truncate leading-tight">{m.name}</p>
+                                        <p className="text-[10px] text-gray-400">
+                                          ₹{m.price} • {m.isVegan ? 'Vegan' : m.isVeg ? 'Veg' : 'Non-Veg'} • {m.calories || 350} kcal
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <span
+                                      className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase shrink-0 ${
+                                        isPaired
+                                          ? 'bg-emerald-500 text-slate-950'
+                                          : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                                      }`}
+                                    >
+                                      {isPaired ? '✓ Linked' : '+ Link'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                          </div>
                         </div>
                       </div>
 
@@ -12422,6 +12764,13 @@ Free express delivery directly to trainer desks"
                           <Plus className="w-3.5 h-3.5" /> Add New Item
                         </button>
                         <button
+                          type="button"
+                          onClick={() => setInvCategoryFilter('wastage')}
+                          className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-black text-xs uppercase rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Food Wastage Audit
+                        </button>
+                        <button
                           onClick={() => setShowInventoryModal(false)}
                           className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all cursor-pointer border-none bg-transparent"
                         >
@@ -12505,6 +12854,7 @@ Free express delivery directly to trainer desks"
                           { id: 'vegetables', label: 'Greens & Veg' },
                           { id: 'pantry_spices', label: 'Spices & Oils' },
                           { id: 'packaging', label: 'Packaging' },
+                          { id: 'wastage', label: '⚠️ Wastage & Food Loss Log' },
                         ].map((cat) => {
                           const isActive = invCategoryFilter === cat.id;
                           return (
@@ -12535,9 +12885,22 @@ Free express delivery directly to trainer desks"
                       </div>
                     </div>
 
-                    {/* Inventory Items List / Grid */}
+                    {/* Inventory Items List / Grid OR Wastage Manager */}
                     <div className="overflow-y-auto pr-1 space-y-3 flex-1 scrollbar-thin">
-                      {inventoryItems.length === 0 ? (
+                      {invCategoryFilter === 'wastage' ? (
+                        <div className="py-2">
+                          <KitchenWastageManager
+                            kitchenId={activeKdsKitchen?.id || (allKitchens && allKitchens[0]?.id) || 'k1'}
+                            kitchenName={activeKdsKitchen?.name || (allKitchens && allKitchens[0]?.name) || 'Central Kitchen Hub'}
+                            inventoryItems={activeKdsKitchen ? inventoryItems.filter(i => i.kitchenId === activeKdsKitchen.id) : inventoryItems}
+                            orders={orders}
+                            meals={meals}
+                            deliveryPartners={deliveryPartners}
+                            loggedByUserName="Headquarters Admin"
+                            onStockUpdated={() => {}}
+                          />
+                        </div>
+                      ) : inventoryItems.length === 0 ? (
                         <div className="text-center py-16 space-y-4 border border-dashed border-indigo-500/20 rounded-2xl bg-[#141A22]/50">
                           <Boxes className="w-12 h-12 text-indigo-400/50 mx-auto" />
                           <div className="space-y-1">
@@ -13522,6 +13885,31 @@ Free express delivery directly to trainer desks"
         onUpdateFlags={(newFlags) => setFeatureFlags(newFlags)}
         meals={meals}
       />
+
+      {/* Floating System Toast Notification Banner */}
+      <AnimatePresence>
+        {toastState && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className={`fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-md flex items-center gap-3 text-xs font-black tracking-wide max-w-md ${
+              toastState.type === 'success'
+                ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200'
+                : 'bg-rose-950/95 border-rose-500/50 text-rose-200'
+            }`}
+          >
+            <span className="text-base">{toastState.type === 'success' ? '✨' : '⚠️'}</span>
+            <p className="flex-1 leading-snug">{toastState.message}</p>
+            <button
+              onClick={() => setToastState(null)}
+              className="text-white/60 hover:text-white cursor-pointer ml-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
