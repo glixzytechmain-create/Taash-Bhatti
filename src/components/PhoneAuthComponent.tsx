@@ -17,7 +17,14 @@ import {
   Lock,
   ChevronDown,
   Info,
-  MapPin
+  MapPin,
+  ExternalLink,
+  Copy,
+  Check,
+  MessageSquare,
+  PhoneCall,
+  Radio,
+  Send
 } from 'lucide-react';
 import { 
   RecaptchaVerifier, 
@@ -71,25 +78,34 @@ export default function PhoneAuthComponent({
   const [showCountryPicker, setShowCountryPicker] = useState(false);
 
   // OTP states
+  const [otpChannel, setOtpChannel] = useState<'whatsapp' | 'voice' | 'sms'>('whatsapp');
+  const [lastDispatchedChannel, setLastDispatchedChannel] = useState<'whatsapp' | 'voice' | 'sms'>('whatsapp');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [timerSeconds, setTimerSeconds] = useState<number>(60);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-
-  // Fallback / Sandbox OTP simulation if Firebase Phone Auth is not activated in console
-  const [simulatedOtp, setSimulatedOtp] = useState<string | null>(null);
+  const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  const [showHelpGuide, setShowHelpGuide] = useState<boolean>(false);
 
   // Status & Error states
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [domainCopied, setDomainCopied] = useState<boolean>(false);
 
   // Input refs for 6 OTP boxes
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   // Cleanup reCAPTCHA on unmount
   useEffect(() => {
     return () => {
+      if (recaptchaVerifierRef.current) {
+        try {
+          recaptchaVerifierRef.current.clear();
+        } catch (e) {}
+        recaptchaVerifierRef.current = null;
+      }
       if (typeof window !== 'undefined' && (window as any).phoneRecaptchaVerifier) {
         try {
           (window as any).phoneRecaptchaVerifier.clear();
@@ -119,15 +135,27 @@ export default function PhoneAuthComponent({
   const fullE164Phone = `${selectedCountry.code}${cleanPhone}`;
 
   // Helper: Initialize Invisible Recaptcha Verifier
-  const setupRecaptcha = () => {
+  const setupRecaptcha = (): RecaptchaVerifier | null => {
     if (typeof window === 'undefined') return null;
 
     try {
+      if (recaptchaVerifierRef.current) {
+        try {
+          recaptchaVerifierRef.current.clear();
+        } catch (e) {}
+        recaptchaVerifierRef.current = null;
+      }
+
       if ((window as any).phoneRecaptchaVerifier) {
         try {
           (window as any).phoneRecaptchaVerifier.clear();
         } catch (e) {}
         (window as any).phoneRecaptchaVerifier = null;
+      }
+
+      const container = document.getElementById('phone-recaptcha-container');
+      if (container) {
+        container.innerHTML = '';
       }
 
       const verifier = new RecaptchaVerifier(auth, 'phone-recaptcha-container', {
@@ -140,6 +168,7 @@ export default function PhoneAuthComponent({
         }
       });
 
+      recaptchaVerifierRef.current = verifier;
       (window as any).phoneRecaptchaVerifier = verifier;
       return verifier;
     } catch (err: any) {
@@ -149,10 +178,20 @@ export default function PhoneAuthComponent({
   };
 
   // 1. Send OTP Request Handler
-  const handleSendOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleSendOtp = async (channelOverride?: 'whatsapp' | 'voice' | 'sms') => {
     setErrorMessage(null);
     setInfoMessage(null);
+
+    // Ensure channelOverride is strictly one of the allowed strings and not an event object
+    const validChannels = ['whatsapp', 'voice', 'sms'] as const;
+    const channelToUse: 'whatsapp' | 'voice' | 'sms' = 
+      (typeof channelOverride === 'string' && validChannels.includes(channelOverride as any))
+        ? channelOverride
+        : otpChannel;
+
+    if (typeof channelOverride === 'string' && validChannels.includes(channelOverride as any)) {
+      setOtpChannel(channelOverride);
+    }
 
     if (!fullName.trim()) {
       setErrorMessage("Please enter your full name.");
@@ -172,63 +211,79 @@ export default function PhoneAuthComponent({
     setLoading(true);
 
     try {
-      const verifier = setupRecaptcha();
-      if (!verifier) {
-        throw new Error("reCAPTCHA container initialization failed.");
-      }
-
-      // Trigger Firebase Phone Auth SMS dispatch
-      const result = await signInWithPhoneNumber(auth, fullE164Phone, verifier);
-      setConfirmationResult(result);
-      setSimulatedOtp(null);
-      setStep('otp_input');
-      setTimerSeconds(60);
-      setIsTimerRunning(true);
-      setInfoMessage(`Verification code sent via SMS to ${fullE164Phone}`);
-      
-      // Auto-focus first input box
-      setTimeout(() => {
-        inputRefs.current[0]?.focus();
-      }, 300);
-    } catch (err: any) {
-      console.warn("Firebase Phone Auth error:", err?.code, err?.message);
-
-      // Handle common Firebase phone auth errors gracefully
-      if (
-        err?.code === 'auth/operation-not-allowed' || 
-        err?.code === 'auth/captcha-check-failed' ||
-        err?.code === 'auth/invalid-app-credential' ||
-        err?.message?.includes('operation-not-allowed') ||
-        err?.message?.includes('reCAPTCHA')
-      ) {
-        // Firebase Phone Auth provider fallback for sandbox or dev preview
-        const demoCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setSimulatedOtp(demoCode);
-        setConfirmationResult(null);
+      // If user selected SMS explicitly, route directly through Firebase Phone Auth
+      if (channelToUse === 'sms') {
+        const verifier = setupRecaptcha();
+        if (!verifier) {
+          throw new Error("reCAPTCHA container initialization failed.");
+        }
+        const result = await signInWithPhoneNumber(auth, fullE164Phone, verifier);
+        setConfirmationResult(result);
+        setOtpSessionId(null);
+        setLastDispatchedChannel('sms');
         setStep('otp_input');
         setTimerSeconds(60);
         setIsTimerRunning(true);
-        setInfoMessage(`Verification code ready: ${demoCode}`);
+        setInfoMessage(`Firebase SMS verification code sent to ${fullE164Phone}`);
 
-        // Auto-focus first input box
         setTimeout(() => {
           inputRefs.current[0]?.focus();
         }, 300);
-      } else if (err?.code === 'auth/invalid-phone-number') {
-        setErrorMessage("Invalid phone number format. Please check the digits and country code.");
-      } else if (err?.code === 'auth/too-many-requests') {
-        setErrorMessage("Too many SMS attempts for this number. Please wait a few minutes.");
-      } else if (err?.code === 'auth/quota-exceeded') {
-        setErrorMessage("SMS quota limit reached. Switching to instant verified OTP.");
-        const demoCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setSimulatedOtp(demoCode);
+        return;
+      }
+
+      // If user selected WhatsApp or Voice Call, route through 2Factor.in Gateway
+      const res = await fetch('/api/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: fullE164Phone, channel: channelToUse }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success && data.sessionId) {
+        setOtpSessionId(data.sessionId);
         setConfirmationResult(null);
+        setLastDispatchedChannel(channelToUse);
         setStep('otp_input');
         setTimerSeconds(60);
         setIsTimerRunning(true);
+        
+        const channelNames = {
+          whatsapp: 'WhatsApp message',
+          voice: 'Automated Voice Call',
+          sms: 'Firebase SMS'
+        };
+        setInfoMessage(`⚡ OTP dispatched via ${channelNames[channelToUse]} to ${fullE164Phone}`);
+
+        setTimeout(() => {
+          inputRefs.current[0]?.focus();
+        }, 300);
+        return;
       } else {
-        setErrorMessage(err?.message || "Failed to send SMS code. Please check your network and try again.");
+        console.warn('2Factor OTP route response:', data);
+        // Fallback to Firebase Phone Auth SMS if 2Factor fails
+        const verifier = setupRecaptcha();
+        if (verifier) {
+          const result = await signInWithPhoneNumber(auth, fullE164Phone, verifier);
+          setConfirmationResult(result);
+          setOtpSessionId(null);
+          setLastDispatchedChannel('sms');
+          setStep('otp_input');
+          setTimerSeconds(60);
+          setIsTimerRunning(true);
+          setInfoMessage(`Switched to Firebase SMS verification code: sent to ${fullE164Phone}`);
+
+          setTimeout(() => {
+            inputRefs.current[0]?.focus();
+          }, 300);
+          return;
+        }
+        throw new Error(data.error || 'Failed to dispatch OTP code.');
       }
+    } catch (err: any) {
+      console.error("OTP send error:", err);
+      setErrorMessage(err?.message || "Failed to send verification code. Please check your network and try again.");
     } finally {
       setLoading(false);
     }
@@ -301,45 +356,54 @@ export default function PhoneAuthComponent({
     setLoading(true);
 
     try {
+      let resolvedUid = '';
+      let resolvedEmail = '';
       let resolvedFirebaseUser: any = null;
-      let isNew = false;
 
-      // Real Firebase confirmation
-      if (confirmationResult) {
+      if (otpSessionId) {
+        // Verify with 2Factor.in High-Speed Gateway
+        const res = await fetch('/api/otp/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: otpSessionId,
+            otp: code,
+            phone: fullE164Phone,
+            channel: lastDispatchedChannel,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success || !data.verified) {
+          throw new Error(data.error || 'Incorrect OTP code entered. Please check and try again.');
+        }
+
+        resolvedUid = auth.currentUser?.uid || `phone_${cleanPhone}`;
+        resolvedEmail = auth.currentUser?.email || '';
+        resolvedFirebaseUser = auth.currentUser || {
+          uid: resolvedUid,
+          email: resolvedEmail,
+          phoneNumber: fullE164Phone,
+          displayName: fullName.trim(),
+        };
+      } else if (confirmationResult) {
+        // Real Firebase confirmation
         const cred = await confirmationResult.confirm(code);
         resolvedFirebaseUser = cred.user;
-      } else if (simulatedOtp) {
-        // Simulated / Sandbox fallback
-        if (code !== simulatedOtp && code !== '123456') {
-          throw new Error("Invalid verification code. Please check the digits and try again.");
-        }
-
-        // Try anonymous sign-in or check current auth
-        if (!auth.currentUser) {
-          try {
-            const anonCred = await signInAnonymously(auth);
-            resolvedFirebaseUser = anonCred.user;
-          } catch (e) {
-            // Fallback virtual identity
-            resolvedFirebaseUser = {
-              uid: 'phone_' + cleanPhone,
-              phoneNumber: fullE164Phone,
-              displayName: fullName || `Diner ${cleanPhone.slice(-4)}`,
-            };
-          }
-        } else {
-          resolvedFirebaseUser = auth.currentUser;
-        }
+        resolvedUid = resolvedFirebaseUser.uid;
+        resolvedEmail = resolvedFirebaseUser.email || '';
       } else {
         throw new Error("Session expired. Please request a new verification code.");
       }
+
+      let isNew = false;
 
       // Step transition to checking saved addresses & user profile
       setStep('checking_address');
       setAddressCheckStatus('Checking your saved delivery addresses & account...');
 
       // Check or create Firestore User document
-      const uid = resolvedFirebaseUser.uid;
+      const uid = resolvedUid;
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef).catch(() => null);
 
@@ -347,12 +411,13 @@ export default function PhoneAuthComponent({
 
       if (userSnap && userSnap.exists()) {
         const existingData = userSnap.data() as User;
-        const cleanExistingEmail = existingData.email?.includes('@taashbhatti.phone') ? '' : (existingData.email || resolvedFirebaseUser.email || '');
+        const cleanExistingEmail = existingData.email?.includes('@taashbhatti.phone') ? '' : (existingData.email || resolvedEmail || '');
         finalProfile = {
           ...existingData,
           phone: fullE164Phone,
           name: fullName.trim() || existingData.name || `Customer ${cleanPhone.slice(-4)}`,
           email: cleanExistingEmail,
+          isPhoneVerified: true,
         };
         // Check saved addresses count
         const savedList = (existingData.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0);
@@ -364,28 +429,36 @@ export default function PhoneAuthComponent({
           setAddressCheckStatus('Profile confirmed. No saved addresses found.');
         }
         // Update user record with phone and clean email
-        await setDoc(userRef, { phone: fullE164Phone, email: cleanExistingEmail }, { merge: true }).catch(() => {});
+        await setDoc(userRef, { phone: fullE164Phone, email: cleanExistingEmail, isPhoneVerified: true }, { merge: true }).catch(() => {});
       } else {
         isNew = true;
-        setAddressCheckStatus('New athlete account created. Setting up your profile...');
+        setAddressCheckStatus('New account created. Setting up your profile...');
         finalProfile = {
+          id: uid,
           name: fullName.trim() || `Customer ${cleanPhone.slice(-4)}`,
-          email: resolvedFirebaseUser.email || '',
+          email: resolvedEmail || '',
           phone: fullE164Phone,
-          goal: 'general',
-          preferredGymId: null,
+          isPhoneVerified: true,
+          preferredDietaryType: 'all',
+          address: '',
           savedAddresses: [],
           savedPayments: [],
+          deckMealIds: [],
+          favoriteMealIds: [],
+          goal: 'general',
           onboardingCompleted: true,
           createdAt: new Date().toISOString(),
+          walletBalance: 100,
+          goldenEmberBalance: 100,
+          standardEmberBalance: 0,
         };
-        await setDoc(userRef, finalProfile).catch((err) => console.warn("User doc creation note:", err));
+        await setDoc(userRef, { ...finalProfile, authProvider: 'phone' }).catch((err) => console.warn("User doc creation note:", err));
       }
 
       // Update Firebase Auth Display Name if provided
-      if (resolvedFirebaseUser && fullName.trim()) {
+      if (auth.currentUser && fullName.trim()) {
         try {
-          await updateProfile(resolvedFirebaseUser, { displayName: fullName.trim() });
+          await updateProfile(auth.currentUser, { displayName: fullName.trim() });
         } catch (e) {}
       }
 
@@ -393,8 +466,8 @@ export default function PhoneAuthComponent({
       try {
         localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
         localStorage.setItem('fitzaika_cached_fb_user', JSON.stringify({
-          uid: resolvedFirebaseUser.uid,
-          email: resolvedFirebaseUser.email || '',
+          uid: resolvedUid,
+          email: resolvedEmail || '',
           phoneNumber: fullE164Phone,
           displayName: finalProfile.name,
         }));
@@ -426,14 +499,6 @@ export default function PhoneAuthComponent({
     }
   };
 
-  // Helper: Auto-fill Demo OTP
-  const handleAutoFillDemoOtp = () => {
-    if (simulatedOtp) {
-      setOtpDigits(simulatedOtp.split(''));
-      handleVerifyOtp(simulatedOtp);
-    }
-  };
-
   return (
     <div className="w-full space-y-4 font-sans">
       {/* Hidden reCAPTCHA anchor */}
@@ -441,7 +506,7 @@ export default function PhoneAuthComponent({
 
       {/* STEP 1: PHONE NUMBER & CREDENTIALS INPUT */}
       {step === 'phone_input' && (
-        <form onSubmit={handleSendOtp} className="space-y-3.5">
+        <form onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }} className="space-y-3.5">
           <div className="bg-brand-green/5 border border-brand-green/10 rounded-2xl p-3 flex items-center gap-2.5 text-xs text-brand-charcoal">
             <div className="w-8 h-8 rounded-xl bg-brand-green/10 text-brand-green flex items-center justify-center shrink-0">
               <Phone className="w-4 h-4" />
@@ -531,6 +596,97 @@ export default function PhoneAuthComponent({
             </div>
           </div>
 
+          {/* Channel Selection: WhatsApp (Primary) vs Voice Call vs SMS */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-brand-charcoal flex items-center justify-between">
+              <span>Delivery Method</span>
+              <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                Recommended: WhatsApp
+              </span>
+            </label>
+            
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setOtpChannel('whatsapp')}
+                className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                  otpChannel === 'whatsapp'
+                    ? 'border-emerald-600 bg-emerald-500/10 ring-1 ring-emerald-600'
+                    : 'border-brand-green/15 bg-brand-cream/15 hover:bg-brand-cream/30'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                    otpChannel === 'whatsapp' ? 'bg-emerald-600 text-white' : 'bg-brand-charcoal/10 text-brand-charcoal'
+                  }`}>
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1 py-0.5 rounded">Fast</span>
+                </div>
+                <div>
+                  <p className="text-[11px] font-black text-brand-charcoal leading-tight">WhatsApp</p>
+                  <p className="text-[9px] text-brand-charcoal/60 leading-tight">Instant message</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOtpChannel('voice')}
+                className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                  otpChannel === 'voice'
+                    ? 'border-brand-orange bg-amber-500/10 ring-1 ring-brand-orange'
+                    : 'border-brand-green/15 bg-brand-cream/15 hover:bg-brand-cream/30'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                    otpChannel === 'voice' ? 'bg-brand-orange text-white' : 'bg-brand-charcoal/10 text-brand-charcoal'
+                  }`}>
+                    <PhoneCall className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-black text-brand-charcoal leading-tight">Voice Call</p>
+                  <p className="text-[9px] text-brand-charcoal/60 leading-tight">Automated call</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOtpChannel('sms')}
+                className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                  otpChannel === 'sms'
+                    ? 'border-brand-green bg-brand-green/10 ring-1 ring-brand-green'
+                    : 'border-brand-green/15 bg-brand-cream/15 hover:bg-brand-cream/30'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                    otpChannel === 'sms' ? 'bg-brand-green text-white' : 'bg-brand-charcoal/10 text-brand-charcoal'
+                  }`}>
+                    <Radio className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-black text-brand-charcoal leading-tight">Carrier SMS</p>
+                  <p className="text-[9px] text-brand-charcoal/60 leading-tight">Firebase Auth</p>
+                </div>
+              </button>
+            </div>
+
+            {/* Quick helper note */}
+            <p className="text-[10px] text-brand-charcoal/60 pt-0.5">
+              {otpChannel === 'whatsapp' ? (
+                <span>WhatsApp OTP will be delivered directly to your WhatsApp chat in 2-5 seconds.</span>
+              ) : otpChannel === 'voice' ? (
+                <span>You'll receive an automated voice phone call that speaks out your 6-digit OTP code clearly.</span>
+              ) : (
+                <span>Standard carrier SMS delivered directly via Firebase Authentication.</span>
+              )}
+            </p>
+          </div>
+
           {/* Error Banner */}
           {errorMessage && (
             <div className="p-2.5 rounded-xl bg-red-50 border border-red-200/50 text-red-600 text-[11px] font-bold flex items-center gap-2">
@@ -543,20 +699,59 @@ export default function PhoneAuthComponent({
           <button
             type="submit"
             disabled={loading || !cleanPhone || !fullName.trim()}
-            className="w-full bg-brand-green hover:bg-brand-green/95 text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className={`w-full text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
+              otpChannel === 'whatsapp' 
+                ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' 
+                : otpChannel === 'voice' 
+                ? 'bg-brand-orange hover:bg-brand-orange/90 shadow-brand-orange/20' 
+                : 'bg-brand-green hover:bg-brand-green/95 shadow-brand-green/20'
+            }`}
           >
             {loading ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Requesting Secure OTP...</span>
+                <span>
+                  {otpChannel === 'voice' ? 'Initiating Voice Call...' : 'Requesting Secure OTP...'}
+                </span>
               </>
             ) : (
               <>
-                <span>SEND VERIFICATION CODE</span>
+                {otpChannel === 'whatsapp' ? (
+                  <>
+                    <MessageSquare className="w-4 h-4" />
+                    <span>SEND OTP VIA WHATSAPP</span>
+                  </>
+                ) : otpChannel === 'voice' ? (
+                  <>
+                    <PhoneCall className="w-4 h-4" />
+                    <span>CALL ME WITH OTP</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>SEND OTP VIA SMS</span>
+                  </>
+                )}
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
+
+          {/* Don't have WhatsApp shortcut */}
+          {otpChannel === 'whatsapp' && (
+            <div className="text-center pt-1">
+              <span className="text-[11px] text-brand-charcoal/60">Don't have WhatsApp? </span>
+              <button
+                type="button"
+                onClick={() => handleSendOtp('voice')}
+                disabled={loading || !cleanPhone || !fullName.trim()}
+                className="text-[11px] text-brand-orange hover:underline font-bold cursor-pointer inline-flex items-center gap-1"
+              >
+                <PhoneCall className="w-3 h-3" />
+                <span>Get a call for OTP</span>
+              </button>
+            </div>
+          )}
 
           {/* Security Assurance Tag */}
           <div className="flex items-center justify-center gap-1.5 text-[10px] text-brand-charcoal/50 font-medium">
@@ -569,14 +764,37 @@ export default function PhoneAuthComponent({
       {/* STEP 2: 6-DIGIT OTP VERIFICATION */}
       {step === 'otp_input' && (
         <div className="space-y-4 animate-fade-in">
-          {/* Header with Phone & Change Button */}
+          {/* Header with Phone, Channel Badge & Change Button */}
           <div className="bg-brand-cream/25 border border-brand-green/10 rounded-2xl p-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-                <KeyRound className="w-4 h-4" />
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                lastDispatchedChannel === 'whatsapp' 
+                  ? 'bg-emerald-500/15 text-emerald-600' 
+                  : lastDispatchedChannel === 'voice' 
+                  ? 'bg-amber-500/15 text-amber-600' 
+                  : 'bg-brand-green/15 text-brand-green'
+              }`}>
+                {lastDispatchedChannel === 'whatsapp' ? (
+                  <MessageSquare className="w-4 h-4" />
+                ) : lastDispatchedChannel === 'voice' ? (
+                  <PhoneCall className="w-4 h-4" />
+                ) : (
+                  <KeyRound className="w-4 h-4" />
+                )}
               </div>
               <div>
-                <p className="text-[10px] uppercase font-black text-brand-charcoal/50 tracking-wider">Passcode Sent To</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[10px] uppercase font-black text-brand-charcoal/50 tracking-wider">Passcode Sent Via</p>
+                  <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full ${
+                    lastDispatchedChannel === 'whatsapp'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : lastDispatchedChannel === 'voice'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-brand-green/10 text-brand-green'
+                  }`}>
+                    {lastDispatchedChannel === 'whatsapp' ? 'WhatsApp' : lastDispatchedChannel === 'voice' ? 'Voice Call' : 'SMS'}
+                  </span>
+                </div>
                 <p className="text-xs font-black text-brand-charcoal tracking-wide">{fullE164Phone}</p>
               </div>
             </div>
@@ -585,7 +803,6 @@ export default function PhoneAuthComponent({
               onClick={() => {
                 setStep('phone_input');
                 setErrorMessage(null);
-                setSimulatedOtp(null);
               }}
               className="px-2.5 py-1.5 rounded-xl bg-white text-brand-charcoal hover:text-brand-green border border-brand-green/15 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
             >
@@ -593,28 +810,6 @@ export default function PhoneAuthComponent({
               <span>Change</span>
             </button>
           </div>
-
-          {/* SMS Verification Code Quick Action if generated */}
-          {simulatedOtp && (
-            <div className="flex items-center justify-between bg-brand-cream/35 border border-brand-green/15 px-3.5 py-2.5 rounded-2xl shadow-2xs">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-brand-green/10 text-brand-green flex items-center justify-center text-xs shrink-0">
-                  💬
-                </div>
-                <div>
-                  <p className="text-[9px] uppercase font-black tracking-wider text-brand-charcoal/50">SMS OTP Code</p>
-                  <p className="font-mono text-xs font-black text-brand-charcoal tracking-widest">{simulatedOtp}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleAutoFillDemoOtp}
-                className="px-3 py-1.5 bg-brand-green hover:bg-brand-green/90 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors shadow-2xs cursor-pointer"
-              >
-                Auto-Fill
-              </button>
-            </div>
-          )}
 
           {/* 6 Individual Digit Input Boxes */}
           <div className="space-y-2">
@@ -671,25 +866,159 @@ export default function PhoneAuthComponent({
             )}
           </button>
 
-          {/* Resend OTP Timer Controls */}
-          <div className="flex items-center justify-between text-xs pt-1 px-1">
-            <span className="text-brand-charcoal/50 text-[11px]">
-              Didn't receive SMS?
-            </span>
-            {isTimerRunning ? (
-              <span className="text-brand-charcoal/60 font-mono text-[11px]">
-                Resend in <strong className="text-brand-charcoal font-black">{timerSeconds}s</strong>
+          {/* Resend & Alternative Delivery Channel Controls */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between text-xs px-1">
+              <span className="text-brand-charcoal/50 text-[11px]">
+                Didn't receive code?
               </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleSendOtp()}
-                disabled={loading}
-                className="text-brand-orange hover:text-brand-orange/80 font-black text-[11px] flex items-center gap-1 cursor-pointer"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Resend OTP</span>
-              </button>
+              {isTimerRunning ? (
+                <span className="text-brand-charcoal/60 font-mono text-[11px]">
+                  Retry in <strong className="text-brand-charcoal font-black">{timerSeconds}s</strong>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSendOtp(lastDispatchedChannel)}
+                  disabled={loading}
+                  className="text-brand-orange hover:text-brand-orange/80 font-black text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Resend Code</span>
+                </button>
+              )}
+            </div>
+
+            {/* Alternative Delivery Options: WhatsApp vs Voice Call vs SMS */}
+            <div className="p-2.5 rounded-xl bg-brand-cream/30 border border-brand-green/10 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold text-brand-charcoal/60">Try another channel:</span>
+              <div className="flex items-center gap-1.5">
+                {lastDispatchedChannel !== 'whatsapp' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSendOtp('whatsapp')}
+                    disabled={loading || (isTimerRunning && timerSeconds > 45)}
+                    className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-black border border-emerald-200 flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <MessageSquare className="w-2.5 h-2.5" />
+                    <span>WhatsApp</span>
+                  </button>
+                )}
+
+                {lastDispatchedChannel !== 'voice' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSendOtp('voice')}
+                    disabled={loading || (isTimerRunning && timerSeconds > 45)}
+                    className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-200 flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <PhoneCall className="w-2.5 h-2.5" />
+                    <span>Get a Call</span>
+                  </button>
+                )}
+
+                {lastDispatchedChannel !== 'sms' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSendOtp('sms')}
+                    disabled={loading || (isTimerRunning && timerSeconds > 45)}
+                    className="px-2 py-1 rounded-lg bg-white hover:bg-brand-cream/40 text-brand-charcoal text-[10px] font-black border border-brand-green/15 flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Radio className="w-2.5 h-2.5" />
+                    <span>SMS</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Diagnostic & Troubleshooting Guide */}
+          <div className="pt-2 border-t border-brand-green/10">
+            <button
+              type="button"
+              onClick={() => setShowHelpGuide(!showHelpGuide)}
+              className="w-full flex items-center justify-between text-[11px] text-brand-charcoal/60 hover:text-brand-green transition-colors py-1 cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5" />
+                <span>On Blaze plan but SMS still not delivering?</span>
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showHelpGuide ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showHelpGuide && (
+              <div className="mt-2 p-3 rounded-xl bg-brand-cream/30 border border-brand-green/15 text-[11px] text-brand-charcoal/80 space-y-2.5">
+                <div>
+                  <strong className="text-brand-charcoal block mb-1">1. SMS Region Policy (Crucial for Blaze):</strong>
+                  <p className="text-brand-charcoal/70">
+                    To prevent automated toll fraud attacks, Google restricts SMS to specific countries on Blaze. In Firebase Console → <strong>Authentication</strong> → <strong>Settings</strong> → <strong>SMS region policy</strong>, verify that <strong>India (+91)</strong> is enabled in the allowed regions list.
+                  </p>
+                  <a
+                    href="https://console.firebase.google.com/project/taash-bhatti/authentication/settings"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-brand-green font-bold hover:underline mt-1"
+                  >
+                    <span>Open SMS Region Policy</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+
+                <div className="pt-1.5 border-t border-brand-green/10">
+                  <strong className="text-brand-charcoal block mb-1">2. Check Real SMS Delivery Logs:</strong>
+                  <p className="text-brand-charcoal/70">
+                    Firebase records the status of every SMS attempt sent by this project. Check your SMS Usage tab to see if your attempt was marked as <em>"Sent"</em>, <em>"Blocked by region policy"</em>, or <em>"Carrier error"</em>.
+                  </p>
+                  <a
+                    href="https://console.firebase.google.com/project/taash-bhatti/authentication/usage"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-brand-green font-bold hover:underline mt-1"
+                  >
+                    <span>Open Firebase SMS Usage Logs</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+
+                <div className="pt-1.5 border-t border-brand-green/10">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-brand-charcoal block">3. Authorized Domains:</strong>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== 'undefined') {
+                          navigator.clipboard.writeText(window.location.hostname);
+                          setDomainCopied(true);
+                          setTimeout(() => setDomainCopied(false), 2000);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 text-[10px] text-brand-green font-bold hover:underline cursor-pointer bg-brand-green/10 px-2 py-0.5 rounded"
+                    >
+                      {domainCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      <span>{domainCopied ? 'Copied!' : 'Copy Current Host'}</span>
+                    </button>
+                  </div>
+                  <p className="text-brand-charcoal/70 mt-1">
+                    Ensure <code className="text-brand-charcoal bg-black/5 px-1 py-0.5 rounded font-mono">{typeof window !== 'undefined' ? window.location.hostname : 'current domain'}</code> is added to Firebase Console → <strong>Authentication</strong> → <strong>Settings</strong> → <strong>Authorized domains</strong>.
+                  </p>
+                </div>
+
+                <div className="pt-1.5 border-t border-brand-green/10">
+                  <strong className="text-brand-charcoal block mb-1">4. TRAI DLT Telecom Scrubbing (+91 India):</strong>
+                  <p className="text-brand-charcoal/70">
+                    Indian telcos (Jio, Airtel, Vi) apply strict DLT filtering on foreign SMS gateways. If you need instantaneous authentication without telecom carrier dropouts, add your number under <strong>"Phone numbers for testing"</strong> in Firebase Console.
+                  </p>
+                  <a
+                    href="https://console.firebase.google.com/project/taash-bhatti/authentication/providers"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-brand-green font-bold hover:underline mt-1"
+                  >
+                    <span>Add Phone number for testing</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+              </div>
             )}
           </div>
         </div>
