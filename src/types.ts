@@ -859,3 +859,25 @@ export interface UserNotificationPreferences {
   lastPromptAt?: string;
 }
 
+export interface LegalSection {
+  id: string;
+  title: string;
+  content: string;
+  subpoints?: string[];
+}
+
+export interface LegalDocument {
+  id: 'terms_and_conditions' | 'privacy_policy';
+  title: string;
+  tagline: string;
+  lastUpdated: string;
+  version: string;
+  summary: string;
+  sections: LegalSection[];
+  contactEmail?: string;
+  contactPhone?: string;
+  contactAddress?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+

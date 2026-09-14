@@ -55,6 +55,8 @@ import TaashOpeningSplash from './components/TaashOpeningSplash';
 import CityGeofenceSelectorModal from './components/CityGeofenceSelectorModal';
 import NotificationPromptModal from './components/NotificationPromptModal';
 import SelectDeliveryAddressModal from './components/SelectDeliveryAddressModal';
+import WelcomeBackModal from './components/WelcomeBackModal';
+import OnboardingFlowModal from './components/OnboardingFlowModal';
 import TapFeedbackEffect from './components/TapFeedbackEffect';
 import FloatingDeliveredRateBubble from './components/FloatingDeliveredRateBubble';
 import DeliveredOrderRatingModal from './components/DeliveredOrderRatingModal';
@@ -64,6 +66,7 @@ import GroupOrderRoomView from './components/GroupOrderRoomView';
 import GroupOrderFloatingBubble from './components/GroupOrderFloatingBubble';
 import { SmartNotificationEngine } from './components/SmartNotificationEngine';
 import { DeveloperMenuModal } from './components/DeveloperMenuModal';
+import LegalDocumentsModal from './components/LegalDocumentsModal';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from './lib/featureFlags';
 import { AppFeatureFlags } from './types';
 
@@ -254,6 +257,31 @@ export default function App() {
     } catch (e) {}
     return false;
   });
+
+  // Legal Documents Modal (Terms & Conditions / Privacy Policy)
+  const [showLegalModal, setShowLegalModal] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('page') === 'terms' || params.get('page') === 'privacy' || Boolean(params.get('terms')) || Boolean(params.get('privacy'));
+      }
+    } catch (e) {}
+    return false;
+  });
+  const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('page') === 'privacy' || params.get('privacy')) return 'privacy';
+      }
+    } catch (e) {}
+    return 'terms';
+  });
+
+  const handleOpenLegal = (tab: 'terms' | 'privacy' = 'terms') => {
+    setLegalModalTab(tab);
+    setShowLegalModal(true);
+  };
 
   // Group Ordering Active State & Preloaded Meals (from Reorder)
   const [groupOrderPreloadMeals, setGroupOrderPreloadMeals] = useState<{ meal: Meal; quantity: number }[] | null>(null);
@@ -465,6 +493,21 @@ export default function App() {
   // Location Setup & Multi-Address Delivery Selection Modals State
   const [showCityLocationModal, setShowCityLocationModal] = useState<boolean>(false);
   const [showSelectAddressModal, setShowSelectAddressModal] = useState<boolean>(false);
+  const [onboardingFlowState, setOnboardingFlowState] = useState<{
+    isOpen: boolean;
+    userDisplayName?: string | null;
+    userPhone?: string | null;
+    mode: 'login' | 'signup' | 'restore';
+    savedAddressCount: number;
+    savedAddressPrimary?: string | null;
+    isNewUser: boolean;
+  } | null>(null);
+  const [welcomeBackUser, setWelcomeBackUser] = useState<{
+    name: string;
+    avatar?: string;
+    address?: string;
+    addressCount: number;
+  } | null>(null);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState<boolean>(false);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0);
   const [ratingModalOrder, setRatingModalOrder] = useState<Order | null>(null);
@@ -517,9 +560,15 @@ export default function App() {
   // 2. If user already has 1 address saved, do NOT show the map popup or prompt (use their address).
   // 3. Only if user has more than 1 saved address, show them the dialog to select their saved address where they want food delivered.
   // 4. Never trigger on page reloads/refreshes, only on fresh app launch.
+  // 5. If welcome back popup or onboarding flow is active or user has saved addresses, never show the map location picker window!
   useEffect(() => {
     if (authChecking) return;
     if (currentGateway !== 'customer') return;
+
+    if (welcomeBackUser || onboardingFlowState?.isOpen) {
+      setShowCityLocationModal(false);
+      return;
+    }
 
     const sessionKey = fbUser ? `taash_arrival_prompt_${fbUser.uid}` : 'taash_arrival_prompt_guest';
     const hasPromptedThisSession = sessionStorage.getItem(sessionKey) === 'true';
@@ -535,21 +584,23 @@ export default function App() {
     const uniqueAddresses = Array.from(new Set([...savedList, ...primaryAddr]));
     const addressCount = uniqueAddresses.length;
 
+    // If user has any saved address, strictly do not show map modal!
+    if (addressCount > 0) {
+      sessionStorage.setItem(sessionKey, 'true');
+      setShowCityLocationModal(false);
+      return;
+    }
+
     const timer = setTimeout(() => {
       sessionStorage.setItem(sessionKey, 'true');
-
-      if (addressCount === 0) {
+      if (addressCount === 0 && !welcomeBackUser && !onboardingFlowState?.isOpen) {
         // Zero saved addresses: Prompt with map popup to select delivery location
         setShowCityLocationModal(true);
-      } else if (addressCount > 1) {
-        // More than 1 saved address: Ask which saved address to deliver to
-        setShowSelectAddressModal(true);
       }
-      // If addressCount === 1: DO NOT show map popup or prompt!
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [authChecking, currentGateway, fbUser?.uid, user?.savedAddresses, user?.address]);
+  }, [authChecking, currentGateway, fbUser?.uid, user?.savedAddresses, user?.address, welcomeBackUser, onboardingFlowState?.isOpen]);
 
   // Handler for user selecting an active delivery destination from multiple saved addresses
   const handleSelectDeliveryAddress = async (selectedAddressText: string) => {
@@ -843,45 +894,100 @@ export default function App() {
           console.warn("User orders sync running offline mode.", error);
         });
       } else {
-        localStorage.removeItem('fitzaika_cached_fb_user');
-        localStorage.removeItem('fitzaika_cached_user_profile');
-        localStorage.removeItem('fitzaika_onboarding_done');
-        setUser({
-          name: 'Guest Athlete',
-          email: 'guest@taashbhatti.com',
-          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
-          goal: 'general',
-          preferredGymId: '',
-          savedAddresses: [],
-          savedPayments: [],
-        });
+        // Inspect local storage for an active session (e.g., phone auth or remembered user profile)
+        const cachedUserStr = localStorage.getItem('fitzaika_cached_user_profile');
+        const cachedFbUserStr = localStorage.getItem('fitzaika_cached_fb_user');
+        const hasAuthSession = localStorage.getItem('fitzaika_auth_session') === 'true';
+        let persistentProfile: User | null = null;
+        if (cachedUserStr) {
+          try {
+            persistentProfile = JSON.parse(cachedUserStr);
+          } catch (e) {}
+        }
 
-        // Sync guest orders in Firestore using persistent guest ID
-        const guestId = getGuestUserId();
-        const guestOrdersQuery = query(collection(db, 'orders'), where('userId', '==', guestId));
-        unsubscribeOrders = onSnapshot(guestOrdersQuery, (snapshot) => {
-          const loadedOrders: Order[] = [];
-          snapshot.forEach((d) => {
-            loadedOrders.push(d.data() as Order);
-          });
-          const cachedStr = localStorage.getItem('fitzaika_orders_cache');
-          let localCache: Order[] = [];
-          if (cachedStr) {
-            try { localCache = JSON.parse(cachedStr); } catch (e) {}
+        const isRealUser = persistentProfile && (
+          hasAuthSession ||
+          (persistentProfile.phone && persistentProfile.phone.trim().length > 0) ||
+          (persistentProfile.email && persistentProfile.email.trim().length > 0 && !persistentProfile.email.includes('guest@')) ||
+          (persistentProfile.savedAddresses && persistentProfile.savedAddresses.length > 0)
+        );
+
+        if (isRealUser && persistentProfile) {
+          // RETAIN USER SESSION! DO NOT CLEAR DATA OR LOG OUT!
+          setUser(persistentProfile);
+          let restoredFbUser: any = null;
+          if (cachedFbUserStr) {
+            try {
+              restoredFbUser = JSON.parse(cachedFbUserStr);
+              setFbUser(restoredFbUser);
+            } catch (e) {}
           }
-          const combinedMap = new Map<string, Order>();
-          loadedOrders.forEach(o => combinedMap.set(o.id, o));
-          localCache.forEach(o => {
-            if (!combinedMap.has(o.id)) {
-              combinedMap.set(o.id, o);
+
+          // Sync orders for this persistent user
+          const activeUid = restoredFbUser?.uid || persistentProfile.phone || getGuestUserId();
+          const ordersQuery = query(collection(db, 'orders'), where('userId', '==', activeUid));
+          unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
+            const loadedOrders: Order[] = [];
+            snapshot.forEach((d) => {
+              loadedOrders.push(d.data() as Order);
+            });
+            const cachedStr = localStorage.getItem('fitzaika_orders_cache');
+            let localCache: Order[] = [];
+            if (cachedStr) {
+              try { localCache = JSON.parse(cachedStr); } catch (e) {}
             }
+            const combinedMap = new Map<string, Order>();
+            loadedOrders.forEach(o => combinedMap.set(o.id, o));
+            localCache.forEach(o => {
+              if (!combinedMap.has(o.id) && (o.userId === activeUid || o.userId?.startsWith('guest_'))) {
+                combinedMap.set(o.id, { ...o, userId: activeUid });
+              }
+            });
+            const combinedList = Array.from(combinedMap.values());
+            combinedList.sort((a, b) => (b.createdAt || b.id).localeCompare(a.createdAt || a.id));
+            updateOrdersWithCache(combinedList);
+          }, (error: any) => {
+            console.warn("User orders sync running offline mode.", error);
           });
-          const combinedList = Array.from(combinedMap.values());
-          combinedList.sort((a, b) => (b.createdAt || b.id).localeCompare(a.createdAt || a.id));
-          updateOrdersWithCache(combinedList);
-        }, (error: any) => {
-          console.warn("Guest orders sync running offline mode.", error);
-        });
+        } else {
+          // Genuinely a guest user with no prior login session
+          setUser({
+            name: 'Guest Athlete',
+            email: 'guest@taashbhatti.com',
+            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+            goal: 'general',
+            preferredGymId: '',
+            savedAddresses: [],
+            savedPayments: [],
+          });
+
+          // Sync guest orders in Firestore using persistent guest ID
+          const guestId = getGuestUserId();
+          const guestOrdersQuery = query(collection(db, 'orders'), where('userId', '==', guestId));
+          unsubscribeOrders = onSnapshot(guestOrdersQuery, (snapshot) => {
+            const loadedOrders: Order[] = [];
+            snapshot.forEach((d) => {
+              loadedOrders.push(d.data() as Order);
+            });
+            const cachedStr = localStorage.getItem('fitzaika_orders_cache');
+            let localCache: Order[] = [];
+            if (cachedStr) {
+              try { localCache = JSON.parse(cachedStr); } catch (e) {}
+            }
+            const combinedMap = new Map<string, Order>();
+            loadedOrders.forEach(o => combinedMap.set(o.id, o));
+            localCache.forEach(o => {
+              if (!combinedMap.has(o.id)) {
+                combinedMap.set(o.id, o);
+              }
+            });
+            const combinedList = Array.from(combinedMap.values());
+            combinedList.sort((a, b) => (b.createdAt || b.id).localeCompare(a.createdAt || a.id));
+            updateOrdersWithCache(combinedList);
+          }, (error: any) => {
+            console.warn("Guest orders sync running offline mode.", error);
+          });
+        }
       }
     });
 
@@ -1533,11 +1639,43 @@ export default function App() {
     setUser(data.user);
     setFbUser(data.fbUser);
     setShowAuthVerifyingOverlay(false);
-    showToast(`📱 Mobile number verified! Welcome back, ${data.user.name}`);
+    
+    // Explicitly persist session in localStorage so the user is never logged out on app reopen
+    try {
+      localStorage.setItem('fitzaika_auth_session', 'true');
+      localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(data.user));
+      localStorage.setItem('fitzaika_cached_fb_user', JSON.stringify(data.fbUser));
+    } catch (e) {}
+
+    // Mark arrival prompt as handled so automatic timers don't open the map
+    const activeUid = data.fbUser?.uid || data.user?.phone || 'user';
+    sessionStorage.setItem(`taash_arrival_prompt_${activeUid}`, 'true');
+
+    // SENSE SAVED ADDRESSES:
+    const savedList = (data.user?.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0);
+    const primaryAddr = (data.user?.address && data.user.address.trim().length > 0) ? data.user.address.trim() : (savedList[0] || '');
+    const uniqueAddresses = Array.from(new Set([...savedList, ...(primaryAddr ? [primaryAddr] : [])]));
+    const addressCount = uniqueAddresses.length;
+
+    // Immediately suppress any background map or address selection windows
+    setShowCityLocationModal(false);
+    setShowSelectAddressModal(false);
+
+    // Launch the aesthetic OnboardingFlowModal with big logo and step-by-step animations
+    setOnboardingFlowState({
+      isOpen: true,
+      userDisplayName: data.user.name || null,
+      userPhone: data.user.phone || null,
+      mode: data.isNewUser ? 'signup' : 'login',
+      savedAddressCount: addressCount,
+      savedAddressPrimary: primaryAddr,
+      isNewUser: data.isNewUser,
+    });
   };
 
   const handleSignOut = async () => {
     try {
+      localStorage.removeItem('fitzaika_auth_session');
       localStorage.removeItem('fitzaika_cached_fb_user');
       localStorage.removeItem('fitzaika_cached_user_profile');
       localStorage.removeItem('fitzaika_onboarding_done');
@@ -1560,6 +1698,9 @@ export default function App() {
       showToast("🔓 Logged out successfully.");
     } catch (err) {
       console.error(err);
+      localStorage.removeItem('fitzaika_auth_session');
+      localStorage.removeItem('fitzaika_cached_fb_user');
+      localStorage.removeItem('fitzaika_cached_user_profile');
       setFbUser(null);
       setUser({
         name: 'Guest Athlete',
@@ -2017,7 +2158,13 @@ export default function App() {
         onOpenNotifications={() => setShowNotificationPrompt(true)}
         unreadNotificationCount={unreadNotificationCount}
         onOpenLocationSelector={() => {
-          if (user.savedAddresses && user.savedAddresses.length > 1) {
+          const allSaved = Array.from(
+            new Set([
+              ...(user.savedAddresses || []).filter((a): a is string => typeof a === 'string' && a.trim().length > 0),
+              ...(user.address && user.address.trim().length > 0 ? [user.address.trim()] : [])
+            ])
+          );
+          if (allSaved.length > 0) {
             setShowSelectAddressModal(true);
           } else {
             setShowCityLocationModal(true);
@@ -2303,8 +2450,45 @@ export default function App() {
             onRelaunchOnboarding={() => handleShowOnboarding(true)}
             onOpenMailbox={() => setMailboxOpen(true)}
             onOpenGroupOrder={handleOpenGroupOrderWithMeals}
+            onOpenLegal={handleOpenLegal}
           />
         )}
+
+        {/* CULINARY BRAND FOOTER & LEGAL NAVIGATION */}
+        <footer className="mt-16 pt-8 pb-24 border-t border-brand-charcoal/10 text-center space-y-4 px-4">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-bold text-brand-charcoal/70">
+            <button
+              type="button"
+              onClick={() => handleOpenLegal('terms')}
+              className="hover:text-brand-green underline underline-offset-4 decoration-brand-green/30 hover:decoration-brand-green transition-all cursor-pointer"
+            >
+              Terms & Conditions
+            </button>
+            <span className="text-brand-charcoal/20 select-none">•</span>
+            <button
+              type="button"
+              onClick={() => handleOpenLegal('privacy')}
+              className="hover:text-brand-green underline underline-offset-4 decoration-brand-green/30 hover:decoration-brand-green transition-all cursor-pointer"
+            >
+              Privacy Policy
+            </button>
+            <span className="text-brand-charcoal/20 select-none">•</span>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('account');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="hover:text-brand-green underline underline-offset-4 decoration-brand-green/30 hover:decoration-brand-green transition-all cursor-pointer"
+            >
+              Customer Support & Grievances
+            </button>
+          </div>
+
+          <p className="text-[11px] text-brand-charcoal/50 max-w-xl mx-auto leading-relaxed">
+            © {new Date().getFullYear()} TAASH BHATTI Food Brand. Authentic Woodfire & Slow-Cooked Charcoal Specialties. Dedicated to stringent culinary hygiene, tamper-proof packaging, and patron data security.
+          </p>
+        </footer>
       </main>
 
       {/* SLIDE-OVER CHECKOUT DRAWER */}
@@ -2452,7 +2636,10 @@ export default function App() {
         <AuthVerifyingOverlay
           userDisplayName={user.name || fbUser?.displayName}
           userEmail={user.email || fbUser?.email}
+          userPhone={user.phone}
           isLoggedIn={true}
+          savedAddressCount={((user.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0)).length}
+          savedAddressPrimary={user.address}
           onFinish={() => setShowAuthVerifyingOverlay(false)}
         />
       )}
@@ -2485,15 +2672,90 @@ export default function App() {
         onSaveLocation={handleSaveLocation}
       />
 
-      {/* DELIVERY DESTINATION CHOOSER MODAL (For users with >1 saved addresses) */}
+      {/* DELIVERY DESTINATION CHOOSER MODAL */}
       <SelectDeliveryAddressModal
         isOpen={showSelectAddressModal}
         onClose={() => setShowSelectAddressModal(false)}
-        savedAddresses={user.savedAddresses || []}
+        savedAddresses={Array.from(
+          new Set([
+            ...(user.savedAddresses || []).filter((a): a is string => typeof a === 'string' && a.trim().length > 0),
+            ...(user.address && user.address.trim().length > 0 ? [user.address.trim()] : [])
+          ])
+        )}
         currentAddress={user.address || user.savedAddresses?.[0]}
         onSelectAddress={handleSelectDeliveryAddress}
-        onAddNewAddress={() => setShowCityLocationModal(true)}
+        onAddNewAddress={() => {
+          setShowSelectAddressModal(false);
+          setShowCityLocationModal(true);
+        }}
       />
+
+      {/* TAASH BHATTI ONBOARDING FLOW MODAL (Aesthetic wait window with big logo, step-by-step animations & location hydration guard) */}
+      {onboardingFlowState && (
+        <OnboardingFlowModal
+          isOpen={onboardingFlowState.isOpen}
+          userDisplayName={onboardingFlowState.userDisplayName}
+          userPhone={onboardingFlowState.userPhone}
+          mode={onboardingFlowState.mode}
+          savedAddressCount={onboardingFlowState.savedAddressCount}
+          savedAddressPrimary={onboardingFlowState.savedAddressPrimary}
+          onComplete={() => {
+            const state = onboardingFlowState;
+            setOnboardingFlowState(null);
+
+            // Re-evaluate user profile at the exact moment onboarding finishes
+            const freshSavedList = (user?.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0);
+            const freshPrimaryAddr = (user?.address && user.address.trim().length > 0) ? user.address.trim() : (freshSavedList[0] || state.savedAddressPrimary || '');
+            const freshUnique = Array.from(new Set([...freshSavedList, ...(freshPrimaryAddr ? [freshPrimaryAddr] : [])]));
+            const count = freshUnique.length > 0 ? freshUnique.length : state.savedAddressCount;
+
+            if (state.isNewUser) {
+              // RULE 1: STRICTLY NO welcome back animation to signup/first time register users!
+              showToast(`🎉 Welcome to TAASH BHATTI, ${user.name || 'Athlete'}!`);
+              if (count === 0) {
+                // If brand new user with 0 addresses, prompt map location picker
+                setTimeout(() => {
+                  setShowCityLocationModal(true);
+                }, 400);
+              }
+            } else {
+              // RULE 2: Returning user logging in!
+              if (count > 0) {
+                // OVERPOWER THE MAP WINDOW:
+                setShowCityLocationModal(false);
+                setShowSelectAddressModal(false);
+                setWelcomeBackUser({
+                  name: user.name || 'Athlete',
+                  avatar: user.avatar,
+                  address: freshPrimaryAddr,
+                  addressCount: count,
+                });
+              } else {
+                showToast(`📱 Welcome back, ${user.name}!`);
+                setTimeout(() => {
+                  setShowCityLocationModal(true);
+                }, 400);
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* RETURNING USER WELCOME BACK ANIMATION POPUP (OVERPOWERS MAP WINDOW) */}
+      {welcomeBackUser && (
+        <WelcomeBackModal
+          isOpen={!!welcomeBackUser}
+          onClose={() => setWelcomeBackUser(null)}
+          userName={welcomeBackUser.name}
+          avatar={welcomeBackUser.avatar}
+          address={welcomeBackUser.address}
+          addressCount={welcomeBackUser.addressCount}
+          onChangeAddress={() => {
+            setWelcomeBackUser(null);
+            setShowSelectAddressModal(true);
+          }}
+        />
+      )}
 
       {/* STEP 2: DEVICE NOTIFICATION PROMPT (GRAPHIC MODAL WITH PRECISION HOTSPOT) */}
       <NotificationPromptModal
@@ -2586,6 +2848,13 @@ export default function App() {
           }}
         />
       )}
+
+      {/* LEGAL & POLICIES MODAL (TERMS & CONDITIONS / PRIVACY POLICY) */}
+      <LegalDocumentsModal
+        isOpen={showLegalModal}
+        onClose={() => setShowLegalModal(false)}
+        initialTab={legalModalTab}
+      />
 
     </div>
   );

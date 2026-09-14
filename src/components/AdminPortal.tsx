@@ -108,6 +108,7 @@ function getSecondaryAuth() {
 import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord } from '../types';
 import { MEALS_DATA, GYMS_DATA, INITIAL_DELIVERY_PARTNERS, DEFAULT_HERO_BANNERS } from '../data';
 import AdminDealsManager from './AdminDealsManager';
+import AdminLegalManager from './AdminLegalManager';
 import { KdsRiderCashSection } from './KdsRiderCashSection';
 import KitchenEODSettlementModal from './KitchenEODSettlementModal';
 import KitchenWastageManager from './KitchenWastageManager';
@@ -681,7 +682,7 @@ interface AdminPortalProps {
 }
 
 export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, allGyms = [], gymChains = [], allKitchens = [] }: AdminPortalProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tracking' | 'meals' | 'deals' | 'coupons' | 'kitchens' | 'fleet' | 'support' | 'users' | 'banners'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tracking' | 'meals' | 'deals' | 'coupons' | 'kitchens' | 'fleet' | 'support' | 'users' | 'banners' | 'legal'>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
 
   // Hero Banners State
@@ -3666,6 +3667,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
               { id: 'users' as const, label: 'User Accounts', icon: Users, countBadge: usersList.length > 0 ? usersList.length : null },
               { id: 'support' as const, label: 'Support Desk', icon: Mail, countBadge: supportTickets.filter(t => t.status === 'pending').length || null },
               { id: 'banners' as const, label: 'Hero Banners', icon: Layers, countBadge: banners.length > 0 ? banners.length : null },
+              { id: 'legal' as const, label: 'Legal & Policies', icon: FileText, countBadge: null },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -3722,6 +3724,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                 { id: 'users' as const, label: 'User Accounts', icon: Users, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-blue-950 text-blue-300 border border-blue-800/60">{usersList.length} total</span> },
                 { id: 'support' as const, label: 'Support & Complaints', icon: Mail, badge: supportTickets.filter(t => t.status === 'pending').length > 0 ? <span className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center font-black text-[9px] animate-pulse">{supportTickets.filter(t => t.status === 'pending').length}</span> : null },
                 { id: 'banners' as const, label: 'Hero Banners', icon: Layers, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-brand-orange/15 text-brand-orange border border-brand-orange/20">{banners.length} active</span> },
+                { id: 'legal' as const, label: 'Legal & Policies', icon: FileText, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-800/60">Editable</span> },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -12410,6 +12413,21 @@ Free express delivery directly to trainer desks"
                     </div>
                   ))}
                 </div>
+              </motion.div>
+            )}
+
+            {/* LEGAL & POLICIES WORKSPACE (Terms & Conditions and Privacy Policy Editable Desk) */}
+            {activeTab === 'legal' && (
+              <motion.div
+                key="legal_workspace"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-6 text-left"
+              >
+                <AdminLegalManager
+                  adminEmail={user?.email || fbUser?.email || 'admin@taashbhatti.com'}
+                />
               </motion.div>
             )}
 

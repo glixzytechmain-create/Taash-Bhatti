@@ -282,9 +282,33 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "code", "pin", "name", "hostUserId", "treatMode", "status", "deliveryAddress", "members", "items"]
+    },
+    "LegalDocument": {
+      "title": "Legal Document",
+      "description": "Terms & Conditions and Privacy Policy document editable by Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "tagline": { "type": "string" },
+        "lastUpdated": { "type": "string" },
+        "version": { "type": "string" },
+        "summary": { "type": "string" },
+        "sections": { "type": "array" },
+        "contactEmail": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "contactAddress": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "title", "lastUpdated", "sections"]
     }
   },
   "firestore": {
+    "/site_content/{contentId}": {
+      "schema": "LegalDocument",
+      "description": "Terms & Conditions and Privacy Policy documents"
+    },
     "/group_orders/{roomId}": {
       "schema": "GroupOrderRoom",
       "description": "Live group ordering rooms with authenticated creators and members"

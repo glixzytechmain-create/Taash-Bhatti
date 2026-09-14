@@ -356,6 +356,7 @@ interface AccountTabProps {
   onRelaunchOnboarding?: () => void;
   onOpenMailbox?: () => void;
   onOpenGroupOrder?: (preloadedItems?: any[]) => void;
+  onOpenLegal?: (tab: 'terms' | 'privacy') => void;
 }
 
 
@@ -377,6 +378,7 @@ export default function AccountTab({
   onRelaunchOnboarding,
   onOpenMailbox,
   onOpenGroupOrder,
+  onOpenLegal,
 }: AccountTabProps) {
   // Navigation inside Account screen
   const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet'>('profile');
@@ -1588,6 +1590,66 @@ export default function AccountTab({
                   </button>
                 </div>
               )}
+
+              {/* Culinary Governance & Legal Policies Card */}
+              <div className="bg-white border border-brand-green/10 rounded-3xl p-5 shadow-3xs space-y-3.5">
+                <div className="flex items-center justify-between border-b border-brand-green/5 pb-2">
+                  <span className="text-xs font-extrabold text-brand-green uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-brand-orange" /> Legal Policies & Patron Protection
+                  </span>
+                  <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-brand-charcoal/5 text-brand-charcoal/70 font-bold uppercase">
+                    Food Brand Governance
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-brand-charcoal/70 leading-relaxed">
+                  TAASH BHATTI operates under stringent food safety hygiene standards, authentic clay handi packaging, and transparent customer data privacy governance.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegal?.('terms')}
+                    className="p-3 rounded-2xl bg-brand-cream/40 hover:bg-brand-cream/80 border border-brand-green/15 text-brand-charcoal transition-all text-left flex items-center justify-between group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4 text-amber-800" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-brand-charcoal group-hover:text-brand-green transition-colors">
+                          Terms & Conditions
+                        </div>
+                        <div className="text-[10px] text-brand-charcoal/55 font-medium">
+                          Culinary services & order fulfillment
+                        </div>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-brand-charcoal/40 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegal?.('privacy')}
+                    className="p-3 rounded-2xl bg-brand-cream/40 hover:bg-brand-cream/80 border border-brand-green/15 text-brand-charcoal transition-all text-left flex items-center justify-between group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-4 h-4 text-emerald-800" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-brand-charcoal group-hover:text-brand-green transition-colors">
+                          Privacy Policy
+                        </div>
+                        <div className="text-[10px] text-brand-charcoal/55 font-medium">
+                          Data safety, address storage & rights
+                        </div>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-brand-charcoal/40 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                </div>
+              </div>
             </>
           )}
         </div>

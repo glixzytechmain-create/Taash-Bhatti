@@ -153,40 +153,46 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<st
   return `Pinpoint (${lat.toFixed(4)}, ${lng.toFixed(4)}), Muzaffarpur`;
 }
 
-// Map style definition for dark theme (Uber / Swiggy inspired)
-export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#111822" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#111822" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8E9DAE" }] },
+// Map style definition tailored to FitZaika / Taash Bhatti brand theme
+// Palette: Charcoal Emerald (#0B1713), Forest Jade (#0F291E, #10B981), Warm Gold/Amber (#F59E0B), Deep Obsidian Water (#07141F)
+export const FITZAIKA_BRAND_MAP_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: "geometry", stylers: [{ color: "#0B1713" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#070E0C" }, { weight: 3 }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#CBD5E1" }] },
   {
     featureType: "administrative.locality",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#D1D5DB" }],
+    stylers: [{ color: "#FCD34D" }, { weight: 1.5 }], // FitZaika Warm Gold
+  },
+  {
+    featureType: "administrative.neighborhood",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#94A3B8" }],
   },
   {
     featureType: "poi",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#4B5563" }],
+    stylers: [{ color: "#64748B" }],
   },
   {
     featureType: "poi.park",
     elementType: "geometry",
-    stylers: [{ color: "#0F1F18" }],
+    stylers: [{ color: "#0D261C" }], // Rich Forest Green
   },
   {
     featureType: "poi.park",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#34D399" }],
+    stylers: [{ color: "#10B981" }], // Brand Emerald
   },
   {
     featureType: "road",
     elementType: "geometry",
-    stylers: [{ color: "#1E293B" }],
+    stylers: [{ color: "#162820" }], // Dark Jade Slate
   },
   {
     featureType: "road",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#0F172A" }],
+    stylers: [{ color: "#0D1B15" }],
   },
   {
     featureType: "road",
@@ -196,39 +202,42 @@ export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
   {
     featureType: "road.highway",
     elementType: "geometry",
-    stylers: [{ color: "#334155" }],
+    stylers: [{ color: "#2B3A28" }], // Warm olive-jade arterial
   },
   {
     featureType: "road.highway",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#1E293B" }],
+    stylers: [{ color: "#1A2518" }],
   },
   {
     featureType: "road.highway",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#F8FAFC" }],
+    stylers: [{ color: "#FBBF24" }], // Amber Highway labels
   },
   {
     featureType: "transit",
     elementType: "geometry",
-    stylers: [{ color: "#1E293B" }],
+    stylers: [{ color: "#14251E" }],
   },
   {
     featureType: "transit.station",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#94A3B8" }],
+    stylers: [{ color: "#10B981" }],
   },
   {
     featureType: "water",
     elementType: "geometry",
-    stylers: [{ color: "#0B131E" }],
+    stylers: [{ color: "#07141F" }], // Deep Obsidian Marine
   },
   {
     featureType: "water",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#475569" }],
+    stylers: [{ color: "#38BDF8" }],
   },
 ];
+
+// Dark map style is configured to our brand theme
+export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = FITZAIKA_BRAND_MAP_STYLE;
 
 // Map style definition for light theme
 export const LIGHT_MAP_STYLE: google.maps.MapTypeStyle[] = [

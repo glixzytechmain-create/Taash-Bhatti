@@ -1,126 +1,149 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Sparkles,
-  UserCheck,
-  Compass,
+import { 
+  ShieldCheck, 
+  MapPin, 
+  CheckCircle2, 
+  Sparkles, 
+  KeyRound, 
+  UserCheck, 
+  Compass, 
   UtensilsCrossed,
-  ShieldCheck,
-  CheckCircle2,
+  ArrowRight,
+  Zap,
+  Radio
 } from 'lucide-react';
 
-interface AuthVerifyingOverlayProps {
+export interface OnboardingFlowModalProps {
+  isOpen: boolean;
   userDisplayName?: string | null;
-  userEmail?: string | null;
   userPhone?: string | null;
-  isLoggedIn?: boolean;
+  mode?: 'login' | 'signup' | 'restore';
   savedAddressCount?: number;
   savedAddressPrimary?: string | null;
-  onFinish?: () => void;
+  onComplete: () => void;
 }
 
-export default function AuthVerifyingOverlay({
+export default function OnboardingFlowModal({
+  isOpen,
   userDisplayName,
-  userEmail,
   userPhone,
-  isLoggedIn = false,
+  mode = 'login',
   savedAddressCount = 0,
   savedAddressPrimary,
-  onFinish,
-}: AuthVerifyingOverlayProps) {
+  onComplete,
+}: OnboardingFlowModalProps) {
+  // Step index: 0, 1, 2, 3
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [isFinished, setIsFinished] = useState<boolean>(false);
 
+  // Define steps with dynamic labels based on mode and detected address status
   const steps = [
     {
+      id: 'auth',
+      badge: 'Step 1 of 4',
+      title: mode === 'signup' ? 'Profile Registration' : 'Credentials & Session Vault',
+      subtitle: mode === 'signup'
+        ? 'Creating encrypted account tokens & securing credentials...'
+        : 'Verifying cryptographic access tokens & cloud identity...',
+      icon: <KeyRound className="w-5 h-5 text-amber-400" />,
+      tag: 'AUTHENTICATED',
+    },
+    {
       id: 'profile',
-      badge: 'STEP 1 OF 3',
-      title: 'Profile & Feast Calibration',
-      subtitle: 'Synchronizing taste preferences, nutrition targets & member perks...',
-      icon: <UserCheck className="w-5 h-5 text-amber-400" />,
-      tag: 'CALIBRATED',
+      badge: 'Step 2 of 4',
+      title: 'Gourmet Profile & Preferences',
+      subtitle: 'Calibrating diet goals, feast favorites & taste profile...',
+      icon: <UserCheck className="w-5 h-5 text-emerald-400" />,
+      tag: 'SYNCED',
     },
     {
       id: 'location',
-      badge: 'STEP 2 OF 3',
-      title: 'Delivery Geofence & Doorstep Sync',
+      badge: 'Step 3 of 4',
+      title: 'Syncing Saved Delivery Address',
       subtitle: savedAddressCount > 0
-        ? `Found ${savedAddressCount} saved doorstep location! Locking "${savedAddressPrimary?.slice(0, 28) || 'Home'}${savedAddressPrimary && savedAddressPrimary.length > 28 ? '...' : ''}"`
-        : 'Connecting to nearest live bhattis & verified service area...',
-      icon: <Compass className="w-5 h-5 text-emerald-400" />,
+        ? `Found ${savedAddressCount} saved doorstep address! Locking "${savedAddressPrimary?.slice(0, 28) || 'Home'}${savedAddressPrimary && savedAddressPrimary.length > 28 ? '...' : ''}" to header.`
+        : 'Verifying service kitchen geofences & delivery radius...',
+      icon: <Compass className="w-5 h-5 text-amber-400" />,
       tag: savedAddressCount > 0 ? `${savedAddressCount} SAVED` : 'VERIFIED',
     },
     {
-      id: 'kitchen',
-      badge: 'STEP 3 OF 3',
-      title: 'Live Kitchen Stations Active',
-      subtitle: 'Tandoor grills prepped, authentic coal bhattis fired up & menu ready!',
-      icon: <UtensilsCrossed className="w-5 h-5 text-amber-400" />,
+      id: 'ready',
+      badge: 'Step 4 of 4',
+      title: 'Preparing Your Gourmet Kitchen',
+      subtitle: 'Live kitchen stations, bhatti grills & member pricing active!',
+      icon: <UtensilsCrossed className="w-5 h-5 text-emerald-400" />,
       tag: 'READY',
     },
   ];
 
   useEffect(() => {
-    // Step 0 -> Step 1 after 750ms
+    if (!isOpen) {
+      setCurrentStepIndex(0);
+      setIsFinished(false);
+      return;
+    }
+
+    // Step 0 -> Step 1 after 850ms
     const t0 = setTimeout(() => {
       setCurrentStepIndex(1);
-    }, 750);
+    }, 850);
 
-    // Step 1 -> Step 2 after 1550ms
+    // Step 1 -> Step 2 (Dedicated location verification step) after 1750ms
     const t1 = setTimeout(() => {
       setCurrentStepIndex(2);
-    }, 1550);
+    }, 1750);
 
-    // Step 2 mark complete after 2300ms
+    // Step 2 -> Step 3 (Ready confirmation) after 2750ms
     const t2 = setTimeout(() => {
-      setIsFinished(true);
-    }, 2300);
-
-    // Fade out and finish callback after 2750ms
-    const t3 = setTimeout(() => {
-      if (onFinish) onFinish();
+      setCurrentStepIndex(3);
     }, 2750);
+
+    // Step 3 finished mark after 3600ms
+    const t3 = setTimeout(() => {
+      setIsFinished(true);
+    }, 3600);
+
+    // Complete onboarding transition after 4200ms
+    const t4 = setTimeout(() => {
+      onComplete();
+    }, 4200);
 
     return () => {
       clearTimeout(t0);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      clearTimeout(t4);
     };
-  }, [onFinish]);
+  }, [isOpen, onComplete]);
+
+  if (!isOpen) return null;
 
   const currentStep = steps[currentStepIndex] || steps[steps.length - 1];
-  const progressPercent = Math.min(
-    100,
-    Math.round(((currentStepIndex + (isFinished ? 1 : 0.4)) / steps.length) * 100)
-  );
-
-  const displayName =
-    userDisplayName ||
-    (userEmail ? userEmail.split('@')[0] : null) ||
-    (userPhone ? userPhone : 'Athlete');
+  const progressPercent = Math.min(100, Math.round(((currentStepIndex + (isFinished ? 1 : 0.45)) / steps.length) * 100));
 
   return (
     <div
-      id="auth-verifying-overlay"
+      id="onboarding-flow-modal-backdrop"
       className="fixed inset-0 z-[10000] bg-[#070A0D]/95 backdrop-blur-2xl flex items-center justify-center p-4 select-none overflow-hidden"
     >
       {/* Dynamic Ambient Radiant Glows */}
-      <div
-        className="absolute w-[500px] h-[500px] rounded-full bg-amber-500/15 blur-[130px] pointer-events-none -top-24 -left-24 animate-pulse"
-        style={{ animationDuration: '4s' }}
+      <div 
+        className="absolute w-[500px] h-[500px] rounded-full bg-amber-500/15 blur-[130px] pointer-events-none -top-24 -left-24 animate-pulse" 
+        style={{ animationDuration: '4s' }} 
       />
-      <div
-        className="absolute w-[480px] h-[480px] rounded-full bg-emerald-500/15 blur-[120px] pointer-events-none -bottom-24 -right-24 animate-pulse"
-        style={{ animationDuration: '5s' }}
+      <div 
+        className="absolute w-[480px] h-[480px] rounded-full bg-emerald-500/15 blur-[120px] pointer-events-none -bottom-24 -right-24 animate-pulse" 
+        style={{ animationDuration: '5s' }} 
       />
 
       {/* Main Experience Card */}
       <motion.div
-        id="auth-verifying-card"
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        id="onboarding-flow-card"
+        initial={{ opacity: 0, scale: 0.88, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: -15 }}
+        exit={{ opacity: 0, scale: 0.94, y: -15 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
         className="relative w-full max-w-md bg-gradient-to-b from-[#141B22] via-[#0E141B] to-[#0A0E13] border border-amber-500/30 rounded-[36px] p-7 sm:p-8 shadow-[0_25px_80px_rgba(0,0,0,0.9)] flex flex-col items-center text-center overflow-hidden"
       >
@@ -190,18 +213,16 @@ export default function AuthVerifyingOverlay({
           </div>
 
           <h2 className="text-2xl font-black text-white tracking-tight uppercase">
-            Preparing Your Feast
+            {mode === 'signup' ? 'Welcome, Athlete!' : 'Authenticating Session'}
           </h2>
 
           <p className="text-xs text-gray-300 font-medium max-w-xs mx-auto">
-            {displayName
-              ? `Synchronizing gourmet kitchen profile for ${displayName}...`
-              : 'Connecting to live bhattis and artisan kitchen stations...'}
+            {userDisplayName ? `Synchronizing profile for ${userDisplayName}...` : userPhone ? `Connected as ${userPhone}...` : 'Configuring your personalized gourmet experience...'}
           </p>
         </div>
 
-        {/* 3. STEP-BY-STEP TRANSITION STAGE (ONE STEP AT A TIME WITH POLISHED MOTION) */}
-        <div className="w-full bg-[#080B0F]/90 border border-white/10 rounded-2xl p-4 sm:p-5 relative min-h-[115px] flex flex-col justify-center overflow-hidden mb-5">
+        {/* 3. STEP-BY-STEP TRANSITION STAGE (SHOWS ONE STEP AT A TIME WITH AWESOME ANIMATION) */}
+        <div className="w-full bg-[#080B0F]/90 border border-white/10 rounded-2xl p-4 sm:p-5 relative min-h-[120px] flex flex-col justify-center overflow-hidden mb-5">
           {/* Active bottom glow bar */}
           <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-amber-500 via-emerald-400 to-amber-500 opacity-80" />
 
@@ -228,9 +249,9 @@ export default function AuthVerifyingOverlay({
                   <span className="text-[10px] font-mono font-black text-amber-400 tracking-wider uppercase">
                     {currentStep.badge}
                   </span>
-                  {currentStepIndex === 1 && savedAddressCount > 0 ? (
+                  {currentStepIndex === 2 && savedAddressCount > 0 ? (
                     <span className="text-[9px] font-mono px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full font-bold">
-                      ✓ {savedAddressCount} ADDRESS{savedAddressCount > 1 ? 'ES' : ''} FOUND
+                      ✓ {savedAddressCount} ADDRESS{savedAddressCount > 1 ? 'ES' : ''} DETECTED
                     </span>
                   ) : (
                     <span className="text-[9px] font-mono px-2 py-0.5 bg-white/10 text-gray-300 rounded-full font-bold">
@@ -252,21 +273,21 @@ export default function AuthVerifyingOverlay({
         {/* 4. STEP DOTS / PROGRESS INDICATOR */}
         <div className="w-full space-y-2 mb-4">
           <div className="flex items-center justify-between text-[11px] font-mono">
-            <span className="text-gray-400 font-bold uppercase tracking-wider">KITCHEN SYNCHRONIZATION</span>
+            <span className="text-gray-400 font-bold uppercase tracking-wider">SYSTEM SYNCHRONIZATION</span>
             <span className="text-amber-400 font-extrabold">{progressPercent}%</span>
           </div>
 
           <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden p-0.5 border border-white/5">
             <motion.div
               className="h-full bg-gradient-to-r from-amber-500 via-orange-400 to-emerald-400 rounded-full"
-              initial={{ width: '20%' }}
+              initial={{ width: '15%' }}
               animate={{ width: `${progressPercent}%` }}
               transition={{ duration: 0.45, ease: 'easeInOut' }}
             />
           </div>
 
           {/* Stepper Dots Bar */}
-          <div className="grid grid-cols-3 gap-2 pt-1">
+          <div className="grid grid-cols-4 gap-2 pt-1">
             {steps.map((s, idx) => {
               const isPast = currentStepIndex > idx;
               const isCurrent = currentStepIndex === idx;
@@ -286,7 +307,7 @@ export default function AuthVerifyingOverlay({
                       isCurrent ? 'text-amber-300 font-bold' : isPast ? 'text-emerald-400' : 'text-gray-600'
                     }`}
                   >
-                    {idx === 0 ? 'Profile' : idx === 1 ? 'Location' : 'Kitchen'}
+                    {idx === 0 ? 'Auth' : idx === 1 ? 'Profile' : idx === 2 ? 'Location' : 'Ready'}
                   </span>
                 </div>
               );
@@ -297,7 +318,7 @@ export default function AuthVerifyingOverlay({
         {/* 5. FOOTER ASSURANCE BADGE */}
         <div className="pt-2 text-[10px] font-mono text-gray-500 uppercase tracking-widest flex items-center justify-center gap-1.5">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span>TAASH BHATTI Artisanal Kitchen • Verified</span>
+          <span>TAASH BHATTI Geofence & Session Engine • Verified</span>
         </div>
       </motion.div>
     </div>

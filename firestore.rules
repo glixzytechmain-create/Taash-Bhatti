@@ -125,6 +125,11 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
+    // Match site_content collection (Terms & Conditions, Privacy Policy editable by Admin)
+    match /site_content/{contentId} {
+      allow read, write: if true;
+    }
+
     // Match test collection for connection validation
     match /test/{testId} {
       allow read, write: if true;

@@ -79,7 +79,8 @@ export default function BuddyDeckView({
   const [receiverUid, setReceiverUid] = useState<string>(initialDeckId || '');
   const [loadingReceiver, setLoadingReceiver] = useState(false);
   const [receiverError, setReceiverError] = useState<string | null>(null);
-  const [availableBuddies, setAvailableBuddies] = useState<{ uid: string; name: string; email: string; addressCount: number }[]>([]);
+  // Catalog view: 'deck' (Friend's Deck) vs 'full_menu' (Browse All Dishes)
+  const [catalogTab, setCatalogTab] = useState<'deck' | 'full_menu'>('deck');
 
   // Receiver's Deck Meals & Card states
   const [flippedCards, setFlippedCards] = useState<Record<string, boolean>>({});
@@ -106,35 +107,6 @@ export default function BuddyDeckView({
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-
-  // Fetch sample buddies/recent athletes from Firestore so users can easily test
-  useEffect(() => {
-    let isMounted = true;
-    async function loadSampleUsers() {
-      try {
-        const snap = await getDocs(collection(db, 'users'));
-        const list: { uid: string; name: string; email: string; addressCount: number }[] = [];
-        snap.forEach((d) => {
-          if (d.id !== currentUserId) {
-            const data = d.data() as User;
-            list.push({
-              uid: d.id,
-              name: data.name || 'Athlete Friend',
-              email: data.email || '',
-              addressCount: (data.savedAddresses || []).length
-            });
-          }
-        });
-        if (isMounted) {
-          setAvailableBuddies(list.slice(0, 5));
-        }
-      } catch (err) {
-        console.warn("Could not list sample buddies:", err);
-      }
-    }
-    loadSampleUsers();
-    return () => { isMounted = false; };
-  }, [currentUserId]);
 
   // Connect to receiver when initialDeckId is provided
   useEffect(() => {
@@ -188,6 +160,9 @@ export default function BuddyDeckView({
           setSelectedAddress('Main City Colony, Muzaffarpur');
         }
 
+        // Always prioritize showing the receiver's personal deck first
+        setCatalogTab('deck');
+
         // Update URL query state for clean sharing
         try {
           const newUrl = `${window.location.pathname}?deckId=${resolvedUid}`;
@@ -195,7 +170,7 @@ export default function BuddyDeckView({
         } catch (e) {}
 
       } else {
-        setReceiverError(`Could not find a deck for ID "${cleanId}". Check the Deck ID or select a friend below.`);
+        setReceiverError(`Could not find an athlete deck for "${cleanId}". Check the Deck ID, phone number, or email.`);
         setConnectedReceiver(null);
       }
     } catch (err: any) {
@@ -229,20 +204,29 @@ export default function BuddyDeckView({
     return () => unsub();
   }, [currentUserId, receiverUid, approvalCodeInput]);
 
-  // Filter receiver's deck meals
+  // Receiver's personal deck IDs
+  const receiverDeckIds = useMemo(() => {
+    if (!connectedReceiver) return [];
+    return connectedReceiver.deckMealIds || connectedReceiver.favoriteMealIds || [];
+  }, [connectedReceiver]);
+
+  // Filter receiver's personal deck meals
   const receiverDeckMeals = useMemo(() => {
     if (!connectedReceiver) return [];
-    const deckIds = connectedReceiver.deckMealIds || connectedReceiver.favoriteMealIds || [];
-    const matches = meals.filter(m => deckIds.includes(m.id));
-    // If receiver's deck is empty, provide top chef recommendations so sender can still order
-    if (matches.length === 0) {
-      return meals.slice(0, 4);
+    return meals.filter(m => receiverDeckIds.includes(m.id));
+  }, [connectedReceiver, receiverDeckIds, meals]);
+
+  // Determine which pool of meals to show based on active tab
+  const activeCatalogMeals = useMemo(() => {
+    if (!connectedReceiver) return [];
+    if (catalogTab === 'deck') {
+      return receiverDeckMeals;
     }
-    return matches;
-  }, [connectedReceiver, meals]);
+    return meals;
+  }, [catalogTab, connectedReceiver, receiverDeckMeals, meals]);
 
   const filteredMeals = useMemo(() => {
-    return receiverDeckMeals.filter(meal => {
+    return activeCatalogMeals.filter(meal => {
       const matchText = meal.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         meal.description.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchText) return false;
@@ -252,7 +236,7 @@ export default function BuddyDeckView({
       if (selectedFilter === 'high_protein') return (meal.protein || 0) >= 30;
       return true;
     });
-  }, [receiverDeckMeals, searchQuery, selectedFilter]);
+  }, [activeCatalogMeals, searchQuery, selectedFilter]);
 
   // Buddy Cart Totals
   const cartSubtotal = useMemo(() => {
@@ -684,33 +668,6 @@ export default function BuddyDeckView({
               )}
             </div>
 
-            {/* Quick Demo Friend Switcher */}
-            {availableBuddies.length > 0 && (
-              <div className="pt-4 border-t border-white/10 space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
-                  Quick Select An Athlete Deck (1-Click Test Connect):
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {availableBuddies.map((b) => (
-                    <button
-                      key={b.uid}
-                      type="button"
-                      onClick={() => {
-                        setDeckInput(b.uid);
-                        handleConnectToDeck(b.uid);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-amber-400/20 border border-white/10 hover:border-amber-400/40 text-xs font-bold text-stone-200 flex items-center gap-2 transition-all cursor-pointer"
-                    >
-                      <span>👤 {b.name}</span>
-                      <span className="text-[9px] font-mono text-amber-400 font-normal">
-                        ({b.addressCount} {b.addressCount === 1 ? 'address' : 'addresses'})
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Sharing Info Banner */}
             <div className="p-4 rounded-2xl bg-stone-950/60 border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
               <div>
@@ -812,59 +769,183 @@ export default function BuddyDeckView({
           </div>
         )}
 
-        {/* 3. RECEIVER'S DECK CARDS GRID */}
+        {/* 3. RECEIVER'S DECK & FULL MENU CARDS GRID */}
         {connectedReceiver && (
           <div className="space-y-4">
             
-            {/* Search & Filter */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-stone-900/80 p-3.5 rounded-2xl border border-white/10">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder={`Search ${connectedReceiver.name}'s favorite meals...`}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-stone-950 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-white placeholder-stone-500 focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                {(['all', 'veg', 'non_veg', 'high_protein'] as const).map(f => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setSelectedFilter(f)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap capitalize transition-all cursor-pointer ${
-                      selectedFilter === f
-                        ? 'bg-amber-400 text-stone-950'
-                        : 'bg-white/5 text-stone-300 hover:bg-white/10'
-                    }`}
-                  >
-                    {f.replace('_', ' ')}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Meals Grid */}
-            {filteredMeals.length === 0 ? (
-              <div className="text-center py-12 bg-stone-900/40 rounded-3xl border border-white/10 p-6 space-y-2">
-                <p className="text-stone-400 text-sm">No meals found matching "{searchQuery}".</p>
+            {/* Catalog Mode Selector (Deck vs Full Menu) */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-stone-900/90 p-2.5 rounded-2xl border border-white/10 shadow-lg">
+              <div className="flex items-center gap-2 flex-1">
                 <button
                   type="button"
-                  onClick={() => { setSearchQuery(''); setSelectedFilter('all'); }}
-                  className="text-amber-400 text-xs font-bold underline cursor-pointer"
+                  onClick={() => setCatalogTab('deck')}
+                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    catalogTab === 'deck'
+                      ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-stone-950 shadow-md'
+                      : 'text-stone-300 hover:text-white hover:bg-white/5'
+                  }`}
                 >
-                  Reset filters
+                  <Layers className="w-4 h-4" />
+                  <span>{connectedReceiver.name}'s Deck ({receiverDeckMeals.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCatalogTab('full_menu')}
+                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    catalogTab === 'full_menu'
+                      ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-stone-950 shadow-md'
+                      : 'text-stone-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <ChefHat className="w-4 h-4" />
+                  <span>Browse Full Menu ({meals.length})</span>
                 </button>
               </div>
+
+              <span className="text-[11px] font-mono text-amber-400 font-bold px-3 hidden md:inline">
+                {catalogTab === 'deck'
+                  ? `Showing ${connectedReceiver.name}'s personal deck items`
+                  : `Browsing all ${meals.length} TAASH BHATTI royal kitchen dishes`}
+              </span>
+            </div>
+
+            {/* Status / Quick Action Banner */}
+            {catalogTab === 'deck' && receiverDeckMeals.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-stone-900/90 border border-amber-500/20 shadow-md">
+                <div className="flex items-center gap-2.5 text-xs text-stone-300">
+                  <div className="w-7 h-7 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-400 shrink-0">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-white">Showing {connectedReceiver.name}'s Personal Deck</span>
+                    <span className="text-stone-400 block text-[11px]">
+                      {receiverDeckMeals.length} saved {receiverDeckMeals.length === 1 ? 'card' : 'cards'}. You can also order any dishes from the full menu!
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCatalogTab('full_menu')}
+                  className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-amber-400/10 border border-white/10 hover:border-amber-400/30 text-amber-300 hover:text-amber-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <ChefHat className="w-3.5 h-3.5" />
+                  <span>Browse Full Kitchen Menu</span>
+                </button>
+              </div>
+            )}
+
+            {catalogTab === 'full_menu' && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-stone-900/90 border border-white/10 shadow-md">
+                <div className="flex items-center gap-2.5 text-xs text-stone-300">
+                  <div className="w-7 h-7 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-amber-400 shrink-0">
+                    <ChefHat className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-white">Browsing Full Kitchen Menu ({meals.length} Dishes)</span>
+                    <span className="text-stone-400 block text-[11px]">
+                      Deal any dish into {connectedReceiver.name}'s Buddy Cart, including items not in their deck.
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCatalogTab('deck')}
+                  className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-stone-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-400" />
+                  <span>View {connectedReceiver.name}'s Deck ({receiverDeckMeals.length})</span>
+                </button>
+              </div>
+            )}
+
+            {/* Empty Deck State (When Friend has no cards in deck) */}
+            {catalogTab === 'deck' && receiverDeckMeals.length === 0 ? (
+              <div className="text-center py-12 bg-stone-900/50 rounded-3xl border border-white/10 p-8 space-y-4">
+                <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center text-amber-400 shadow-inner">
+                  <Layers className="w-8 h-8" />
+                </div>
+                <div className="max-w-md mx-auto space-y-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-950 border border-white/10 text-[11px] font-bold text-stone-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-stone-500" />
+                    <span>0 Cards in Personal Deck</span>
+                  </div>
+                  <h3 className="text-lg font-black text-white">
+                    {connectedReceiver.name} Has Nothing in Their Deck Yet
+                  </h3>
+                  <p className="text-xs text-stone-400 leading-relaxed">
+                    This athlete has not saved any dishes to their personal deck. You can still order for them by browsing the royal kitchen menu and dealing any meals directly into their Buddy Cart!
+                  </p>
+                </div>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setCatalogTab('full_menu')}
+                    className="px-6 py-3.5 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-orange-500 hover:to-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl transition-all cursor-pointer inline-flex items-center gap-2"
+                  >
+                    <ChefHat className="w-4 h-4" />
+                    <span>Browse Kitchen Menu & Order for {connectedReceiver.name}</span>
+                  </button>
+                </div>
+              </div>
             ) : (
+              <>
+                {/* Search & Filter (Visible when browsing full menu OR when deck has cards) */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-stone-900/80 p-3.5 rounded-2xl border border-white/10">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder={
+                        catalogTab === 'deck'
+                          ? `Search ${connectedReceiver.name}'s deck meals...`
+                          : `Search all ${meals.length} TAASH BHATTI dishes...`
+                      }
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-stone-950 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-white placeholder-stone-500 focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                    {(['all', 'veg', 'non_veg', 'high_protein'] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setSelectedFilter(f)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap capitalize transition-all cursor-pointer ${
+                          selectedFilter === f
+                            ? 'bg-amber-400 text-stone-950'
+                            : 'bg-white/5 text-stone-300 hover:bg-white/10'
+                        }`}
+                      >
+                        {f.replace('_', ' ')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Meals Grid */}
+                {filteredMeals.length === 0 ? (
+                  <div className="text-center py-12 bg-stone-900/40 rounded-3xl border border-white/10 p-6 space-y-2">
+                    <p className="text-stone-400 text-sm">No meals found matching "{searchQuery}".</p>
+                    <button
+                      type="button"
+                      onClick={() => { setSearchQuery(''); setSelectedFilter('all'); }}
+                      className="text-amber-400 text-xs font-bold underline cursor-pointer"
+                    >
+                      Reset filters
+                    </button>
+                  </div>
+                ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {filteredMeals.map((meal, idx) => {
                   const isFlipped = !!flippedCards[meal.id];
                   const inCartItem = buddyCart.find(i => i.meal.id === meal.id);
                   const isVeg = meal.isVeg;
+                  const isInReceiverDeck = receiverDeckIds.includes(meal.id);
 
                   return (
                     <div
@@ -896,10 +977,20 @@ export default function BuddyDeckView({
                               <span className="text-white">{isVeg ? 'VEG' : 'NON-VEG'}</span>
                             </div>
 
-                            {/* Card Rank */}
-                            <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-lg bg-amber-400 text-stone-950 text-[10px] font-black tracking-wider">
-                              CARD #{idx + 1}
-                            </div>
+                            {/* Card Rank / In-Deck Badge */}
+                            {catalogTab === 'deck' ? (
+                              <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-lg bg-amber-400 text-stone-950 text-[10px] font-black tracking-wider">
+                                CARD #{idx + 1}
+                              </div>
+                            ) : isInReceiverDeck ? (
+                              <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-lg bg-amber-400 text-stone-950 text-[10px] font-black tracking-wider flex items-center gap-1 shadow-md">
+                                <span>🃏 In Deck</span>
+                              </div>
+                            ) : (
+                              <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-lg bg-stone-950/80 border border-white/20 text-stone-300 text-[10px] font-bold tracking-wider">
+                                Full Menu
+                              </div>
+                            )}
 
                             <div className="absolute bottom-2 left-2.5 right-2.5 flex justify-between items-end">
                               <span className="text-lg font-black text-amber-400 font-mono">
@@ -1046,6 +1137,30 @@ export default function BuddyDeckView({
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </>
+        )}
+
+            {/* If in Deck tab with cards, offer option to browse full menu */}
+            {catalogTab === 'deck' && receiverDeckMeals.length > 0 && (
+              <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-amber-950/20 to-stone-900 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-lg">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-300">
+                    Want to add more dishes?
+                  </h4>
+                  <p className="text-[11px] text-stone-400">
+                    Browse all dishes from the kitchen and deal them to {connectedReceiver.name}'s Buddy Cart.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCatalogTab('full_menu')}
+                  className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-xs uppercase tracking-wider shrink-0 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <ChefHat className="w-3.5 h-3.5" />
+                  <span>Browse Full Menu ({meals.length})</span>
+                </button>
               </div>
             )}
 

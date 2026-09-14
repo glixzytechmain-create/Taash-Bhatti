@@ -16,7 +16,8 @@ import {
   Sparkles, 
   Lock,
   ChevronDown,
-  Info
+  Info,
+  MapPin
 } from 'lucide-react';
 import { 
   RecaptchaVerifier, 
@@ -59,8 +60,9 @@ export default function PhoneAuthComponent({
   onCancel,
   defaultName = '',
 }: PhoneAuthComponentProps) {
-  // Steps: 'phone_input' | 'otp_input' | 'verified'
-  const [step, setStep] = useState<'phone_input' | 'otp_input' | 'verified'>('phone_input');
+  // Steps: 'phone_input' | 'otp_input' | 'checking_address' | 'verified'
+  const [step, setStep] = useState<'phone_input' | 'otp_input' | 'checking_address' | 'verified'>('phone_input');
+  const [addressCheckStatus, setAddressCheckStatus] = useState<string>('Verifying saved delivery addresses...');
 
   // Input states
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(COUNTRY_CODES[0]);
@@ -332,6 +334,10 @@ export default function PhoneAuthComponent({
         throw new Error("Session expired. Please request a new verification code.");
       }
 
+      // Step transition to checking saved addresses & user profile
+      setStep('checking_address');
+      setAddressCheckStatus('Checking your saved delivery addresses & account...');
+
       // Check or create Firestore User document
       const uid = resolvedFirebaseUser.uid;
       const userRef = doc(db, 'users', uid);
@@ -348,10 +354,20 @@ export default function PhoneAuthComponent({
           name: fullName.trim() || existingData.name || `Customer ${cleanPhone.slice(-4)}`,
           email: cleanExistingEmail,
         };
+        // Check saved addresses count
+        const savedList = (existingData.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0);
+        const primaryAddr = (existingData.address && existingData.address.trim().length > 0) ? [existingData.address.trim()] : [];
+        const uniqueAddresses = Array.from(new Set([...savedList, ...primaryAddr]));
+        if (uniqueAddresses.length > 0) {
+          setAddressCheckStatus(`✓ Found ${uniqueAddresses.length} saved doorstep address(es)! Synchronizing...`);
+        } else {
+          setAddressCheckStatus('Profile confirmed. No saved addresses found.');
+        }
         // Update user record with phone and clean email
         await setDoc(userRef, { phone: fullE164Phone, email: cleanExistingEmail }, { merge: true }).catch(() => {});
       } else {
         isNew = true;
+        setAddressCheckStatus('New athlete account created. Setting up your profile...');
         finalProfile = {
           name: fullName.trim() || `Customer ${cleanPhone.slice(-4)}`,
           email: resolvedFirebaseUser.email || '',
@@ -383,6 +399,9 @@ export default function PhoneAuthComponent({
           displayName: finalProfile.name,
         }));
       } catch (e) {}
+
+      // Short delay so user sees address verification status
+      await new Promise(r => setTimeout(r, 600));
 
       setStep('verified');
       setTimeout(() => {
@@ -676,15 +695,56 @@ export default function PhoneAuthComponent({
         </div>
       )}
 
+      {/* STEP 2.5: CHECKING SAVED ADDRESSES & PROFILES */}
+      {step === 'checking_address' && (
+        <div id="phone-auth-checking-address-step" className="py-8 flex flex-col items-center justify-center space-y-4 animate-fade-in text-center">
+          <div className="relative flex items-center justify-center">
+            {/* Pulsing Aura */}
+            <span className="absolute -inset-4 rounded-full border border-brand-green/30 animate-ping pointer-events-none" style={{ animationDuration: '2s' }} />
+            <div className="w-16 h-16 rounded-2xl bg-brand-charcoal border border-amber-500/40 p-2 flex items-center justify-center shadow-xl">
+              <img
+                src="https://cdn.postimage.me/2026/08/01/28172.png"
+                alt="TAASH BHATTI"
+                className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(255,140,0,0.6)]"
+              />
+            </div>
+            <div className="absolute -bottom-2 -right-1 w-6 h-6 rounded-full bg-brand-green border-2 border-white flex items-center justify-center shadow">
+              <MapPin className="w-3.5 h-3.5 text-white" />
+            </div>
+          </div>
+          <div className="space-y-1.5 max-w-xs">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-brand-green/10 text-brand-green text-[9px] font-black uppercase tracking-widest">
+              STEP 3: LOCATION VAULT
+            </span>
+            <h4 className="text-sm font-extrabold text-brand-charcoal flex items-center justify-center gap-1.5">
+              <span>Syncing Saved Doorstep Addresses</span>
+              <div className="w-3.5 h-3.5 border-2 border-brand-green border-t-transparent rounded-full animate-spin" />
+            </h4>
+            <p className="text-xs text-brand-charcoal/70 font-medium">
+              {addressCheckStatus}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* STEP 3: VERIFIED CELEBRATION */}
       {step === 'verified' && (
-        <div className="py-6 flex flex-col items-center justify-center space-y-3 animate-fade-in text-center">
-          <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 animate-bounce">
-            <CheckCircle2 className="w-8 h-8" />
+        <div className="py-8 flex flex-col items-center justify-center space-y-4 animate-fade-in text-center">
+          <div className="relative flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-brand-charcoal border border-emerald-500/50 p-2 flex items-center justify-center shadow-xl">
+              <img
+                src="https://cdn.postimage.me/2026/08/01/28172.png"
+                alt="TAASH BHATTI"
+                className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(16,185,129,0.6)]"
+              />
+            </div>
+            <div className="absolute -bottom-2 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center shadow">
+              <CheckCircle2 className="w-4 h-4 text-white" />
+            </div>
           </div>
           <div>
-            <h4 className="text-base font-extrabold text-brand-charcoal">Phone Authenticated!</h4>
-            <p className="text-xs text-brand-charcoal/60 mt-0.5">Welcome to TAASH BHATTI. Loading your cloud profile...</p>
+            <h4 className="text-base font-extrabold text-brand-charcoal">Session Authenticated!</h4>
+            <p className="text-xs text-brand-charcoal/60 mt-0.5">Welcome to TAASH BHATTI. Opening your personalized feast dashboard...</p>
           </div>
         </div>
       )}

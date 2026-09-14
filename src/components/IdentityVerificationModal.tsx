@@ -75,7 +75,7 @@ export default function IdentityVerificationModal({
 
         {/* Security Footer Badge */}
         <div className="pt-2 border-t border-white/10 text-[10px] font-mono text-gray-500 uppercase tracking-widest">
-          FitZaika Cloud Security • AES-256 Verified
+          TAASH BHATTI Artisanal Kitchen • Verified
         </div>
       </div>
     </div>

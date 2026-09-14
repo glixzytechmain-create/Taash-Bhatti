@@ -107,18 +107,29 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       tileLayerRef.current.remove();
     }
 
-    // High quality, fast, key-free tile providers with global CDN
-    const tileUrl = isDarkMode
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    // High quality, 100% key-free, open-source OpenStreetMap tile provider (no watermarks or API key demands)
+    const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
     const tileLayer = L.tileLayer(tileUrl, {
       maxZoom: 19,
-      subdomains: 'abcd',
+      subdomains: 'abc',
+      attribution: '&copy; OpenStreetMap contributors',
     });
 
     tileLayer.addTo(mapRef.current);
     tileLayerRef.current = tileLayer;
+
+    // Apply high-contrast dark filter when dark mode is enabled
+    try {
+      const container = mapRef.current.getContainer();
+      if (container) {
+        if (isDarkMode) {
+          container.classList.add('leaflet-dark-tiles');
+        } else {
+          container.classList.remove('leaflet-dark-tiles');
+        }
+      }
+    } catch (e) {}
   }, [isDarkMode]);
 
   // Update center & zoom smoothly
