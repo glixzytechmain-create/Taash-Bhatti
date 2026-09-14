@@ -40,7 +40,8 @@ import {
   getDoc,
   getDocs
 } from 'firebase/firestore';
-import { auth, db, googleProvider, sanitizeForFirestore } from './lib/firebase';
+import { auth, db, googleProvider, appleProvider, sanitizeForFirestore } from './lib/firebase';
+import { MandatoryPhoneVerificationModal } from './components/MandatoryPhoneVerificationModal';
 import OnboardingWizard from './components/OnboardingWizard';
 import AdminPortal from './components/AdminPortal';
 import AdminLoginPortal from './components/AdminLoginPortal';
@@ -515,6 +516,9 @@ export default function App() {
   const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0);
   const [ratingModalOrder, setRatingModalOrder] = useState<Order | null>(null);
 
+  // Mandatory Phone Number Verification State (Enforces OTP for all login methods)
+  const [showMandatoryPhoneModal, setShowMandatoryPhoneModal] = useState<boolean>(false);
+
   // Developer Feature Flags & Menu State
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(getStoredFeatureFlags);
   const [showDevMenu, setShowDevMenu] = useState<boolean>(false);
@@ -888,6 +892,23 @@ export default function App() {
     localStorage.setItem('fitzaika_theme', 'light');
   }, []);
 
+  // Mandatory Phone Verification Watcher:
+  // Every customer logged in (via Google, Apple, or Email/Password) must have a verified phone number via SMS OTP.
+  useEffect(() => {
+    if (authChecking) return;
+    if (currentGateway === 'customer' && fbUser) {
+      const cleanPhone = (user.phone || fbUser.phoneNumber || '').replace(/\D/g, '');
+      const isVerified = user.isPhoneVerified || !!fbUser.phoneNumber;
+      if (!cleanPhone || cleanPhone.length < 10 || !isVerified) {
+        setShowMandatoryPhoneModal(true);
+      } else {
+        setShowMandatoryPhoneModal(false);
+      }
+    } else {
+      setShowMandatoryPhoneModal(false);
+    }
+  }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified]);
+
   const handleOnboardingComplete = async (updatedData: Partial<User>) => {
     const nextUser = {
       ...user,
@@ -1002,6 +1023,11 @@ export default function App() {
         unsubscribeUser = onSnapshot(userRef, (snapshot) => {
           if (snapshot.exists()) {
             const profile = snapshot.data() as User;
+            if (firebaseUser.phoneNumber && (!profile.phone || !profile.isPhoneVerified)) {
+              profile.phone = firebaseUser.phoneNumber;
+              profile.isPhoneVerified = true;
+              setDoc(userRef, { phone: firebaseUser.phoneNumber, isPhoneVerified: true }, { merge: true }).catch(() => {});
+            }
             if (profile.email && profile.email.includes('@taashbhatti.phone')) {
               profile.email = '';
               setDoc(userRef, { email: '' }, { merge: true }).catch(() => {});
@@ -1022,10 +1048,12 @@ export default function App() {
             }
           } else {
             const initialProfile: User = {
-              name: firebaseUser.displayName || 'TAASH BHATTI Athlete',
+              name: firebaseUser.displayName || (firebaseUser.phoneNumber ? `Foodie (${firebaseUser.phoneNumber.slice(-4)})` : 'Taash Bhatti Foodie'),
               email: firebaseUser.email || '',
               avatar: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
-              goal: 'muscle_gain',
+              phone: firebaseUser.phoneNumber || '',
+              isPhoneVerified: !!firebaseUser.phoneNumber,
+              goal: 'general',
               preferredGymId: '',
               savedAddresses: [],
               savedPayments: [],
@@ -1503,12 +1531,22 @@ export default function App() {
 
   // Place order wrapper (synced to Firestore for both authenticated and guest users)
   const handlePlaceOrder = async (order: Order) => {
+    // MANDATORY PHONE VERIFICATION CHECK:
+    // Every user (Google, Apple, Email, Guest) MUST have a verified phone number via OTP
+    const cleanPhone = (user.phone || auth.currentUser?.phoneNumber || order.customerPhone || '').replace(/\D/g, '');
+    const isVerified = user.isPhoneVerified || !!auth.currentUser?.phoneNumber;
+    if (!cleanPhone || cleanPhone.length < 10 || !isVerified) {
+      setShowMandatoryPhoneModal(true);
+      showToast("📱 Mobile verification with SMS OTP is required before placing your order.");
+      return;
+    }
+
     const activeUserId = auth.currentUser?.uid || getGuestUserId();
     const orderWithUser: Order = {
       ...order,
       userId: activeUserId,
       customerName: user.name || order.customerName || 'Customer',
-      customerPhone: user.phone || order.customerPhone || 'N/A',
+      customerPhone: user.phone || auth.currentUser?.phoneNumber || order.customerPhone || 'N/A',
     };
     const sanitizedOrder = sanitizeForFirestore(orderWithUser);
     const pathForWrite = `orders/${order.id}`;
@@ -1814,6 +1852,96 @@ export default function App() {
       console.error(err);
       setIdentityModal(prev => ({ ...prev, isOpen: false }));
       return { success: false, error: err.message || "Google sign-in canceled or failed." };
+    }
+  };
+
+  const handleSignInWithApple = async () => {
+    setIdentityModal({
+      isOpen: true,
+      step: 'scanning',
+      title: 'Authenticating Apple ID...',
+      subtitle: 'Verifying Apple OAuth 2.0 Credentials',
+    });
+
+    try {
+      const cred = await signInWithPopup(auth, appleProvider);
+      const email = cred.user.email;
+      let targetGateway: 'customer' | 'admin' | 'partner' | 'support' | 'kitchen' = 'customer';
+
+      setIdentityModal({
+        isOpen: true,
+        step: 'verifying',
+        title: 'Confirming Security Credentials...',
+        subtitle: 'Validating access policies and session tokens',
+      });
+
+      if (email) {
+        const emailClean = email.trim().toLowerCase();
+        try {
+          const qAgent = query(collection(db, 'support_agents'), where('email', '==', emailClean));
+          const snapAgent = await getDocs(qAgent);
+          if (!snapAgent.empty) {
+            targetGateway = 'support';
+          } else {
+            const qKM = query(collection(db, 'kitchen_managers'), where('email', '==', emailClean));
+            const snapKM = await getDocs(qKM);
+            if (!snapKM.empty) {
+              const kmData = { id: snapKM.docs[0].id, ...snapKM.docs[0].data() };
+              localStorage.setItem('fitzaika_active_km_session', JSON.stringify(kmData));
+              targetGateway = 'kitchen';
+            } else {
+              const q = query(collection(db, 'delivery_partners'), where('email', '==', emailClean));
+              const snap = await getDocs(q);
+              if (!snap.empty) {
+                const partnerData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(partnerData));
+                targetGateway = 'partner';
+              } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+                setAdminEmailAttempt(emailClean);
+                targetGateway = 'admin';
+              }
+            }
+          }
+        } catch (e) {
+          if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+            setAdminEmailAttempt(emailClean);
+            targetGateway = 'admin';
+          }
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      setIdentityModal({
+        isOpen: true,
+        step: 'confirmed',
+        title: 'Identity Confirmed ✓',
+        subtitle: 'Access granted. Loading your personalized interface...',
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      setCurrentGateway(targetGateway);
+      localStorage.setItem('fitzaika_gateway', targetGateway);
+      setIdentityModal(prev => ({ ...prev, isOpen: false }));
+
+      if (targetGateway === 'admin') {
+        showToast("🔒 Secure admin verification required.");
+      } else if (targetGateway === 'partner') {
+        showToast("🚴 Delivery Partner session activated!");
+      } else if (targetGateway === 'support') {
+        showToast("🎧 Support Desk session activated!");
+      } else if (targetGateway === 'kitchen') {
+        showToast("👨‍🍳 Kitchen Station Manager desk activated!");
+      } else {
+        showToast("🍎 Logged in with Apple!");
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error(err);
+      setIdentityModal(prev => ({ ...prev, isOpen: false }));
+      return { success: false, error: err.message || "Apple sign-in canceled or failed." };
     }
   };
 
@@ -2626,6 +2754,7 @@ export default function App() {
             onSignInWithEmail={handleSignInWithEmail}
             onSignUpWithEmail={handleSignUpWithEmail}
             onSignInWithGoogle={handleSignInWithGoogle}
+            onSignInWithApple={handleSignInWithApple}
             onPhoneAuthSuccess={handlePhoneAuthSuccess}
             onSignOut={handleSignOut}
             authChecking={authChecking}
@@ -3058,6 +3187,27 @@ export default function App() {
         isOpen={showLegalModal}
         onClose={() => setShowLegalModal(false)}
         initialTab={legalModalTab}
+      />
+
+      {/* 📱 MANDATORY PHONE NUMBER & SMS OTP VERIFICATION MODAL */}
+      <MandatoryPhoneVerificationModal
+        isOpen={showMandatoryPhoneModal}
+        user={user}
+        onSuccess={(verifiedPhone) => {
+          setShowMandatoryPhoneModal(false);
+          setUser((prev) => {
+            const updated = { ...prev, phone: verifiedPhone, isPhoneVerified: true };
+            try {
+              localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+          showToast("✅ Mobile number verified with SMS OTP!");
+        }}
+        onSignOut={() => {
+          setShowMandatoryPhoneModal(false);
+          handleSignOut();
+        }}
       />
 
     </div>

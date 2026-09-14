@@ -51,6 +51,7 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
+  isPhoneVerified?: boolean;
   role?: 'customer' | 'rider' | 'kitchen' | 'admin';
   city?: string;
   address?: string;

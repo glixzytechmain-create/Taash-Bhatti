@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
     cleartext: true
   },
   ios: {
-    packageManager: 'SPM'
+    // Standard iOS configuration
   }
 };
 

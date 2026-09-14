@@ -350,6 +350,7 @@ interface AccountTabProps {
   onSignInWithEmail?: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   onSignUpWithEmail?: (email: string, pass: string, name: string, goal: 'fat_loss' | 'muscle_gain' | 'maintenance' | 'general') => Promise<{ success: boolean; error?: string }>;
   onSignInWithGoogle?: () => Promise<{ success: boolean; error?: string }>;
+  onSignInWithApple?: () => Promise<{ success: boolean; error?: string }>;
   onPhoneAuthSuccess?: (data: { user: User; fbUser: any; isNewUser: boolean }) => void;
   onSignOut?: () => void;
   authChecking?: boolean;
@@ -373,6 +374,7 @@ export default function AccountTab({
   onSignInWithEmail,
   onSignUpWithEmail,
   onSignInWithGoogle,
+  onSignInWithApple,
   onPhoneAuthSuccess,
   onSignOut,
   authChecking = false,
@@ -769,6 +771,16 @@ export default function AccountTab({
     setAuthLoading(false);
   };
 
+  const handleAppleSignIn = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    const res = await onSignInWithApple?.();
+    if (res && !res.success) {
+      setAuthError(res.error || "Apple sign-in canceled.");
+    }
+    setAuthLoading(false);
+  };
+
   const activeOrders = localOrders.filter((o) => o.status !== 'delivered' && o.status !== 'cancelled');
   const pastOrders = localOrders.filter((o) => o.status === 'delivered' || o.status === 'cancelled');
 
@@ -1050,7 +1062,18 @@ export default function AccountTab({
               <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                 <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.866-3.577-7.866-8s3.536-8 7.866-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.11C18.29.98 15.49 0 12.24 0 5.58 0 0 5.37 0 12s5.58 12 12.24 12c6.96 0 11.57-4.89 11.57-11.79 0-.795-.085-1.4-.195-1.925H12.24z"/>
               </svg>
-              Sign In with Google Account
+              <span>Sign In with Google Account</span>
+            </button>
+
+            <button
+              onClick={handleAppleSignIn}
+              disabled={authLoading}
+              className="w-full bg-[#000000] hover:bg-[#151515] text-white font-black text-xs py-3 rounded-2xl transition-all flex items-center justify-center gap-2.5 shadow-xs cursor-pointer"
+            >
+              <svg className="w-4 h-4 shrink-0 fill-current text-white" viewBox="0 0 170 170">
+                <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.7-3.04-7.58-7.7-11.64-13.98-5.99-9.13-10.74-19.78-14.25-31.95-3.51-12.17-5.27-23.75-5.27-34.73 0-14.24 3.51-26.04 10.53-35.41 7.02-9.37 15.75-14.15 26.19-14.35 5.66 0 11.53 1.5 17.62 4.51 6.09 3.01 10.02 4.58 11.79 4.7 1.99-.24 6.13-1.85 12.43-4.83 6.3-2.98 11.95-4.35 16.96-4.11 14.79.73 26.24 6.26 34.36 16.59-13.06 7.9-19.46 18.73-19.22 32.49.24 10.51 4.16 19.34 11.76 26.49 7.6 7.15 16.66 11.24 27.18 12.27-2.67 8.04-6.19 16.27-10.55 24.69zM119.22 33.15c0-7.39 2.65-14.27 7.95-20.64 5.3-6.37 11.83-10.36 19.59-11.97.48 1.45.73 2.82.73 4.11 0 7.39-2.73 14.41-8.19 21.06-5.46 6.65-12.03 10.63-19.71 11.94-.24-1.45-.37-2.95-.37-4.5z"/>
+              </svg>
+              <span>Sign In with Apple</span>
             </button>
 
             {authMode !== 'phone' && (

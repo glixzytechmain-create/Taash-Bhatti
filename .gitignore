@@ -24,3 +24,4 @@ dist-electron/
 ios/App/build/
 ios/App/Pods/
 .antigravity/
+build-deliverables/
