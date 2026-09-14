@@ -35,10 +35,15 @@ import {
   CheckSquare,
   Square,
   Radio,
-  FileText
+  FileText,
+  Database,
+  Server,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 import { AppFeatureFlags, Meal } from '../types';
 import { saveFeatureFlags, DEFAULT_FEATURE_FLAGS } from '../lib/featureFlags';
+import { checkFirebaseDiagnostics, FirebaseDiagnostics, firebaseConfig } from '../lib/firebase';
 
 interface DeveloperMenuModalProps {
   isOpen: boolean;
@@ -57,9 +62,29 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
   meals = [],
   onOpenPushTester
 }) => {
-  const [activeConsoleTab, setActiveConsoleTab] = useState<'header' | 'bottom_nav' | 'operations' | 'categories' | 'dishes'>('header');
+  const [activeConsoleTab, setActiveConsoleTab] = useState<'header' | 'bottom_nav' | 'operations' | 'categories' | 'dishes' | 'firebase'>('header');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [diag, setDiag] = useState<FirebaseDiagnostics | null>(null);
+  const [checkingDiag, setCheckingDiag] = useState(false);
+
+  const runDiagnostics = async () => {
+    setCheckingDiag(true);
+    try {
+      const res = await checkFirebaseDiagnostics();
+      setDiag(res);
+    } catch (err) {
+      console.error('Diagnostics check failed:', err);
+    } finally {
+      setCheckingDiag(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeConsoleTab === 'firebase' && !diag) {
+      runDiagnostics();
+    }
+  }, [activeConsoleTab]);
 
   // Local state for instant responsive interactions without stale props
   const [currentFlags, setCurrentFlags] = useState<AppFeatureFlags>(flags);
@@ -345,6 +370,7 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
             { id: 'operations', label: 'Operations & Fulfillment', icon: Power },
             { id: 'categories', label: 'Menu Categories', icon: Utensils },
             { id: 'dishes', label: `Dish Stock & Ratings (${meals.length})`, icon: Star },
+            { id: 'firebase', label: 'Firebase & Cloud Sync', icon: Database },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeConsoleTab === tab.id;
@@ -928,6 +954,158 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
                     );
                   })
                 )}
+              </div>
+            </div>
+          )}
+
+          {activeConsoleTab === 'firebase' && (
+            <div className="space-y-5">
+              {/* Project Header Card */}
+              <div className="p-4 bg-gradient-to-br from-amber-500/10 via-slate-900 to-orange-500/10 border border-amber-500/30 rounded-2xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                      <Database className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                          Project: {firebaseConfig.projectId}
+                        </h4>
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
+                          diag?.firestoreStatus === 'connected'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        }`}>
+                          {diag?.firestoreStatus === 'connected' ? '🟢 Live Connected' : '🟡 Needs Setup'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Database: <code className="text-amber-300 font-mono text-[10px]">{firebaseConfig.firestoreDatabaseId || '(default)'}</code> | Auth: <code className="text-amber-300 font-mono text-[10px]">{firebaseConfig.authDomain}</code>
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={runDiagnostics}
+                    disabled={checkingDiag}
+                    className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-amber-500/40 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${checkingDiag ? 'animate-spin' : ''}`} />
+                    <span>{checkingDiag ? 'Checking...' : 'Run Diagnostics'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Real-Time Diagnostics Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Firestore Diagnostic */}
+                <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                      <Database className="w-4 h-4 text-amber-400" />
+                      Cloud Firestore
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                      diag?.firestoreStatus === 'connected'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : diag?.firestoreStatus === 'not_enabled'
+                        ? 'bg-rose-500/20 text-rose-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {diag?.firestoreStatus === 'connected' ? 'Online' : diag?.firestoreStatus === 'not_enabled' ? 'Not Created' : 'Checking'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {diag?.firestoreMessage || 'Testing Firestore connection...'}
+                  </p>
+
+                  {diag?.firestoreStatus === 'not_enabled' && (
+                    <a
+                      href={diag.consoleFirestoreUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-300 underline mt-1"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open Firebase Console to Create Database
+                    </a>
+                  )}
+                </div>
+
+                {/* Auth Diagnostic */}
+                <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                      <User className="w-4 h-4 text-sky-400" />
+                      Firebase Authentication
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                      diag?.authStatus === 'connected'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : diag?.authStatus === 'not_enabled'
+                        ? 'bg-amber-500/20 text-amber-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {diag?.authStatus === 'connected' ? 'Operational' : diag?.authStatus === 'not_enabled' ? 'Action Needed' : 'Checking'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {diag?.authMessage || 'Testing Authentication engine...'}
+                  </p>
+
+                  {diag?.authStatus === 'not_enabled' && (
+                    <a
+                      href={diag.consoleAuthUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-400 hover:text-sky-300 underline mt-1"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Enable Email/Password Sign-In Method
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* 30-Second Activation Checklist */}
+              <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3">
+                <h5 className="text-xs font-black uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  Why 'taash-bhatti' Needs a 1-Click Activation
+                </h5>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Your code, API keys, and SDK imports are <strong>100% configured for project '{firebaseConfig.projectId}'</strong>. The previous demo project was auto-created by Google AI Studio, whereas in your personal Firebase project, Google requires you to click "Create Database" once:
+                </p>
+
+                <div className="space-y-2 mt-2">
+                  <div className="flex items-start gap-2.5 p-2.5 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-black text-xs flex items-center justify-center shrink-0">1</span>
+                    <div className="text-xs">
+                      <p className="font-bold text-slate-200">Create Cloud Firestore Database</p>
+                      <p className="text-slate-400 text-[11px]">Go to <a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`} target="_blank" rel="noreferrer" className="text-amber-400 underline inline-flex items-center gap-1">Firebase Console &gt; Firestore Database <ExternalLink className="w-3 h-3" /></a> and click <strong>Create Database</strong>.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2.5 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                    <span className="w-5 h-5 rounded-full bg-sky-500/20 text-sky-400 font-black text-xs flex items-center justify-center shrink-0">2</span>
+                    <div className="text-xs">
+                      <p className="font-bold text-slate-200">Enable Email &amp; Google Sign-in</p>
+                      <p className="text-slate-400 text-[11px]">Go to <a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication`} target="_blank" rel="noreferrer" className="text-sky-400 underline inline-flex items-center gap-1">Authentication &gt; Sign-in method <ExternalLink className="w-3 h-3" /></a> and enable <strong>Email/Password</strong>.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2.5 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-black text-xs flex items-center justify-center shrink-0">3</span>
+                    <div className="text-xs">
+                      <p className="font-bold text-slate-200">Instant Real-Time Sync</p>
+                      <p className="text-slate-400 text-[11px]">Once created, click <strong>Run Diagnostics</strong> above. The app will immediately populate the meal catalog, handle orders, and sync data live!</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

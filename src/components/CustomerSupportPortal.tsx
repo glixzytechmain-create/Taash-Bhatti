@@ -19,6 +19,7 @@ import {
   Building2,
   MapPin,
   Eye,
+  EyeOff,
   Star,
   Sparkles,
   ShoppingBag,
@@ -109,6 +110,7 @@ export function CustomerSupportPortal({
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -424,13 +426,22 @@ export function CustomerSupportPortal({
                 <div className="relative">
                   <ShieldCheck className="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     placeholder="Enter security passcode"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full bg-[#0A0E12] border border-brand-green/20 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/60"
+                    className="w-full bg-[#0A0E12] border border-brand-green/20 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/60"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors p-1 cursor-pointer focus:outline-none"
+                    aria-label={showPassword ? "Hide passcode" : "Show passcode"}
+                    title={showPassword ? "Hide passcode" : "Show passcode"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 

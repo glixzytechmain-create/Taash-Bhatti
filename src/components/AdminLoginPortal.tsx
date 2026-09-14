@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Lock, ArrowLeft, KeyRound, AlertCircle, Mail, CheckCircle2 } from 'lucide-react';
+import { Lock, ArrowLeft, KeyRound, AlertCircle, Mail, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';
@@ -18,6 +18,7 @@ interface AdminLoginPortalProps {
 export default function AdminLoginPortal({ email: initialEmail = '', onVerify, onCancel }: AdminLoginPortalProps) {
   const [adminEmail, setAdminEmail] = useState(initialEmail || '');
   const [adminPassword, setAdminPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -104,13 +105,22 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
             <div className="relative">
               <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
                 placeholder="••••••••"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl pl-10 pr-4 py-3 text-xs font-mono text-white placeholder-gray-600 focus:outline-none focus:border-brand-green"
+                className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl pl-10 pr-10 py-3 text-xs font-mono text-white placeholder-gray-600 focus:outline-none focus:border-brand-green"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-brand-green transition-colors p-1 cursor-pointer focus:outline-none"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 

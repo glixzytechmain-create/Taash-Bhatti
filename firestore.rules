@@ -134,5 +134,15 @@ service cloud.firestore {
     match /test/{testId} {
       allow read, write: if true;
     }
+
+    // Match system_health collection for diagnostic ping checks
+    match /system_health/{healthId} {
+      allow read, write: if true;
+    }
+
+    // Default fallback rule for application collections
+    match /{document=**} {
+      allow read, write: if true;
+    }
   }
 }

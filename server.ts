@@ -24,7 +24,7 @@ const firebaseConfig = JSON.parse(
 );
 
 const fbApp = initializeApp(firebaseConfig);
-const db = firebaseConfig.firestoreDatabaseId
+const db = (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)')
   ? getFirestore(fbApp, firebaseConfig.firestoreDatabaseId)
   : getFirestore(fbApp);
 

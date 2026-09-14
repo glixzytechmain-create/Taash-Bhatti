@@ -43,6 +43,8 @@ import {
   CheckCircle2,
   Gift,
   Users,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { User, Order, FAQ, SubscriptionPlan, Meal, SupportTicket, ChatMessage, OrderDeliveryRating, Kitchen, MealReview } from '../types';
 import { FAQS_DATA, SUBSCRIPTIONS_DATA } from '../data';
@@ -725,6 +727,7 @@ export default function AccountTab({
   const [isRegistering, setIsRegistering] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
   const [authName, setAuthName] = useState('');
   const [authGoal, setAuthGoal] = useState<'fat_loss' | 'muscle_gain' | 'maintenance'>('muscle_gain');
   const [authError, setAuthError] = useState<string | null>(null);
@@ -1016,14 +1019,29 @@ export default function AccountTab({
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">Password</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  className="w-full bg-brand-cream/15 border border-brand-green/10 rounded-xl px-3.5 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green/20"
-                />
+                <div className="relative">
+                  <input
+                    type={showAuthPassword ? "text" : "password"}
+                    required
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full bg-brand-cream/15 border border-brand-green/10 rounded-xl pl-3.5 pr-11 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthPassword(!showAuthPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-charcoal/40 hover:text-brand-charcoal transition-colors p-1 cursor-pointer focus:outline-none"
+                    aria-label={showAuthPassword ? "Hide password" : "Show password"}
+                    title={showAuthPassword ? "Hide password" : "Show password"}
+                  >
+                    {showAuthPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               {authError && (

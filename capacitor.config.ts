@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
     cleartext: true
   },
   ios: {
-    // Standard iOS configuration
+    scheme: 'App'
   }
 };
 

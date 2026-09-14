@@ -3616,8 +3616,9 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                 <h1 className="text-base font-black uppercase tracking-wider text-white">
                   TAASH BHATTI Operator Console
                 </h1>
-                <span className="text-[8px] bg-brand-green/10 text-brand-green font-black px-1.5 py-0.5 rounded border border-brand-green/20 uppercase tracking-widest">
-                  Live Sync
+                <span className="text-[9px] bg-amber-500/10 text-amber-300 font-bold px-2 py-0.5 rounded-md border border-amber-500/20 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  Project: <span className="font-mono text-white font-bold">{firebaseConfig.projectId}</span>
                 </span>
               </div>
               <p className="text-[10px] text-gray-400 font-medium">
