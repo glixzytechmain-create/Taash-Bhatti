@@ -516,6 +516,7 @@ export default function App() {
 
   // Mandatory Phone Number Verification State (Enforces OTP for all login methods)
   const [showMandatoryPhoneModal, setShowMandatoryPhoneModal] = useState<boolean>(false);
+  const [hasDismissedMandatoryPhone, setHasDismissedMandatoryPhone] = useState<boolean>(false);
 
   // Synchronously compute if current customer needs mobile phone SMS verification
   const isCustomerPendingPhoneVerification =
@@ -904,7 +905,7 @@ export default function App() {
     if (currentGateway === 'customer' && fbUser) {
       const cleanPhone = (user.phone || fbUser.phoneNumber || '').replace(/\D/g, '');
       const isVerified = user.isPhoneVerified || !!fbUser.phoneNumber;
-      if (!cleanPhone || cleanPhone.length < 10 || !isVerified) {
+      if ((!cleanPhone || cleanPhone.length < 10 || !isVerified) && !hasDismissedMandatoryPhone) {
         setShowMandatoryPhoneModal(true);
       } else {
         setShowMandatoryPhoneModal(false);
@@ -912,7 +913,7 @@ export default function App() {
     } else {
       setShowMandatoryPhoneModal(false);
     }
-  }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified]);
+  }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified, hasDismissedMandatoryPhone]);
 
   const handleOnboardingComplete = async (updatedData: Partial<User>) => {
     const nextUser = {
