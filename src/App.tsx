@@ -516,7 +516,6 @@ export default function App() {
 
   // Mandatory Phone Number Verification State (Enforces OTP for all login methods)
   const [showMandatoryPhoneModal, setShowMandatoryPhoneModal] = useState<boolean>(false);
-  const [hasDismissedMandatoryPhone, setHasDismissedMandatoryPhone] = useState<boolean>(false);
 
   // Synchronously compute if current customer needs mobile phone SMS verification
   const isCustomerPendingPhoneVerification =
@@ -905,7 +904,7 @@ export default function App() {
     if (currentGateway === 'customer' && fbUser) {
       const cleanPhone = (user.phone || fbUser.phoneNumber || '').replace(/\D/g, '');
       const isVerified = user.isPhoneVerified || !!fbUser.phoneNumber;
-      if ((!cleanPhone || cleanPhone.length < 10 || !isVerified) && !hasDismissedMandatoryPhone) {
+      if (!cleanPhone || cleanPhone.length < 10 || !isVerified) {
         setShowMandatoryPhoneModal(true);
       } else {
         setShowMandatoryPhoneModal(false);
@@ -913,7 +912,7 @@ export default function App() {
     } else {
       setShowMandatoryPhoneModal(false);
     }
-  }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified, hasDismissedMandatoryPhone]);
+  }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified]);
 
   const handleOnboardingComplete = async (updatedData: Partial<User>) => {
     const nextUser = {
@@ -1581,22 +1580,8 @@ export default function App() {
     const emailClean = email.trim().toLowerCase();
     const passClean = pass.trim();
 
-    setIdentityModal({
-      isOpen: true,
-      step: 'scanning',
-      title: 'Authenticating Credentials...',
-      subtitle: 'Verifying with TAASH BHATTI Cryptographic Vault',
-    });
-
     try {
       await signInWithEmailAndPassword(auth, emailClean, passClean);
-
-      setIdentityModal({
-        isOpen: true,
-        step: 'verifying',
-        title: 'Confirming Security Credentials...',
-        subtitle: 'Validating access policies and session tokens',
-      });
 
       let targetGateway: 'customer' | 'admin' | 'partner' | 'support' | 'kitchen' = 'customer';
 
