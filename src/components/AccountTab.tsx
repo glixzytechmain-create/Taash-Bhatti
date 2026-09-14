@@ -357,6 +357,7 @@ interface AccountTabProps {
   onOpenMailbox?: () => void;
   onOpenGroupOrder?: (preloadedItems?: any[]) => void;
   onOpenLegal?: (tab: 'terms' | 'privacy') => void;
+  onOpenPushTester?: () => void;
 }
 
 
@@ -379,6 +380,7 @@ export default function AccountTab({
   onOpenMailbox,
   onOpenGroupOrder,
   onOpenLegal,
+  onOpenPushTester,
 }: AccountTabProps) {
   // Navigation inside Account screen
   const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet'>('profile');
@@ -1648,6 +1650,30 @@ export default function AccountTab({
                     </div>
                     <ArrowRight className="w-4 h-4 text-brand-charcoal/40 group-hover:translate-x-0.5 transition-transform" />
                   </button>
+
+                  {onOpenPushTester && (
+                    <button
+                      type="button"
+                      onClick={onOpenPushTester}
+                      className="p-3 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-brand-charcoal transition-all text-left flex items-center justify-between group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-black flex items-center justify-center shrink-0 shadow-sm">
+                          <Bell className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-black text-brand-charcoal group-hover:text-amber-700 transition-colors flex items-center gap-1.5">
+                            <span>Smart Push Notifications</span>
+                            <span className="text-[9px] bg-amber-500 text-black px-1.5 py-0.2 rounded font-bold">10 Campaigns</span>
+                          </div>
+                          <div className="text-[10px] text-brand-charcoal/60 font-medium">
+                            Test lock-screen delivery & witty copy templates
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-brand-charcoal/40 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  )}
                 </div>
               </div>
             </>

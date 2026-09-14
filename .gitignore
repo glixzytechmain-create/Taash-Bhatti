@@ -6,3 +6,21 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Android build outputs and credentials
+*.aab
+*.apk
+android/app/build/
+android/.gradle/
+android/build/
+android/app/release.keystore
+
+# Mac & iOS build outputs
+dist-electron/
+*.dmg
+*.pkg
+*.ipa
+*.xcarchive
+ios/App/build/
+ios/App/Pods/
+.antigravity/

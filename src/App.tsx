@@ -67,6 +67,9 @@ import GroupOrderFloatingBubble from './components/GroupOrderFloatingBubble';
 import { SmartNotificationEngine } from './components/SmartNotificationEngine';
 import { DeveloperMenuModal } from './components/DeveloperMenuModal';
 import LegalDocumentsModal from './components/LegalDocumentsModal';
+import { SmartPushTesterModal } from './components/SmartPushTesterModal';
+import { smartPushService } from './lib/smartPushService';
+import { App as CapApp } from '@capacitor/app';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from './lib/featureFlags';
 import { AppFeatureFlags } from './types';
 
@@ -536,6 +539,184 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       delete (window as any).openDevMenu;
+    };
+  }, []);
+
+  // Smart Push Notification Tester State & Double-Tap Back Toast
+  const [showPushTester, setShowPushTester] = useState<boolean>(false);
+  const [backExitToast, setBackExitToast] = useState<boolean>(false);
+
+  useEffect(() => {
+    (window as any).openPushTester = () => setShowPushTester(true);
+    return () => {
+      delete (window as any).openPushTester;
+    };
+  }, []);
+
+  // Mutable reference tracking all active modals/portals for hardware back-button listener
+  const modalsStateRef = React.useRef({
+    showPushTester: false,
+    showDevMenu: false,
+    showLegalModal: false,
+    showGroupOrdering: false,
+    cartOpen: false,
+    mailboxOpen: false,
+    ratingModalOrder: null as Order | null,
+    showNotificationPrompt: false,
+    welcomeBackUser: null as any,
+    onboardingFlowState: null as any,
+    showSelectAddressModal: false,
+    showCityLocationModal: false,
+    currentGateway: 'customer' as string,
+    activeTab: 'home' as string,
+  });
+
+  useEffect(() => {
+    modalsStateRef.current = {
+      showPushTester,
+      showDevMenu,
+      showLegalModal,
+      showGroupOrdering,
+      cartOpen,
+      mailboxOpen,
+      ratingModalOrder,
+      showNotificationPrompt,
+      welcomeBackUser,
+      onboardingFlowState,
+      showSelectAddressModal,
+      showCityLocationModal,
+      currentGateway,
+      activeTab,
+    };
+  }, [
+    showPushTester,
+    showDevMenu,
+    showLegalModal,
+    showGroupOrdering,
+    cartOpen,
+    mailboxOpen,
+    ratingModalOrder,
+    showNotificationPrompt,
+    welcomeBackUser,
+    onboardingFlowState,
+    showSelectAddressModal,
+    showCityLocationModal,
+    currentGateway,
+    activeTab,
+  ]);
+
+  // Hardware Back Button Protection: dismiss modals -> exit portals -> switch to home -> double-tap to exit
+  useEffect(() => {
+    let lastBackPress = 0;
+
+    const backListenerPromise = CapApp.addListener('backButton', () => {
+      const s = modalsStateRef.current;
+
+      // 1. Modal / Sheet Priority Stack
+      if (s.showPushTester) {
+        setShowPushTester(false);
+        return;
+      }
+      if (s.showDevMenu) {
+        setShowDevMenu(false);
+        return;
+      }
+      if (s.showLegalModal) {
+        setShowLegalModal(false);
+        return;
+      }
+      if (s.showGroupOrdering) {
+        setShowGroupOrdering(false);
+        return;
+      }
+      if (s.cartOpen) {
+        setCartOpen(false);
+        return;
+      }
+      if (s.mailboxOpen) {
+        setMailboxOpen(false);
+        return;
+      }
+      if (s.ratingModalOrder) {
+        setRatingModalOrder(null);
+        return;
+      }
+      if (s.showNotificationPrompt) {
+        setShowNotificationPrompt(false);
+        return;
+      }
+      if (s.welcomeBackUser) {
+        setWelcomeBackUser(null);
+        return;
+      }
+      if (s.onboardingFlowState?.isOpen) {
+        setOnboardingFlowState(null);
+        return;
+      }
+      if (s.showSelectAddressModal) {
+        setShowSelectAddressModal(false);
+        return;
+      }
+      if (s.showCityLocationModal) {
+        setShowCityLocationModal(false);
+        return;
+      }
+
+      // 2. Return to Customer gateway if inside admin/partner/kitchen/support
+      if (s.currentGateway !== 'customer') {
+        setCurrentGateway('customer');
+        localStorage.setItem('fitzaika_gateway', 'customer');
+        return;
+      }
+
+      // 3. Return to Home Tab if on another tab
+      if (s.activeTab !== 'home') {
+        setActiveTab('home');
+        return;
+      }
+
+      // 4. Double-Tap Exit Guard on Home Screen
+      const now = Date.now();
+      if (now - lastBackPress < 2000) {
+        CapApp.exitApp();
+      } else {
+        lastBackPress = now;
+        setBackExitToast(true);
+        setTimeout(() => setBackExitToast(false), 2000);
+      }
+    });
+
+    return () => {
+      backListenerPromise.then((handler) => handler.remove?.());
+    };
+  }, []);
+
+  // Cart ref for App Lifecycle background check
+  const cartRef = React.useRef<OrderItem[]>([]);
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  // App Lifecycle Listener for Native Lock-Screen Abandoned Cart Push (5 Mins)
+  useEffect(() => {
+    smartPushService.initChannels();
+
+    const appStatePromise = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) {
+        // App backgrounded or phone locked
+        const currentCart = cartRef.current;
+        if (currentCart && currentCart.length > 0) {
+          const firstDishName = currentCart[0]?.meal?.name || 'delicious meal';
+          smartPushService.scheduleAbandonedCartPush(firstDishName, 300); // 5 minutes
+        }
+      } else {
+        // App reopened
+        smartPushService.cancelAbandonedCartPush();
+      }
+    });
+
+    return () => {
+      appStatePromise.then((handler) => handler.remove?.());
     };
   }, []);
 
@@ -1344,6 +1525,7 @@ export default function App() {
 
     try {
       await setDoc(doc(db, 'orders', order.id), sanitizedOrder);
+      smartPushService.cancelAbandonedCartPush();
       showToast("🎉 Order placed and live synced to Cloud KDS Counter!");
     } catch (error) {
       console.error("Error saving order to Firestore:", error);
@@ -2451,6 +2633,7 @@ export default function App() {
             onOpenMailbox={() => setMailboxOpen(true)}
             onOpenGroupOrder={handleOpenGroupOrderWithMeals}
             onOpenLegal={handleOpenLegal}
+            onOpenPushTester={() => setShowPushTester(true)}
           />
         )}
 
@@ -2800,7 +2983,28 @@ export default function App() {
         flags={featureFlags}
         onUpdateFlags={(newFlags) => setFeatureFlags(newFlags)}
         meals={meals}
+        onOpenPushTester={() => setShowPushTester(true)}
       />
+
+      {/* 🚀 SMART LOCK-SCREEN PUSH NOTIFICATION TESTER MODAL (10 Automated Foodie Campaigns) */}
+      <SmartPushTesterModal
+        isOpen={showPushTester}
+        onClose={() => setShowPushTester(false)}
+        currentCartFirstDish={cart[0]?.meal?.name || 'Chicken Dum Biryani'}
+        cityName={selectedBhatti?.city || 'Muzaffarpur'}
+        walletBalance={
+          ((user.goldenEmberBalance || 0) + (user.standardEmberBalance || 0)) ||
+          user.walletBalance ||
+          150
+        }
+      />
+
+      {/* 📱 NATIVE ANDROID DOUBLE-TAP BACK EXIT PROMPT */}
+      {backExitToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[99999] px-4 py-2.5 rounded-full bg-[#10141d]/95 border border-amber-500/50 text-amber-300 text-xs font-bold shadow-2xl backdrop-blur-md animate-fade-in flex items-center gap-2 pointer-events-none">
+          <span>Press back again to exit Taash Bhatti</span>
+        </div>
+      )}
 
       {/* 🍢 FLOATING BUBBLE: ACTIVE GROUP ORDER ROOM & ORDER TRACKING */}
       <GroupOrderFloatingBubble

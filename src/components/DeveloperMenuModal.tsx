@@ -46,6 +46,7 @@ interface DeveloperMenuModalProps {
   flags: AppFeatureFlags;
   onUpdateFlags: (newFlags: AppFeatureFlags) => void;
   meals?: Meal[];
+  onOpenPushTester?: () => void;
 }
 
 export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
@@ -53,7 +54,8 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
   onClose,
   flags,
   onUpdateFlags,
-  meals = []
+  meals = [],
+  onOpenPushTester
 }) => {
   const [activeConsoleTab, setActiveConsoleTab] = useState<'header' | 'bottom_nav' | 'operations' | 'categories' | 'dishes'>('header');
   const [saving, setSaving] = useState(false);
@@ -377,6 +379,31 @@ export const DeveloperMenuModal: React.FC<DeveloperMenuModalProps> = ({
 
         {/* Scrollable Content Body */}
         <div className="p-5 space-y-6 overflow-y-auto custom-scrollbar flex-1 text-xs">
+
+          {/* Quick Smart Push Tester Banner */}
+          {onOpenPushTester && (
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-transparent border border-amber-500/40 flex items-center justify-between gap-3 shadow-lg shadow-amber-500/10">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <h5 className="text-xs font-black text-white">Smart Lock-Screen Push Notifications</h5>
+                  <p className="text-[10px] text-gray-300">Test all 10 automated food campaigns with witty copy</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenPushTester();
+                }}
+                className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-[11px] hover:from-amber-400 hover:to-orange-400 cursor-pointer shadow-md shrink-0"
+              >
+                Launch Tester
+              </button>
+            </div>
+          )}
 
           {/* TAB 1: HEADER COMPONENTS */}
           {activeConsoleTab === 'header' && (
