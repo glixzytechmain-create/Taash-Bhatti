@@ -48,7 +48,7 @@ import {
 } from 'lucide-react';
 import { User, Order, FAQ, SubscriptionPlan, Meal, SupportTicket, ChatMessage, OrderDeliveryRating, Kitchen, MealReview } from '../types';
 import { FAQS_DATA, SUBSCRIPTIONS_DATA } from '../data';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import InAppDeliveryMap from './InAppDeliveryMap';
 import RainEffect from './RainEffect';
@@ -422,6 +422,131 @@ export default function AccountTab({
   // Address modal/inputs
   const [newAddress, setNewAddress] = useState('');
   const [showAddressInput, setShowAddressInput] = useState(false);
+
+  // ATP (All-Time Password) States
+  const [showAtp, setShowAtp] = useState(false);
+  const [atpCopied, setAtpCopied] = useState(false);
+  const [isEditingAtp, setIsEditingAtp] = useState(false);
+  const [newAtpInput, setNewAtpInput] = useState('');
+  const [atpError, setAtpError] = useState<string | null>(null);
+  const [isSavingAtp, setIsSavingAtp] = useState(false);
+  const [generatedFallbackAtp, setGeneratedFallbackAtp] = useState<string>('');
+
+  // Auto-generate ATP if phone is verified but no ATP is recorded
+  useEffect(() => {
+    if (user.phone && !user.atp && !generatedFallbackAtp) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedFallbackAtp(code);
+      const targetId = fbUser?.uid || (user as any).id;
+      if (targetId) {
+        setDoc(doc(db, 'users', targetId), {
+          atp: code,
+          atpUpdatedAt: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+        onUpdateUser({
+          ...user,
+          atp: code,
+          atpUpdatedAt: new Date().toISOString(),
+        });
+      }
+    }
+  }, [user.phone, user.atp, fbUser?.uid, generatedFallbackAtp]);
+
+  const handleCopyAtp = () => {
+    const codeToCopy = user.atp || generatedFallbackAtp;
+    if (codeToCopy) {
+      try {
+        navigator.clipboard.writeText(codeToCopy);
+      } catch (e) {}
+      setAtpCopied(true);
+      setTimeout(() => setAtpCopied(false), 2000);
+    }
+  };
+
+  const handleSaveCustomAtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAtpError(null);
+    const cleanPin = newAtpInput.trim();
+    if (!/^\d{6}$/.test(cleanPin)) {
+      setAtpError("ATP must be exactly 6 numeric digits (0-9).");
+      return;
+    }
+
+    setIsSavingAtp(true);
+    try {
+      const targetId = fbUser?.uid || (user as any).id;
+      if (targetId) {
+        await updateDoc(doc(db, 'users', targetId), {
+          atp: cleanPin,
+          atpUpdatedAt: new Date().toISOString(),
+        });
+      }
+      onUpdateUser({
+        ...user,
+        atp: cleanPin,
+        atpUpdatedAt: new Date().toISOString(),
+      });
+      setIsEditingAtp(false);
+      setAtpCopied(false);
+    } catch (err: any) {
+      setAtpError(err?.message || "Failed to update ATP. Please try again.");
+    } finally {
+      setIsSavingAtp(false);
+    }
+  };
+
+  // Email Linking States (Optional for phone signups, strictly unique)
+  const [linkEmailInput, setLinkEmailInput] = useState('');
+  const [linkEmailError, setLinkEmailError] = useState<string | null>(null);
+  const [linkEmailSuccess, setLinkEmailSuccess] = useState<string | null>(null);
+  const [isLinkingEmail, setIsLinkingEmail] = useState(false);
+
+  const handleLinkEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLinkEmailError(null);
+    setLinkEmailSuccess(null);
+    const cleanEmail = linkEmailInput.trim().toLowerCase();
+
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setLinkEmailError("Please enter a valid email address.");
+      return;
+    }
+
+    setIsLinkingEmail(true);
+    try {
+      // Enforce strict uniqueness across Firestore users collection
+      const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+      const snap = await getDocs(q);
+      const currentUid = fbUser?.uid || (user as any).id;
+      const isTaken = snap.docs.some(d => d.id !== currentUid);
+
+      if (isTaken) {
+        setLinkEmailError("This email address is already linked to another Taash Bhatti account. Please enter a different email.");
+        setIsLinkingEmail(false);
+        return;
+      }
+
+      if (currentUid) {
+        await setDoc(doc(db, 'users', currentUid), {
+          email: cleanEmail,
+          emailLinkedAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+
+      onUpdateUser({
+        ...user,
+        email: cleanEmail,
+      });
+
+      setLinkEmailSuccess("Email linked successfully! You can now log in using either this email or your mobile phone.");
+      setLinkEmailInput('');
+    } catch (err: any) {
+      console.error("Link email error:", err);
+      setLinkEmailError(err?.message || "Failed to link email. Please check your network.");
+    } finally {
+      setIsLinkingEmail(false);
+    }
+  };
 
   // Detailed Support & Complaint form fields
   const [supportName, setSupportName] = useState(user.name || 'Guest');
@@ -1431,6 +1556,187 @@ export default function AccountTab({
                 )}
               </div>
 
+              {/* ⚡ ALL-TIME PASSWORD (ATP) SECURITY CARD */}
+              {user.phone && (
+                <div className="bg-gradient-to-br from-amber-500/10 via-brand-cream/30 to-brand-orange/5 border border-amber-500/25 rounded-3xl p-5 shadow-3xs relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-3 border-b border-amber-500/10 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center font-black text-xs">
+                        ⚡
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-brand-charcoal uppercase tracking-wider block">
+                          All-Time Password (ATP)
+                        </span>
+                        <span className="text-[10px] text-brand-charcoal/60">Zero-wait OTP bypass for {user.phone}</span>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-black bg-amber-500/20 text-amber-800 px-2 py-0.5 rounded-full uppercase tracking-wider border border-amber-500/30">
+                      COST SAVER &bull; ZERO SMS WAIT
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-brand-charcoal/70 leading-relaxed mb-3.5">
+                    Your permanent 6-digit passcode for this phone number. Whenever you sign in, simply enter your ATP to bypass SMS delivery delays and log in instantly without waiting for cellular OTP.
+                  </p>
+
+                  <div className="bg-white/90 backdrop-blur-xs p-3.5 rounded-2xl border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[9px] font-black text-brand-charcoal/40 uppercase block mb-1">Your 6-Digit ATP Code</span>
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className="text-lg font-black tracking-widest text-brand-charcoal select-all">
+                          {showAtp ? (user.atp || generatedFallbackAtp || '------') : '••••••'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAtp(!showAtp)}
+                          className="text-brand-charcoal/50 hover:text-brand-charcoal p-1 rounded-lg hover:bg-brand-cream/40 transition-colors"
+                          title={showAtp ? "Hide ATP" : "Reveal ATP"}
+                        >
+                          {showAtp ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={handleCopyAtp}
+                        className="flex-1 sm:flex-none bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-extrabold text-[11px] uppercase px-3 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {atpCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{atpCopied ? 'COPIED!' : 'COPY ATP'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingAtp(true);
+                          setNewAtpInput(user.atp || generatedFallbackAtp || '');
+                          setAtpError(null);
+                        }}
+                        className="flex-1 sm:flex-none bg-brand-charcoal hover:bg-black text-white font-extrabold text-[11px] uppercase px-3 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>CHANGE ATP</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Change ATP Inline Editor */}
+                  {isEditingAtp && (
+                    <form onSubmit={handleSaveCustomAtp} className="mt-3 bg-white p-3.5 rounded-2xl border border-amber-500/30 space-y-2.5">
+                      <span className="text-[11px] font-black text-brand-charcoal uppercase block">
+                        Set Custom 6-Digit All-Time Password
+                      </span>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          maxLength={6}
+                          pattern="[0-9]*"
+                          inputMode="numeric"
+                          placeholder="e.g. 749210"
+                          value={newAtpInput}
+                          onChange={(e) => setNewAtpInput(e.target.value.replace(/\D/g, ''))}
+                          className="flex-1 bg-brand-cream/20 border border-brand-green/20 rounded-xl px-3 py-2 text-sm font-mono font-bold tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                          required
+                        />
+                        <button
+                          type="submit"
+                          disabled={isSavingAtp || newAtpInput.length !== 6}
+                          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-[11px] uppercase px-4 py-2 rounded-xl transition-all cursor-pointer"
+                        >
+                          {isSavingAtp ? 'SAVING...' : 'SAVE PIN'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingAtp(false)}
+                          className="text-brand-charcoal/60 hover:text-brand-charcoal text-[11px] font-bold px-3 py-2 cursor-pointer"
+                        >
+                          CANCEL
+                        </button>
+                      </div>
+                      {atpError && <p className="text-[10px] font-bold text-red-600">{atpError}</p>}
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* 📧 EMAIL LINKING & ACCOUNT UNIFICATION */}
+              <div className="bg-white border border-brand-green/10 rounded-3xl p-5 shadow-3xs">
+                <div className="flex items-center justify-between mb-3 border-b border-brand-green/5 pb-2">
+                  <span className="text-xs font-extrabold text-brand-green uppercase tracking-wider flex items-center gap-1.5">
+                    <Mail className="w-4 h-4 text-brand-orange" /> Linked Email & Cross-Login
+                  </span>
+                  {user.email && !user.email.includes('@taashbhatti.phone') ? (
+                    <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> VERIFIED EMAIL
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-black bg-brand-orange/10 text-brand-orange px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      OPTIONAL STEP
+                    </span>
+                  )}
+                </div>
+
+                {user.email && !user.email.includes('@taashbhatti.phone') ? (
+                  <div className="flex items-center justify-between bg-brand-cream/20 p-3.5 rounded-2xl border border-brand-green/5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-brand-green/10 text-brand-green flex items-center justify-center font-black text-sm">
+                        ✉️
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-brand-charcoal block">{user.email}</span>
+                        <span className="text-[10px] text-brand-charcoal/50">Linked to this account. You can log in using either this email or your mobile number.</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <span className="text-xs font-extrabold text-brand-charcoal block">Link Your Email Address</span>
+                      <p className="text-[10px] text-brand-charcoal/60 leading-relaxed">
+                        Pure phone accounts do not require an email, but linking one enables seamless cross-login so you can sign in using either email or phone for this exact same account.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleLinkEmail} className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="email"
+                          placeholder="e.g. yourname@gmail.com"
+                          value={linkEmailInput}
+                          onChange={(e) => {
+                            setLinkEmailInput(e.target.value);
+                            setLinkEmailError(null);
+                          }}
+                          className="flex-1 bg-brand-cream/15 border border-brand-green/15 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+                          required
+                        />
+                        <button
+                          type="submit"
+                          disabled={isLinkingEmail || !linkEmailInput.trim()}
+                          className="bg-brand-green hover:bg-brand-green/90 disabled:opacity-50 text-white font-black text-[10px] uppercase px-4 py-2 rounded-xl transition-all shadow-xs cursor-pointer shrink-0"
+                        >
+                          {isLinkingEmail ? 'VERIFYING...' : 'LINK EMAIL'}
+                        </button>
+                      </div>
+
+                      {linkEmailError && (
+                        <p className="text-[10px] font-bold text-red-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 shrink-0" /> {linkEmailError}
+                        </p>
+                      )}
+                      {linkEmailSuccess && (
+                        <p className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 shrink-0" /> {linkEmailSuccess}
+                        </p>
+                      )}
+                    </form>
+                  </div>
+                )}
+              </div>
+
               {/* Address Book */}
               <div className="bg-white border border-brand-green/10 rounded-3xl p-5 shadow-3xs">
                 <div className="flex items-center justify-between mb-3 border-b border-brand-green/5 pb-2">
@@ -1609,6 +1915,25 @@ export default function AccountTab({
                     Reset Prompt Settings
                   </button>
                 </div>
+              </div>
+
+              {/* App Onboarding & Visual Presentation */}
+              <div className="bg-white border border-brand-green/10 rounded-3xl p-5 shadow-3xs flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="space-y-1 text-center sm:text-left">
+                  <h4 className="text-xs font-extrabold text-brand-green uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
+                    <Sparkles className="w-4 h-4 text-brand-orange" /> Taash Bhatti Visual Onboarding
+                  </h4>
+                  <p className="text-[10px] text-brand-charcoal/55">
+                    Experience the complete interactive gourmet onboarding animation with radar rings and kitchen calibration sequence.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRelaunchOnboarding?.()}
+                  className="w-full sm:w-auto bg-brand-orange/10 hover:bg-brand-orange/20 text-brand-orange border border-brand-orange/30 px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" /> REPLAY ONBOARDING ANIMATION
+                </button>
               </div>
 
               {/* Secure Cloud Controls */}

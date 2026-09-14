@@ -18,6 +18,7 @@ import {
 import { Order, User } from '../types';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { smartPushService } from '../lib/smartPushService';
 
 export interface SmartNotification {
   id: string;
@@ -113,15 +114,11 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
     setActiveToast(newEntry);
     playChime(notif.type === 'wallet' ? 'wallet' : notif.type === 'support' ? 'urgent' : 'order');
 
-    // System Push notification if granted
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(newEntry.title, {
-          body: newEntry.message,
-          icon: '/favicon.ico'
-        });
-      } catch (e) {}
-    }
+    // Dispatch Native Lock-Screen / Heads-Up Push Notification with custom Bhatti chime
+    smartPushService.sendInstantPush(newEntry.title, newEntry.message, {
+      type: notif.type,
+      orderId: notif.orderId,
+    }).catch(() => {});
 
     // Auto-dismiss floating toast after 5.5s
     setTimeout(() => {

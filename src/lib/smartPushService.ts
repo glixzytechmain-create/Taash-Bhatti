@@ -311,12 +311,15 @@ class SmartPushService {
     if (!this.isNative || this.channelCreated) return;
 
     try {
+      // taash_bhatti_smart_pushes_v2: Android channels are immutable once created,
+      // so bumping the ID binds the new custom sound 'bhatti_notification.wav'
       const channel: Channel = {
-        id: 'taash_bhatti_smart_pushes',
+        id: 'taash_bhatti_smart_pushes_v2',
         name: 'Taash Bhatti Cravings & Offers',
         description: 'Instant updates on hot feasts, cart reminders, and special offers',
         importance: 5, // High importance (shows heads-up notification and lock screen banner)
         visibility: 1, // Visible on lock screen
+        sound: 'bhatti_notification.wav',
         vibration: true,
       };
 
@@ -378,8 +381,9 @@ class SmartPushService {
               id: NOTIF_IDS.CART_ABANDONED,
               title,
               body,
+              sound: 'bhatti_notification.wav',
               schedule: { at: fireAt },
-              channelId: 'taash_bhatti_smart_pushes',
+              channelId: 'taash_bhatti_smart_pushes_v2',
               extra: {
                 type: 'cart_abandoned',
                 dishName: firstDishName,
@@ -399,6 +403,7 @@ class SmartPushService {
         const timeoutId = window.setTimeout(() => {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(title, { body, icon: '/favicon.ico' });
+            playNotificationSound();
           }
         }, delaySeconds * 1000);
         (window as any).__taash_cart_push_timer = timeoutId;
@@ -425,6 +430,40 @@ class SmartPushService {
   }
 
   /**
+   * Instantly sends a push notification (native lock-screen / heads-up notification with custom sound)
+   */
+  async sendInstantPush(title: string, body: string, extra?: Record<string, any>): Promise<void> {
+    const notifId = Math.floor(Date.now() % 2147483647);
+    if (this.isNative) {
+      try {
+        await this.initChannels();
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: notifId,
+              title,
+              body,
+              sound: 'bhatti_notification.wav',
+              schedule: { at: new Date(Date.now() + 250) },
+              channelId: 'taash_bhatti_smart_pushes_v2',
+              extra: extra || {},
+            },
+          ],
+        });
+      } catch (e) {
+        console.warn('Native instant push failed:', e);
+      }
+    } else {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(title, { body, icon: '/favicon.ico' });
+        } catch (e) {}
+      }
+      playNotificationSound();
+    }
+  }
+
+  /**
    * Instantly test-fires a notification from any of the 10 campaigns on the device lock-screen / notification shade.
    */
   async testFireNotification(
@@ -447,15 +486,16 @@ class SmartPushService {
     if (this.isNative) {
       try {
         await this.initChannels();
-        // Schedule 1 second into future for crisp delivery
+        // Schedule 1 second into future for crisp delivery with custom sound
         await LocalNotifications.schedule({
           notifications: [
             {
               id: NOTIF_IDS.QUICK_TEST,
               title,
               body,
+              sound: 'bhatti_notification.wav',
               schedule: { at: new Date(Date.now() + 1000) },
-              channelId: 'taash_bhatti_smart_pushes',
+              channelId: 'taash_bhatti_smart_pushes_v2',
               extra: { testCampaign: campaignId },
             },
           ],
@@ -467,17 +507,36 @@ class SmartPushService {
       if ('Notification' in window) {
         if (Notification.permission === 'granted') {
           new Notification(title, { body, icon: '/favicon.ico' });
+          playNotificationSound();
         } else {
           Notification.requestPermission().then((res) => {
             if (res === 'granted') {
               new Notification(title, { body, icon: '/favicon.ico' });
+              playNotificationSound();
             }
           });
         }
+      } else {
+        playNotificationSound();
       }
     }
 
     return { title, body };
+  }
+}
+
+/**
+ * Plays the custom Taash Bhatti notification chime in Web / Desktop environments
+ */
+export function playNotificationSound(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      const audio = new Audio('/sounds/bhatti_notification.mp3');
+      audio.volume = 0.85;
+      audio.play().catch((err) => {
+        console.warn('Audio playback prevented or unavailable:', err);
+      });
+    } catch (e) {}
   }
 }
 

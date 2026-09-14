@@ -1,6 +1,5 @@
 {
   "firestore": {
-    "databaseId": "ai-studio-taashbhattiv15-6b9adf58-3973-4584-9edc-0aae22b35514",
     "rules": "firestore.rules"
   },
   "hosting": {

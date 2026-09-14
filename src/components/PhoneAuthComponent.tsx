@@ -17,7 +17,11 @@ import {
   Lock,
   ChevronDown,
   Info,
-  MapPin
+  MapPin,
+  Eye,
+  EyeOff,
+  Zap,
+  Copy
 } from 'lucide-react';
 import { 
   RecaptchaVerifier, 
@@ -60,8 +64,8 @@ export default function PhoneAuthComponent({
   onCancel,
   defaultName = '',
 }: PhoneAuthComponentProps) {
-  // Steps: 'phone_input' | 'otp_input' | 'checking_address' | 'verified'
-  const [step, setStep] = useState<'phone_input' | 'otp_input' | 'checking_address' | 'verified'>('phone_input');
+  // Steps: 'phone_input' | 'atp_input' | 'otp_input' | 'checking_address' | 'verified'
+  const [step, setStep] = useState<'phone_input' | 'atp_input' | 'otp_input' | 'checking_address' | 'verified'>('phone_input');
   const [addressCheckStatus, setAddressCheckStatus] = useState<string>('Verifying saved delivery addresses...');
 
   // Input states
@@ -70,14 +74,17 @@ export default function PhoneAuthComponent({
   const [fullName, setFullName] = useState(defaultName);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
 
+  // All-Time Password (ATP) zero-SMS bypass states
+  const [knownUserAccount, setKnownUserAccount] = useState<{ user: User; id: string } | null>(null);
+  const [atpDigits, setAtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [showAtpMasked, setShowAtpMasked] = useState<boolean>(true);
+  const atpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
   // OTP states
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [timerSeconds, setTimerSeconds] = useState<number>(60);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-
-  // Fallback / Sandbox OTP simulation if Firebase Phone Auth is not activated in console
-  const [simulatedOtp, setSimulatedOtp] = useState<string | null>(null);
 
   // Status & Error states
   const [loading, setLoading] = useState(false);
@@ -86,16 +93,31 @@ export default function PhoneAuthComponent({
 
   // Input refs for 6 OTP boxes
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
+  const cleanupRecaptcha = () => {
+    if (recaptchaVerifierRef.current) {
+      try {
+        recaptchaVerifierRef.current.clear();
+      } catch (e) {}
+      recaptchaVerifierRef.current = null;
+    }
+    if (typeof window !== 'undefined' && (window as any).phoneRecaptchaVerifier) {
+      try {
+        (window as any).phoneRecaptchaVerifier.clear();
+      } catch (e) {}
+      (window as any).phoneRecaptchaVerifier = null;
+    }
+    const container = document.getElementById('phone-recaptcha-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+  };
 
   // Cleanup reCAPTCHA on unmount
   useEffect(() => {
     return () => {
-      if (typeof window !== 'undefined' && (window as any).phoneRecaptchaVerifier) {
-        try {
-          (window as any).phoneRecaptchaVerifier.clear();
-        } catch (e) {}
-        (window as any).phoneRecaptchaVerifier = null;
-      }
+      cleanupRecaptcha();
     };
   }, []);
 
@@ -119,68 +141,68 @@ export default function PhoneAuthComponent({
   const fullE164Phone = `${selectedCountry.code}${cleanPhone}`;
 
   // Helper: Initialize Invisible Recaptcha Verifier
-  const setupRecaptcha = () => {
+  const getOrCreateRecaptcha = () => {
     if (typeof window === 'undefined') return null;
 
-    try {
-      if ((window as any).phoneRecaptchaVerifier) {
-        try {
-          (window as any).phoneRecaptchaVerifier.clear();
-        } catch (e) {}
-        (window as any).phoneRecaptchaVerifier = null;
-      }
+    if (recaptchaVerifierRef.current) {
+      return recaptchaVerifierRef.current;
+    }
 
+    const container = document.getElementById('phone-recaptcha-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+
+    try {
       const verifier = new RecaptchaVerifier(auth, 'phone-recaptcha-container', {
         size: 'invisible',
         callback: () => {
           // reCAPTCHA solved
         },
         'expired-callback': () => {
+          cleanupRecaptcha();
           setErrorMessage("reCAPTCHA verification expired. Please request a new code.");
         }
       });
 
+      recaptchaVerifierRef.current = verifier;
       (window as any).phoneRecaptchaVerifier = verifier;
       return verifier;
     } catch (err: any) {
-      console.warn("Recaptcha initialization warning:", err);
-      return null;
+      console.warn("Recaptcha initialization warning, resetting container:", err);
+      if (container) {
+        container.innerHTML = '';
+      }
+      try {
+        const verifier = new RecaptchaVerifier(auth, 'phone-recaptcha-container', {
+          size: 'invisible',
+          callback: () => {},
+        });
+        recaptchaVerifierRef.current = verifier;
+        (window as any).phoneRecaptchaVerifier = verifier;
+        return verifier;
+      } catch (e2) {
+        console.error("Secondary reCAPTCHA setup failure:", e2);
+        return null;
+      }
     }
   };
 
-  // 1. Send OTP Request Handler
-  const handleSendOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Helper: Dispatch Real SMS OTP via Firebase Phone Auth
+  const dispatchRealSmsOtp = async () => {
+    setLoading(true);
     setErrorMessage(null);
     setInfoMessage(null);
 
-    if (!fullName.trim()) {
-      setErrorMessage("Please enter your full name.");
-      return;
-    }
-
-    if (fullName.trim().length < 2) {
-      setErrorMessage("Please enter a valid full name (at least 2 characters).");
-      return;
-    }
-
-    if (!cleanPhone || cleanPhone.length < selectedCountry.length - 2) {
-      setErrorMessage(`Please enter a valid ${selectedCountry.length}-digit mobile phone number.`);
-      return;
-    }
-
-    setLoading(true);
-
     try {
-      const verifier = setupRecaptcha();
+      const verifier = getOrCreateRecaptcha();
       if (!verifier) {
-        throw new Error("reCAPTCHA container initialization failed.");
+        throw new Error("reCAPTCHA container initialization failed. Please try again.");
       }
 
-      // Trigger Firebase Phone Auth SMS dispatch
+      // Trigger Firebase Phone Auth SMS dispatch via cellular telecom
       const result = await signInWithPhoneNumber(auth, fullE164Phone, verifier);
       setConfirmationResult(result);
-      setSimulatedOtp(null);
       setStep('otp_input');
       setTimerSeconds(60);
       setIsTimerRunning(true);
@@ -192,46 +214,178 @@ export default function PhoneAuthComponent({
       }, 300);
     } catch (err: any) {
       console.warn("Firebase Phone Auth error:", err?.code, err?.message);
+      cleanupRecaptcha();
 
-      // Handle common Firebase phone auth errors gracefully
-      if (
-        err?.code === 'auth/operation-not-allowed' || 
-        err?.code === 'auth/captcha-check-failed' ||
-        err?.code === 'auth/invalid-app-credential' ||
-        err?.message?.includes('operation-not-allowed') ||
-        err?.message?.includes('reCAPTCHA')
-      ) {
-        // Firebase Phone Auth provider fallback for sandbox or dev preview
-        const demoCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setSimulatedOtp(demoCode);
-        setConfirmationResult(null);
-        setStep('otp_input');
-        setTimerSeconds(60);
-        setIsTimerRunning(true);
-        setInfoMessage(`Verification code ready: ${demoCode}`);
-
-        // Auto-focus first input box
-        setTimeout(() => {
-          inputRefs.current[0]?.focus();
-        }, 300);
-      } else if (err?.code === 'auth/invalid-phone-number') {
+      if (err?.code === 'auth/invalid-phone-number') {
         setErrorMessage("Invalid phone number format. Please check the digits and country code.");
       } else if (err?.code === 'auth/too-many-requests') {
         setErrorMessage("Too many SMS attempts for this number. Please wait a few minutes.");
       } else if (err?.code === 'auth/quota-exceeded') {
-        setErrorMessage("SMS quota limit reached. Switching to instant verified OTP.");
-        const demoCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setSimulatedOtp(demoCode);
-        setConfirmationResult(null);
-        setStep('otp_input');
-        setTimerSeconds(60);
-        setIsTimerRunning(true);
+        setErrorMessage("Daily SMS quota reached on this network. Please try again shortly.");
+      } else if (err?.code === 'auth/invalid-app-credential' || err?.message?.includes('invalid-app-credential')) {
+        setErrorMessage("Device verification failed. Please check network connection and try again.");
+      } else if (err?.code === 'auth/captcha-check-failed') {
+        setErrorMessage("reCAPTCHA security check failed. Please request a new SMS code.");
       } else {
         setErrorMessage(err?.message || "Failed to send SMS code. Please check your network and try again.");
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  // 1. Send OTP Request or Check ATP Handler
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setErrorMessage(null);
+    setInfoMessage(null);
+
+    if (!cleanPhone || cleanPhone.length < selectedCountry.length - 2) {
+      setErrorMessage(`Please enter a valid ${selectedCountry.length}-digit mobile phone number.`);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Step A: Check if account exists with this phone number and has an All-Time Password (ATP)
+      const qUser = query(collection(db, 'users'), where('phone', '==', fullE164Phone));
+      const snap = await getDocs(qUser).catch(() => null);
+
+      if (snap && !snap.empty) {
+        const docSnap = snap.docs[0];
+        const existingData = docSnap.data() as User;
+
+        // First-come first-served: preserve registered account name and email identity
+        const cleanExistingEmail = existingData.email && !existingData.email.includes('@taashbhatti.phone') ? existingData.email : null;
+        if (cleanExistingEmail && fullName.trim() && existingData.name && fullName.trim().toLowerCase() !== existingData.name.trim().toLowerCase()) {
+          setFullName(existingData.name);
+        }
+
+        if (existingData.atp && existingData.atp.trim().length === 6) {
+          // Account has an ATP! Present instant zero-SMS login screen
+          setKnownUserAccount({ user: existingData, id: docSnap.id });
+          setStep('atp_input');
+          setAtpDigits(['', '', '', '', '', '']);
+          setLoading(false);
+          setTimeout(() => {
+            atpInputRefs.current[0]?.focus();
+          }, 300);
+          return;
+        }
+      }
+
+      // Step B: New user or no ATP configured -> Dispatch real SMS OTP
+      await dispatchRealSmsOtp();
+    } catch (err: any) {
+      console.warn("handleSendOtp error:", err);
+      await dispatchRealSmsOtp();
+    }
+  };
+
+  // ATP Input Handlers
+  const handleAtpDigitChange = (index: number, value: string) => {
+    const cleanChar = value.replace(/\D/g, '');
+    const newDigits = [...atpDigits];
+
+    if (cleanChar.length > 0) {
+      newDigits[index] = cleanChar[cleanChar.length - 1];
+      setAtpDigits(newDigits);
+
+      if (index < 5) {
+        atpInputRefs.current[index + 1]?.focus();
+      } else {
+        const fullAtp = newDigits.join('');
+        if (fullAtp.length === 6) {
+          handleVerifyAtp(fullAtp);
+        }
+      }
+    } else {
+      newDigits[index] = '';
+      setAtpDigits(newDigits);
+    }
+  };
+
+  const handleAtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!atpDigits[index] && index > 0) {
+        atpInputRefs.current[index - 1]?.focus();
+        const newDigits = [...atpDigits];
+        newDigits[index - 1] = '';
+        setAtpDigits(newDigits);
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      atpInputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      atpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleAtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '');
+    if (pastedData.length >= 6) {
+      const pasteDigits = pastedData.slice(0, 6).split('');
+      setAtpDigits(pasteDigits);
+      atpInputRefs.current[5]?.focus();
+      handleVerifyAtp(pasteDigits.join(''));
+    }
+  };
+
+  const handleVerifyAtp = async (codeToVerify?: string) => {
+    const code = codeToVerify || atpDigits.join('');
+    setErrorMessage(null);
+
+    if (code.length !== 6) {
+      setErrorMessage("Please enter all 6 digits of your All-Time Password.");
+      return;
+    }
+
+    if (!knownUserAccount) {
+      setErrorMessage("Account context missing. Please request an SMS OTP.");
+      return;
+    }
+
+    if (code !== knownUserAccount.user.atp) {
+      setErrorMessage("Incorrect All-Time Password (ATP). Please check or request an SMS OTP.");
+      return;
+    }
+
+    // ATP is valid! Instant zero-cost login!
+    setLoading(true);
+    setStep('checking_address');
+    setAddressCheckStatus('All-Time Password (ATP) verified! Loading your profile & addresses...');
+
+    const finalProfile: User = {
+      ...knownUserAccount.user,
+      phone: fullE164Phone,
+      isPhoneVerified: true,
+    };
+
+    try {
+      localStorage.setItem('fitzaika_auth_session', 'true');
+      localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
+      localStorage.setItem('fitzaika_cached_fb_user', JSON.stringify({
+        uid: knownUserAccount.id,
+        phoneNumber: fullE164Phone,
+        displayName: finalProfile.name,
+        email: finalProfile.email || '',
+      }));
+    } catch (e) {}
+
+    // Plain logo verifying animation duration (1.2s)
+    await new Promise(r => setTimeout(r, 1200));
+
+    onSuccess({
+      user: finalProfile,
+      fbUser: {
+        uid: knownUserAccount.id,
+        phoneNumber: fullE164Phone,
+        displayName: finalProfile.name,
+        email: finalProfile.email || '',
+      },
+      isNewUser: false,
+    });
   };
 
   // 2. OTP Inputs Handlers
@@ -304,35 +458,12 @@ export default function PhoneAuthComponent({
       let resolvedFirebaseUser: any = null;
       let isNew = false;
 
-      // Real Firebase confirmation
-      if (confirmationResult) {
-        const cred = await confirmationResult.confirm(code);
-        resolvedFirebaseUser = cred.user;
-      } else if (simulatedOtp) {
-        // Simulated / Sandbox fallback
-        if (code !== simulatedOtp && code !== '123456') {
-          throw new Error("Invalid verification code. Please check the digits and try again.");
-        }
-
-        // Try anonymous sign-in or check current auth
-        if (!auth.currentUser) {
-          try {
-            const anonCred = await signInAnonymously(auth);
-            resolvedFirebaseUser = anonCred.user;
-          } catch (e) {
-            // Fallback virtual identity
-            resolvedFirebaseUser = {
-              uid: 'phone_' + cleanPhone,
-              phoneNumber: fullE164Phone,
-              displayName: fullName || `Diner ${cleanPhone.slice(-4)}`,
-            };
-          }
-        } else {
-          resolvedFirebaseUser = auth.currentUser;
-        }
-      } else {
+      // Real Firebase confirmation via cellular SMS OTP
+      if (!confirmationResult) {
         throw new Error("Session expired. Please request a new verification code.");
       }
+      const cred = await confirmationResult.confirm(code);
+      resolvedFirebaseUser = cred.user;
 
       // Step transition to checking saved addresses & user profile
       setStep('checking_address');
@@ -355,6 +486,7 @@ export default function PhoneAuthComponent({
           email: cleanExistingEmail,
         };
         // Check saved addresses count
+        // Check saved addresses count
         const savedList = (existingData.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0);
         const primaryAddr = (existingData.address && existingData.address.trim().length > 0) ? [existingData.address.trim()] : [];
         const uniqueAddresses = Array.from(new Set([...savedList, ...primaryAddr]));
@@ -363,15 +495,36 @@ export default function PhoneAuthComponent({
         } else {
           setAddressCheckStatus('Profile confirmed. No saved addresses found.');
         }
-        // Update user record with phone and clean email
-        await setDoc(userRef, { phone: fullE164Phone, email: cleanExistingEmail }, { merge: true }).catch(() => {});
+
+        const atpToUse = existingData.atp || Math.floor(100000 + Math.random() * 900000).toString();
+        finalProfile = {
+          ...existingData,
+          phone: fullE164Phone,
+          name: fullName.trim() || existingData.name || `Customer ${cleanPhone.slice(-4)}`,
+          email: cleanExistingEmail,
+          atp: atpToUse,
+          atpUpdatedAt: existingData.atpUpdatedAt || new Date().toISOString(),
+          isPhoneVerified: true,
+        };
+
+        // Update user record with phone, clean email, and ATP
+        await setDoc(userRef, { 
+          phone: fullE164Phone, 
+          email: cleanExistingEmail, 
+          atp: atpToUse, 
+          isPhoneVerified: true 
+        }, { merge: true }).catch(() => {});
       } else {
         isNew = true;
-        setAddressCheckStatus('New athlete account created. Setting up your profile...');
+        setAddressCheckStatus('New customer account created. Setting up your profile & All-Time Password...');
+        const newAtp = Math.floor(100000 + Math.random() * 900000).toString();
         finalProfile = {
           name: fullName.trim() || `Customer ${cleanPhone.slice(-4)}`,
           email: resolvedFirebaseUser.email || '',
           phone: fullE164Phone,
+          isPhoneVerified: true,
+          atp: newAtp,
+          atpUpdatedAt: new Date().toISOString(),
           goal: 'general',
           preferredGymId: null,
           savedAddresses: [],
@@ -400,17 +553,14 @@ export default function PhoneAuthComponent({
         }));
       } catch (e) {}
 
-      // Short delay so user sees address verification status
-      await new Promise(r => setTimeout(r, 600));
+      // Plain logo verifying animation duration (1.2s)
+      await new Promise(r => setTimeout(r, 1200));
 
-      setStep('verified');
-      setTimeout(() => {
-        onSuccess({
-          user: finalProfile,
-          fbUser: resolvedFirebaseUser,
-          isNewUser: isNew,
-        });
-      }, 700);
+      onSuccess({
+        user: finalProfile,
+        fbUser: resolvedFirebaseUser,
+        isNewUser: isNew,
+      });
 
     } catch (err: any) {
       console.error("OTP verification error:", err);
@@ -426,13 +576,7 @@ export default function PhoneAuthComponent({
     }
   };
 
-  // Helper: Auto-fill Demo OTP
-  const handleAutoFillDemoOtp = () => {
-    if (simulatedOtp) {
-      setOtpDigits(simulatedOtp.split(''));
-      handleVerifyOtp(simulatedOtp);
-    }
-  };
+
 
   return (
     <div className="w-full space-y-4 font-sans">
@@ -566,6 +710,130 @@ export default function PhoneAuthComponent({
         </form>
       )}
 
+      {/* STEP 1.5: ALL-TIME PASSWORD (ATP) ZERO-SMS LOGIN */}
+      {step === 'atp_input' && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Header with Phone & Change Button */}
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase font-black text-amber-600 tracking-wider">Zero-SMS Instant Login</span>
+                </div>
+                <p className="text-xs font-black text-brand-charcoal tracking-wide">{fullE164Phone}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setStep('phone_input');
+                setErrorMessage(null);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-white text-brand-charcoal hover:text-amber-600 border border-amber-500/20 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+            >
+              <Edit3 className="w-3 h-3" />
+              <span>Change</span>
+            </button>
+          </div>
+
+          {/* ATP Explanatory Banner */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border border-amber-500/25 space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-amber-500 shrink-0" />
+              <p className="text-xs font-black text-brand-charcoal">Enter your All-Time Password (ATP)</p>
+            </div>
+            <p className="text-[11px] text-brand-charcoal/70 leading-relaxed pl-6">
+              Use your permanent 6-digit passcode to authenticate instantly without waiting for cellular SMS.
+            </p>
+          </div>
+
+          {/* 6 Individual ATP Input Boxes */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold text-brand-charcoal/70">6-Digit ATP Passcode</label>
+              <button
+                type="button"
+                onClick={() => setShowAtpMasked(!showAtpMasked)}
+                className="text-[10px] font-bold text-amber-600 flex items-center gap-1 hover:underline cursor-pointer"
+              >
+                {showAtpMasked ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                <span>{showAtpMasked ? 'Reveal' : 'Mask'}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+              {atpDigits.map((digit, idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => (atpInputRefs.current[idx] = el)}
+                  type={showAtpMasked ? 'password' : 'text'}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleAtpDigitChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleAtpKeyDown(idx, e)}
+                  onPaste={handleAtpPaste}
+                  className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-lg font-black rounded-2xl border transition-all outline-hidden ${
+                    digit
+                      ? 'border-amber-500 bg-amber-500/5 text-brand-charcoal shadow-xs ring-2 ring-amber-500/20'
+                      : 'border-brand-green/20 bg-brand-cream/15 text-brand-charcoal focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-500/20'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Error Banner */}
+          {errorMessage && (
+            <div className="p-2.5 rounded-xl bg-red-50 border border-red-200/50 text-red-600 text-[11px] font-bold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Primary Action Button: Verify ATP */}
+          <button
+            type="button"
+            onClick={() => handleVerifyAtp()}
+            disabled={loading || atpDigits.join('').length !== 6}
+            className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Verifying All-Time Password...</span>
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4 fill-current" />
+                <span>VERIFY ATP & LOGIN (ZERO SMS)</span>
+              </>
+            )}
+          </button>
+
+          {/* Divider */}
+          <div className="relative flex items-center justify-center my-2">
+            <div className="border-t border-brand-green/10 w-full" />
+            <span className="bg-white px-3 text-[10px] uppercase font-bold text-brand-charcoal/40 absolute">or</span>
+          </div>
+
+          {/* Secondary Action: Fallback to real cellular SMS */}
+          <button
+            type="button"
+            onClick={dispatchRealSmsOtp}
+            disabled={loading}
+            className="w-full bg-brand-cream/30 hover:bg-brand-cream/60 text-brand-charcoal border border-brand-green/20 font-bold text-xs py-3 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Phone className="w-3.5 h-3.5 text-brand-green" />
+            <span>Don't have or forgot ATP? Send OTP via SMS</span>
+          </button>
+        </div>
+      )}
+
       {/* STEP 2: 6-DIGIT OTP VERIFICATION */}
       {step === 'otp_input' && (
         <div className="space-y-4 animate-fade-in">
@@ -585,7 +853,6 @@ export default function PhoneAuthComponent({
               onClick={() => {
                 setStep('phone_input');
                 setErrorMessage(null);
-                setSimulatedOtp(null);
               }}
               className="px-2.5 py-1.5 rounded-xl bg-white text-brand-charcoal hover:text-brand-green border border-brand-green/15 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
             >
@@ -593,28 +860,6 @@ export default function PhoneAuthComponent({
               <span>Change</span>
             </button>
           </div>
-
-          {/* SMS Verification Code Quick Action if generated */}
-          {simulatedOtp && (
-            <div className="flex items-center justify-between bg-brand-cream/35 border border-brand-green/15 px-3.5 py-2.5 rounded-2xl shadow-2xs">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-brand-green/10 text-brand-green flex items-center justify-center text-xs shrink-0">
-                  💬
-                </div>
-                <div>
-                  <p className="text-[9px] uppercase font-black tracking-wider text-brand-charcoal/50">SMS OTP Code</p>
-                  <p className="font-mono text-xs font-black text-brand-charcoal tracking-widest">{simulatedOtp}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleAutoFillDemoOtp}
-                className="px-3 py-1.5 bg-brand-green hover:bg-brand-green/90 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors shadow-2xs cursor-pointer"
-              >
-                Auto-Fill
-              </button>
-            </div>
-          )}
 
           {/* 6 Individual Digit Input Boxes */}
           <div className="space-y-2">
@@ -695,56 +940,30 @@ export default function PhoneAuthComponent({
         </div>
       )}
 
-      {/* STEP 2.5: CHECKING SAVED ADDRESSES & PROFILES */}
+      {/* STEP 2.5: PLAIN VERIFYING SCREEN WITH OUR LOGO (No buttons) */}
       {step === 'checking_address' && (
-        <div id="phone-auth-checking-address-step" className="py-8 flex flex-col items-center justify-center space-y-4 animate-fade-in text-center">
+        <div id="phone-auth-checking-address-step" className="py-10 flex flex-col items-center justify-center space-y-4 animate-fade-in text-center select-none">
           <div className="relative flex items-center justify-center">
-            {/* Pulsing Aura */}
-            <span className="absolute -inset-4 rounded-full border border-brand-green/30 animate-ping pointer-events-none" style={{ animationDuration: '2s' }} />
-            <div className="w-16 h-16 rounded-2xl bg-brand-charcoal border border-amber-500/40 p-2 flex items-center justify-center shadow-xl">
-              <img
-                src="https://cdn.postimage.me/2026/08/01/28172.png"
-                alt="TAASH BHATTI"
-                className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(255,140,0,0.6)]"
-              />
-            </div>
-            <div className="absolute -bottom-2 -right-1 w-6 h-6 rounded-full bg-brand-green border-2 border-white flex items-center justify-center shadow">
-              <MapPin className="w-3.5 h-3.5 text-white" />
-            </div>
-          </div>
-          <div className="space-y-1.5 max-w-xs">
-            <span className="inline-block px-2.5 py-0.5 rounded-full bg-brand-green/10 text-brand-green text-[9px] font-black uppercase tracking-widest">
-              STEP 3: LOCATION VAULT
-            </span>
-            <h4 className="text-sm font-extrabold text-brand-charcoal flex items-center justify-center gap-1.5">
-              <span>Syncing Saved Doorstep Addresses</span>
-              <div className="w-3.5 h-3.5 border-2 border-brand-green border-t-transparent rounded-full animate-spin" />
-            </h4>
-            <p className="text-xs text-brand-charcoal/70 font-medium">
-              {addressCheckStatus}
-            </p>
-          </div>
-        </div>
-      )}
+            {/* Outer Golden Spinner Ring */}
+            <span
+              className="absolute -inset-5 rounded-full border-2 border-amber-400/40 border-t-amber-400 animate-spin pointer-events-none"
+              style={{ animationDuration: '1.8s' }}
+            />
+            <span className="absolute -inset-2.5 rounded-full border border-orange-500/30 animate-pulse pointer-events-none" />
 
-      {/* STEP 3: VERIFIED CELEBRATION */}
-      {step === 'verified' && (
-        <div className="py-8 flex flex-col items-center justify-center space-y-4 animate-fade-in text-center">
-          <div className="relative flex items-center justify-center">
-            <div className="w-16 h-16 rounded-2xl bg-brand-charcoal border border-emerald-500/50 p-2 flex items-center justify-center shadow-xl">
+            {/* Taash Bhatti Logo Badge */}
+            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[#1c222e] to-[#0d1117] border border-amber-500/40 p-3 flex items-center justify-center shadow-[0_0_30px_rgba(245,158,11,0.25)]">
               <img
                 src="https://cdn.postimage.me/2026/08/01/28172.png"
-                alt="TAASH BHATTI"
-                className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(16,185,129,0.6)]"
+                alt="Taash Bhatti"
+                className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(245,158,11,0.5)] animate-pulse"
               />
             </div>
-            <div className="absolute -bottom-2 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center shadow">
-              <CheckCircle2 className="w-4 h-4 text-white" />
-            </div>
           </div>
-          <div>
-            <h4 className="text-base font-extrabold text-brand-charcoal">Session Authenticated!</h4>
-            <p className="text-xs text-brand-charcoal/60 mt-0.5">Welcome to TAASH BHATTI. Opening your personalized feast dashboard...</p>
+
+          <div className="space-y-1">
+            <h4 className="text-lg font-black text-brand-charcoal tracking-wide">Verifying.....</h4>
+            <p className="text-xs text-brand-orange font-medium">Taash Bhatti Artisanal Kitchen</p>
           </div>
         </div>
       )}

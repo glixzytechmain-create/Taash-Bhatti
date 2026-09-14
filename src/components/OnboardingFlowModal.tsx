@@ -60,12 +60,14 @@ export default function OnboardingFlowModal({
     {
       id: 'location',
       badge: 'Step 3 of 4',
-      title: 'Syncing Saved Delivery Address',
-      subtitle: savedAddressCount > 0
-        ? `Found ${savedAddressCount} saved doorstep address! Locking "${savedAddressPrimary?.slice(0, 28) || 'Home'}${savedAddressPrimary && savedAddressPrimary.length > 28 ? '...' : ''}" to header.`
-        : 'Verifying service kitchen geofences & delivery radius...',
+      title: savedAddressCount > 0 ? 'Checking Saved Delivery Address' : 'Detecting Delivery Location',
+      subtitle: savedAddressCount > 1
+        ? `Found ${savedAddressCount} saved addresses! You will select your preferred address next.`
+        : savedAddressCount === 1
+        ? `Found 1 saved doorstep address: "${savedAddressPrimary?.slice(0, 28) || 'Home'}${savedAddressPrimary && savedAddressPrimary.length > 28 ? '...' : ''}". Ready for delivery.`
+        : 'No saved address found. Setting up live map location picker...',
       icon: <Compass className="w-5 h-5 text-amber-400" />,
-      tag: savedAddressCount > 0 ? `${savedAddressCount} SAVED` : 'VERIFIED',
+      tag: savedAddressCount > 1 ? `${savedAddressCount} SAVED` : savedAddressCount === 1 ? '1 SAVED' : 'NEW LOCATION',
     },
     {
       id: 'ready',
@@ -126,7 +128,7 @@ export default function OnboardingFlowModal({
   return (
     <div
       id="onboarding-flow-modal-backdrop"
-      className="fixed inset-0 z-[10000] bg-[#070A0D]/95 backdrop-blur-2xl flex items-center justify-center p-4 select-none overflow-hidden"
+      className="fixed inset-0 z-[100000] bg-[#070A0D] backdrop-blur-3xl flex items-center justify-center p-4 select-none overflow-hidden"
     >
       {/* Dynamic Ambient Radiant Glows */}
       <div 

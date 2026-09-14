@@ -52,6 +52,8 @@ export interface User {
   email: string;
   phone?: string;
   isPhoneVerified?: boolean;
+  atp?: string; // 6-digit All-Time Password for instant zero-SMS-cost login bypass
+  atpUpdatedAt?: string;
   role?: 'customer' | 'rider' | 'kitchen' | 'admin';
   city?: string;
   address?: string;

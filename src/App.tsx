@@ -51,7 +51,6 @@ import CustomerSupportPortal from './components/CustomerSupportPortal';
 import KitchenManagerApp from './components/KitchenManagerApp';
 import IdentityVerificationModal from './components/IdentityVerificationModal';
 import SupportMailboxModal from './components/SupportMailboxModal';
-import AuthVerifyingOverlay from './components/AuthVerifyingOverlay';
 import TaashOpeningSplash from './components/TaashOpeningSplash';
 import CityGeofenceSelectorModal from './components/CityGeofenceSelectorModal';
 import NotificationPromptModal from './components/NotificationPromptModal';
@@ -487,7 +486,6 @@ export default function App() {
     return null;
   });
   const [authChecking, setAuthChecking] = useState<boolean>(true);
-  const [showAuthVerifyingOverlay, setShowAuthVerifyingOverlay] = useState<boolean>(false);
   const [showOpeningSplash, setShowOpeningSplash] = useState<boolean>(true);
 
   // Onboarding wizard overlay state (Disabled per user request)
@@ -518,6 +516,13 @@ export default function App() {
 
   // Mandatory Phone Number Verification State (Enforces OTP for all login methods)
   const [showMandatoryPhoneModal, setShowMandatoryPhoneModal] = useState<boolean>(false);
+
+  // Synchronously compute if current customer needs mobile phone SMS verification
+  const isCustomerPendingPhoneVerification =
+    !authChecking &&
+    currentGateway === 'customer' &&
+    !!fbUser &&
+    !((user.phone && user.phone.replace(/\D/g, '').length >= 10 && user.isPhoneVerified) || !!fbUser.phoneNumber);
 
   // Developer Feature Flags & Menu State
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(getStoredFeatureFlags);
@@ -952,12 +957,6 @@ export default function App() {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setFbUser(firebaseUser);
       setAuthChecking(false);
-
-      if (firebaseUser) {
-        setShowAuthVerifyingOverlay(true);
-      } else {
-        setShowAuthVerifyingOverlay(false);
-      }
 
       if (firebaseUser && firebaseUser.email) {
         const emailClean = firebaseUser.email.trim().toLowerCase();
@@ -1636,20 +1635,21 @@ export default function App() {
         }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      setIdentityModal({
-        isOpen: true,
-        step: 'confirmed',
-        title: 'Identity Confirmed ✓',
-        subtitle: 'Access granted. Loading your personalized interface...',
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (targetGateway !== 'customer') {
+        setIdentityModal({
+          isOpen: true,
+          step: 'confirmed',
+          title: 'Identity Confirmed ✓',
+          subtitle: 'Access granted. Loading your personalized interface...',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        setIdentityModal(prev => ({ ...prev, isOpen: false }));
+      } else {
+        setIdentityModal(prev => ({ ...prev, isOpen: false }));
+      }
 
       setCurrentGateway(targetGateway);
       localStorage.setItem('fitzaika_gateway', targetGateway);
-      setIdentityModal(prev => ({ ...prev, isOpen: false }));
 
       if (targetGateway === 'admin') {
         showToast("👑 Admin console authenticated successfully!");
@@ -1660,7 +1660,29 @@ export default function App() {
       } else if (targetGateway === 'kitchen') {
         showToast("👨‍🍳 Kitchen Station Manager desk activated!");
       } else {
-        showToast("🔐 Logged in successfully!");
+        // Customer Gateway: Phone & OTP verification FIRST before any onboarding verification!
+        const userDocRef = doc(db, 'users', auth.currentUser?.uid || '');
+        const userSnap = await getDoc(userDocRef).catch(() => null);
+        const existingProfile = userSnap?.exists() ? (userSnap.data() as User) : null;
+        const hasVerifiedPhone = existingProfile?.isPhoneVerified && existingProfile?.phone;
+
+        if (!hasVerifiedPhone && !auth.currentUser?.phoneNumber) {
+          setShowMandatoryPhoneModal(true);
+          showToast("📱 Please verify your mobile phone with SMS OTP!");
+        } else {
+          // Phone is already verified -> now safe to run onboarding verification
+          const pAddr = existingProfile?.address || (existingProfile?.savedAddresses || [])[0] || '';
+          setOnboardingFlowState({
+            isOpen: true,
+            userDisplayName: auth.currentUser?.displayName || existingProfile?.name || 'Foodie',
+            userPhone: existingProfile?.phone || auth.currentUser?.phoneNumber || null,
+            mode: 'login',
+            savedAddressCount: (existingProfile?.savedAddresses || []).length,
+            savedAddressPrimary: pAddr,
+            isNewUser: false,
+          });
+          showToast("🔐 Logged in successfully!");
+        }
       }
 
       return { success: true };
@@ -1670,10 +1692,26 @@ export default function App() {
       setIdentityModal(prev => ({ ...prev, isOpen: false }));
 
       let friendlyError = "Invalid email or password.";
-      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        friendlyError = "Incorrect password. Please verify your password and try again.";
-      } else if (err.code === 'auth/user-not-found') {
-        friendlyError = "No account found with this email. Please verify your email or click 'NEW REGISTRY' to create an account.";
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
+        try {
+          const phoneQ = query(collection(db, 'users'), where('email', '==', emailClean));
+          const phoneSnap = await getDocs(phoneQ);
+          if (!phoneSnap.empty) {
+            const uData = phoneSnap.docs[0].data() as User;
+            if (uData.phone) {
+              return { 
+                success: false, 
+                error: `This email is linked to mobile account ${uData.phone.slice(0, 4)}••••${uData.phone.slice(-2)}. Please sign in using the 'PHONE' tab with your All-Time Password (ATP) or SMS OTP.` 
+              };
+            }
+          }
+        } catch (e) {}
+
+        if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+          friendlyError = "Incorrect password. Please verify your password and try again.";
+        } else {
+          friendlyError = "No account found with this email. Please verify your email or click 'NEW REGISTRY' to create an account.";
+        }
       } else if (err.code === 'auth/invalid-email') {
         friendlyError = "Please enter a valid email address.";
       } else if (err.code === 'auth/user-disabled') {
@@ -1734,6 +1772,16 @@ export default function App() {
     try {
       localStorage.removeItem('fitzaika_onboarding_done');
       localStorage.removeItem('fitzaika_cached_user_profile');
+
+      // Check if email is already linked in Firestore to prevent duplicate account creation
+      const existingEmailQuery = query(collection(db, 'users'), where('email', '==', emailClean));
+      const existingEmailSnap = await getDocs(existingEmailQuery);
+      if (!existingEmailSnap.empty) {
+        return { 
+          success: false, 
+          error: "This email address is already associated with an existing Taash Bhatti account. Please sign in instead." 
+        };
+      }
       
       const cred = await createUserWithEmailAndPassword(auth, emailClean, passClean);
       await updateProfile(cred.user, { displayName: name });
@@ -1766,24 +1814,10 @@ export default function App() {
   };
 
   const handleSignInWithGoogle = async () => {
-    setIdentityModal({
-      isOpen: true,
-      step: 'scanning',
-      title: 'Authenticating Google Tokens...',
-      subtitle: 'Verifying Google OAuth 2.0 Identity',
-    });
-
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       const email = cred.user.email;
       let targetGateway: 'customer' | 'admin' | 'partner' | 'support' | 'kitchen' = 'customer';
-
-      setIdentityModal({
-        isOpen: true,
-        step: 'verifying',
-        title: 'Confirming Security Credentials...',
-        subtitle: 'Validating access policies and session tokens',
-      });
 
       if (email) {
         const emailClean = email.trim().toLowerCase();
@@ -1820,20 +1854,19 @@ export default function App() {
         }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      setIdentityModal({
-        isOpen: true,
-        step: 'confirmed',
-        title: 'Identity Confirmed ✓',
-        subtitle: 'Access granted. Loading your personalized interface...',
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (targetGateway !== 'customer') {
+        setIdentityModal({
+          isOpen: true,
+          step: 'confirmed',
+          title: 'Identity Confirmed ✓',
+          subtitle: 'Access granted. Loading your personalized interface...',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        setIdentityModal(prev => ({ ...prev, isOpen: false }));
+      }
 
       setCurrentGateway(targetGateway);
       localStorage.setItem('fitzaika_gateway', targetGateway);
-      setIdentityModal(prev => ({ ...prev, isOpen: false }));
 
       if (targetGateway === 'admin') {
         showToast("🔒 Secure admin verification required.");
@@ -1844,7 +1877,29 @@ export default function App() {
       } else if (targetGateway === 'kitchen') {
         showToast("👨‍🍳 Kitchen Station Manager desk activated!");
       } else {
-        showToast("🔐 Logged in with Google!");
+        // Customer login: Phone & OTP verification FIRST before any onboarding verification!
+        const userDocRef = doc(db, 'users', cred.user.uid);
+        const userSnap = await getDoc(userDocRef).catch(() => null);
+        const existingProfile = userSnap?.exists() ? (userSnap.data() as User) : null;
+        const hasVerifiedPhone = existingProfile?.isPhoneVerified && existingProfile?.phone;
+
+        if (!hasVerifiedPhone && !cred.user.phoneNumber) {
+          setShowMandatoryPhoneModal(true);
+          showToast("📱 Google connected! Please verify your mobile phone with SMS OTP.");
+        } else {
+          // Phone is already verified -> run onboarding verification!
+          const pAddr = existingProfile?.address || (existingProfile?.savedAddresses || [])[0] || '';
+          setOnboardingFlowState({
+            isOpen: true,
+            userDisplayName: cred.user.displayName || existingProfile?.name || 'Foodie',
+            userPhone: existingProfile?.phone || cred.user.phoneNumber || null,
+            mode: 'login',
+            savedAddressCount: (existingProfile?.savedAddresses || []).length,
+            savedAddressPrimary: pAddr,
+            isNewUser: false,
+          });
+          showToast("🔐 Logged in with Google!");
+        }
       }
 
       return { success: true };
@@ -1856,24 +1911,10 @@ export default function App() {
   };
 
   const handleSignInWithApple = async () => {
-    setIdentityModal({
-      isOpen: true,
-      step: 'scanning',
-      title: 'Authenticating Apple ID...',
-      subtitle: 'Verifying Apple OAuth 2.0 Credentials',
-    });
-
     try {
       const cred = await signInWithPopup(auth, appleProvider);
       const email = cred.user.email;
       let targetGateway: 'customer' | 'admin' | 'partner' | 'support' | 'kitchen' = 'customer';
-
-      setIdentityModal({
-        isOpen: true,
-        step: 'verifying',
-        title: 'Confirming Security Credentials...',
-        subtitle: 'Validating access policies and session tokens',
-      });
 
       if (email) {
         const emailClean = email.trim().toLowerCase();
@@ -1910,20 +1951,19 @@ export default function App() {
         }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      setIdentityModal({
-        isOpen: true,
-        step: 'confirmed',
-        title: 'Identity Confirmed ✓',
-        subtitle: 'Access granted. Loading your personalized interface...',
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (targetGateway !== 'customer') {
+        setIdentityModal({
+          isOpen: true,
+          step: 'confirmed',
+          title: 'Identity Confirmed ✓',
+          subtitle: 'Access granted. Loading your personalized interface...',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        setIdentityModal(prev => ({ ...prev, isOpen: false }));
+      }
 
       setCurrentGateway(targetGateway);
       localStorage.setItem('fitzaika_gateway', targetGateway);
-      setIdentityModal(prev => ({ ...prev, isOpen: false }));
 
       if (targetGateway === 'admin') {
         showToast("🔒 Secure admin verification required.");
@@ -1934,7 +1974,29 @@ export default function App() {
       } else if (targetGateway === 'kitchen') {
         showToast("👨‍🍳 Kitchen Station Manager desk activated!");
       } else {
-        showToast("🍎 Logged in with Apple!");
+        // Customer login: Phone & OTP verification FIRST before any onboarding verification!
+        const userDocRef = doc(db, 'users', cred.user.uid);
+        const userSnap = await getDoc(userDocRef).catch(() => null);
+        const existingProfile = userSnap?.exists() ? (userSnap.data() as User) : null;
+        const hasVerifiedPhone = existingProfile?.isPhoneVerified && existingProfile?.phone;
+
+        if (!hasVerifiedPhone && !cred.user.phoneNumber) {
+          setShowMandatoryPhoneModal(true);
+          showToast("📱 Apple ID connected! Please verify your mobile phone with SMS OTP.");
+        } else {
+          // Phone is already verified -> run onboarding verification!
+          const pAddr = existingProfile?.address || (existingProfile?.savedAddresses || [])[0] || '';
+          setOnboardingFlowState({
+            isOpen: true,
+            userDisplayName: cred.user.displayName || existingProfile?.name || 'Foodie',
+            userPhone: existingProfile?.phone || cred.user.phoneNumber || null,
+            mode: 'login',
+            savedAddressCount: (existingProfile?.savedAddresses || []).length,
+            savedAddressPrimary: pAddr,
+            isNewUser: false,
+          });
+          showToast("🍎 Logged in with Apple!");
+        }
       }
 
       return { success: true };
@@ -1948,7 +2010,6 @@ export default function App() {
   const handlePhoneAuthSuccess = (data: { user: User; fbUser: any; isNewUser: boolean }) => {
     setUser(data.user);
     setFbUser(data.fbUser);
-    setShowAuthVerifyingOverlay(false);
     
     // Explicitly persist session in localStorage so the user is never logged out on app reopen
     try {
@@ -2758,7 +2819,19 @@ export default function App() {
             onPhoneAuthSuccess={handlePhoneAuthSuccess}
             onSignOut={handleSignOut}
             authChecking={authChecking}
-            onRelaunchOnboarding={() => handleShowOnboarding(true)}
+            onRelaunchOnboarding={() => {
+              const savedList = (user?.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0);
+              const primaryAddr = (user?.address && user.address.trim().length > 0) ? user.address.trim() : (savedList[0] || '');
+              setOnboardingFlowState({
+                isOpen: true,
+                userDisplayName: user?.name || null,
+                userPhone: user?.phone || null,
+                mode: 'restore',
+                savedAddressCount: savedList.length,
+                savedAddressPrimary: primaryAddr,
+                isNewUser: false,
+              });
+            }}
             onOpenMailbox={() => setMailboxOpen(true)}
             onOpenGroupOrder={handleOpenGroupOrderWithMeals}
             onOpenLegal={handleOpenLegal}
@@ -2943,18 +3016,6 @@ export default function App() {
         <TaashOpeningSplash onComplete={() => setShowOpeningSplash(false)} />
       )}
 
-      {/* AUTHENTICATION & SESSION VERIFICATION OVERLAY (Only for authenticated Firebase users on page refresh / reopen) */}
-      {showAuthVerifyingOverlay && fbUser && (
-        <AuthVerifyingOverlay
-          userDisplayName={user.name || fbUser?.displayName}
-          userEmail={user.email || fbUser?.email}
-          userPhone={user.phone}
-          isLoggedIn={true}
-          savedAddressCount={((user.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0)).length}
-          savedAddressPrimary={user.address}
-          onFinish={() => setShowAuthVerifyingOverlay(false)}
-        />
-      )}
 
       {/* IDENTITY VERIFICATION ANIMATION OVERLAY */}
       <IdentityVerificationModal
@@ -3003,7 +3064,7 @@ export default function App() {
       />
 
       {/* TAASH BHATTI ONBOARDING FLOW MODAL (Aesthetic wait window with big logo, step-by-step animations & location hydration guard) */}
-      {onboardingFlowState && (
+      {onboardingFlowState && !isCustomerPendingPhoneVerification && !showMandatoryPhoneModal && (
         <OnboardingFlowModal
           isOpen={onboardingFlowState.isOpen}
           userDisplayName={onboardingFlowState.userDisplayName}
@@ -3021,33 +3082,36 @@ export default function App() {
             const freshUnique = Array.from(new Set([...freshSavedList, ...(freshPrimaryAddr ? [freshPrimaryAddr] : [])]));
             const count = freshUnique.length > 0 ? freshUnique.length : state.savedAddressCount;
 
-            if (state.isNewUser) {
-              // RULE 1: STRICTLY NO welcome back animation to signup/first time register users!
-              showToast(`🎉 Welcome to TAASH BHATTI, ${user.name || 'Athlete'}!`);
-              if (count === 0) {
-                // If brand new user with 0 addresses, prompt map location picker
-                setTimeout(() => {
-                  setShowCityLocationModal(true);
-                }, 400);
+            // 3-way address routing strictly enforced after onboarding:
+            if (count === 0) {
+              // 1. NO saved address -> Map location picker window appears!
+              setShowSelectAddressModal(false);
+              setWelcomeBackUser(null);
+              setTimeout(() => {
+                setShowCityLocationModal(true);
+              }, 400);
+              showToast("📍 Please select your delivery location on the map.");
+            } else if (count === 1) {
+              // 2. Exactly 1 saved address -> Map window strictly DOES NOT appear! Address selector DOES NOT appear.
+              setShowCityLocationModal(false);
+              setShowSelectAddressModal(false);
+              setWelcomeBackUser(null);
+              if (!user.address && freshPrimaryAddr) {
+                const updatedWithAddr = { ...user, address: freshPrimaryAddr };
+                setUser(updatedWithAddr);
+                try {
+                  localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(updatedWithAddr));
+                } catch (e) {}
               }
+              showToast(`📍 Delivering to your saved address: ${freshPrimaryAddr.slice(0, 35)}...`);
             } else {
-              // RULE 2: Returning user logging in!
-              if (count > 0) {
-                // OVERPOWER THE MAP WINDOW:
-                setShowCityLocationModal(false);
-                setShowSelectAddressModal(false);
-                setWelcomeBackUser({
-                  name: user.name || 'Athlete',
-                  avatar: user.avatar,
-                  address: freshPrimaryAddr,
-                  addressCount: count,
-                });
-              } else {
-                showToast(`📱 Welcome back, ${user.name}!`);
-                setTimeout(() => {
-                  setShowCityLocationModal(true);
-                }, 400);
-              }
+              // 3. More than 1 saved address -> Map window strictly DOES NOT appear! Location selector for current order appears!
+              setShowCityLocationModal(false);
+              setWelcomeBackUser(null);
+              setTimeout(() => {
+                setShowSelectAddressModal(true);
+              }, 400);
+              showToast("📍 Select delivery address for your feast.");
             }
           }}
         />
@@ -3189,20 +3253,43 @@ export default function App() {
         initialTab={legalModalTab}
       />
 
+      {/* 🛡️ SECURITY SHROUD: Prevent any app background flashing or loophole access before phone verification */}
+      {(isCustomerPendingPhoneVerification || showMandatoryPhoneModal) && (
+        <div className="fixed inset-0 z-[99998] bg-[#070A0D] flex items-center justify-center pointer-events-auto select-none" />
+      )}
+
       {/* 📱 MANDATORY PHONE NUMBER & SMS OTP VERIFICATION MODAL */}
       <MandatoryPhoneVerificationModal
-        isOpen={showMandatoryPhoneModal}
+        isOpen={showMandatoryPhoneModal || isCustomerPendingPhoneVerification}
         user={user}
-        onSuccess={(verifiedPhone) => {
+        onSuccess={(verifiedPhone, atpCode) => {
           setShowMandatoryPhoneModal(false);
-          setUser((prev) => {
-            const updated = { ...prev, phone: verifiedPhone, isPhoneVerified: true };
-            try {
-              localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(updated));
-            } catch (e) {}
-            return updated;
+          const updated: User = { 
+            ...user, 
+            phone: verifiedPhone, 
+            isPhoneVerified: true, 
+            atp: atpCode || user.atp 
+          };
+          setUser(updated);
+          try {
+            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(updated));
+          } catch (e) {}
+          showToast("✅ Mobile number verified! Welcome to Taash Bhatti.");
+
+          const savedList = (updated.savedAddresses || []).filter(a => typeof a === 'string' && a.trim().length > 0);
+          const primaryAddr = (updated.address && updated.address.trim().length > 0) ? updated.address.trim() : (savedList[0] || '');
+          const uniqueAddresses = Array.from(new Set([...savedList, ...(primaryAddr ? [primaryAddr] : [])]));
+
+          // Trigger the rich onboarding animation flow!
+          setOnboardingFlowState({
+            isOpen: true,
+            userDisplayName: updated.name || null,
+            userPhone: verifiedPhone,
+            mode: 'signup',
+            savedAddressCount: uniqueAddresses.length,
+            savedAddressPrimary: primaryAddr,
+            isNewUser: true,
           });
-          showToast("✅ Mobile number verified with SMS OTP!");
         }}
         onSignOut={() => {
           setShowMandatoryPhoneModal(false);

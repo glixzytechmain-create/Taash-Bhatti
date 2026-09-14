@@ -22,6 +22,7 @@ import {
   NotificationCampaign,
   interpolateNotificationText,
   smartPushService,
+  playNotificationSound,
 } from '../lib/smartPushService';
 
 interface SmartPushTesterModalProps {
@@ -247,9 +248,23 @@ export const SmartPushTesterModal: React.FC<SmartPushTesterModalProps> = ({
 
           {/* Lock Screen Notification Live Preview Box */}
           <div>
-            <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
-              Lock-Screen Notification Banner Preview
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+                Lock-Screen Notification Banner Preview
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  playNotificationSound();
+                  setFireStatus('🔊 Playing custom Taash Bhatti notification chime!');
+                  setTimeout(() => setFireStatus(null), 3500);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold border border-amber-500/30 transition-all cursor-pointer shadow-xs"
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>Play Sound Preview</span>
+              </button>
+            </div>
             <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-[#151c28] to-slate-900 border border-amber-500/40 shadow-xl relative overflow-hidden">
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-white shrink-0 shadow-md">
