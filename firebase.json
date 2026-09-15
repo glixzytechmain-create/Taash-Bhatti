@@ -1,4 +1,15 @@
 {
+  "apphosting": {
+    "backendId": "taashbhatti",
+    "rootDir": "/",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "dist-electron",
+      "android",
+      "ios"
+    ]
+  },
   "firestore": {
     "rules": "firestore.rules"
   },
