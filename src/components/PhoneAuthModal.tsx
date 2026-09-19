@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ShieldCheck } from 'lucide-react';
 import PhoneAuthComponent from './PhoneAuthComponent';
+import LegalAgeConsentModal, { hasAcceptedLegalAgeConsent } from './LegalAgeConsentModal';
 import { User } from '../types';
 
 interface PhoneAuthModalProps {
@@ -14,6 +15,7 @@ interface PhoneAuthModalProps {
   onSuccess: (userData: { user: User; fbUser: any; isNewUser: boolean }) => void;
   title?: string;
   subtitle?: string;
+  onOpenLegal?: (tab: 'terms' | 'privacy') => void;
 }
 
 export default function PhoneAuthModal({
@@ -22,8 +24,28 @@ export default function PhoneAuthModal({
   onSuccess,
   title = "Mobile Number Sign-In",
   subtitle = "Instant OTP Verification for seamless dining and quick reordering",
+  onOpenLegal,
 }: PhoneAuthModalProps) {
+  const [hasConsent, setHasConsent] = useState(() => hasAcceptedLegalAgeConsent());
+
+  useEffect(() => {
+    if (isOpen) {
+      setHasConsent(hasAcceptedLegalAgeConsent());
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  if (!hasConsent) {
+    return (
+      <LegalAgeConsentModal
+        isOpen={isOpen}
+        onAccept={() => setHasConsent(true)}
+        onCancel={onClose}
+        onOpenLegal={onOpenLegal}
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in font-sans">

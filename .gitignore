@@ -23,5 +23,7 @@ dist-electron/
 *.xcarchive
 ios/App/build/
 ios/App/Pods/
+xcuserdata/
+*.xcuserstate
 .antigravity/
 build-deliverables/

@@ -10,6 +10,7 @@
     "build:client": "vite build",
     "build:mac": "npm run build:client && node scripts/build-mac.mjs",
     "build:ios": "npm run build:client && cap sync ios",
+    "build:ipa": "npm run build:client && node scripts/build-ipa.mjs",
     "cap:sync": "cap sync",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js dist-electron",

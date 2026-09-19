@@ -92,7 +92,10 @@ export default function BottomNav({ activeTab, onChangeTab }: BottomNavProps) {
   };
 
   return (
-    <nav className="fixed bottom-0 sm:bottom-4 left-0 right-0 sm:left-1/2 sm:-translate-x-1/2 z-40 bg-white/95 backdrop-blur-xl border-t sm:border border-stone-200/90 pb-safe-bottom sm:pb-0 sm:rounded-3xl w-full sm:max-w-2xl shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition-all overflow-hidden">
+    <nav 
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
+      className="fixed bottom-0 sm:bottom-4 left-0 right-0 sm:left-1/2 sm:-translate-x-1/2 z-40 bg-white/95 backdrop-blur-xl border-t sm:border border-stone-200/90 sm:pb-0 sm:rounded-3xl w-full sm:max-w-2xl shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition-all overflow-hidden"
+    >
       <div className="w-full px-2 py-1.5 flex items-center overflow-x-auto no-scrollbar scroll-smooth justify-start xs:justify-center sm:justify-around gap-1 sm:gap-2 snap-x">
         {navItems.map((item) => {
           const IconComponent = item.icon;

@@ -123,10 +123,11 @@ export default function Header({
   return (
     <>
       <header
+        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 8px)' }}
         className={`sticky top-0 z-40 w-full transition-all duration-300 ${
           isScrolled
-            ? 'py-1.5 sm:py-2.5 px-2 sm:px-4'
-            : 'py-2 sm:py-3.5 px-2.5 sm:px-6 bg-brand-cream/95 backdrop-blur-md border-b border-brand-green/10 shadow-xs'
+            ? 'pb-1.5 sm:pb-2.5 px-2 sm:px-4'
+            : 'pb-2 sm:pb-3.5 px-2.5 sm:px-6 bg-brand-cream/95 backdrop-blur-md border-b border-brand-green/10 shadow-xs'
         }`}
       >
         <div

@@ -45,11 +45,14 @@ import {
   Users,
   Eye,
   EyeOff,
+  Trash2,
 } from 'lucide-react';
 import { User, Order, FAQ, SubscriptionPlan, Meal, SupportTicket, ChatMessage, OrderDeliveryRating, Kitchen, MealReview } from '../types';
 import { FAQS_DATA, SUBSCRIPTIONS_DATA } from '../data';
-import { doc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { updatePassword, deleteUser, EmailAuthProvider, reauthenticateWithCredential, sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
+import LegalAgeConsentModal, { hasAcceptedLegalAgeConsent } from './LegalAgeConsentModal';
 import InAppDeliveryMap from './InAppDeliveryMap';
 import RainEffect from './RainEffect';
 import { ImageUploader } from './ImageUploader';
@@ -860,6 +863,30 @@ export default function AccountTab({
   const [showGuestProfile, setShowGuestProfile] = useState(false);
   const [showPhoneLinkModal, setShowPhoneLinkModal] = useState(false);
 
+  // Legal & Age Verification Consent Gate State (stored once per device in localStorage)
+  const [hasLegalAgeConsent, setHasLegalAgeConsent] = useState(() => hasAcceptedLegalAgeConsent());
+
+  // Change Password State
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState<string | null>(null);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+
+  // Permanent Delete Account State
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletePasswordInput, setDeletePasswordInput] = useState('');
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
+
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -907,6 +934,188 @@ export default function AccountTab({
       setAuthError(res.error || "Apple sign-in canceled.");
     }
     setAuthLoading(false);
+  };
+
+  // Handle changing user password
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangePasswordError(null);
+    setChangePasswordSuccess(null);
+
+    if (!newPasswordInput || newPasswordInput.length < 6) {
+      setChangePasswordError('New password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setChangePasswordError('New passwords do not match. Please verify.');
+      return;
+    }
+
+    setChangePasswordLoading(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('No active user session found. Please sign in again.');
+      }
+
+      // If user has email and provided current password, re-authenticate first to prevent session expiration
+      if (currentUser.email && currentPasswordInput) {
+        try {
+          const credential = EmailAuthProvider.credential(currentUser.email, currentPasswordInput);
+          await reauthenticateWithCredential(currentUser, credential);
+        } catch (reauthErr: any) {
+          if (reauthErr.code === 'auth/wrong-password' || reauthErr.code === 'auth/invalid-credential') {
+            setChangePasswordError('Current password is incorrect. Please re-enter your current password.');
+            setChangePasswordLoading(false);
+            return;
+          }
+          console.warn('Reauth warning:', reauthErr);
+        }
+      }
+
+      try {
+        await updatePassword(currentUser, newPasswordInput);
+        setChangePasswordSuccess('Password updated successfully! Your account credentials have been updated.');
+        setCurrentPasswordInput('');
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+        setStatusToast('🔑 Account password updated successfully!');
+        setTimeout(() => {
+          setShowChangePasswordModal(false);
+          setChangePasswordSuccess(null);
+        }, 2200);
+      } catch (pwErr: any) {
+        if (pwErr.code === 'auth/requires-recent-login') {
+          if (!currentPasswordInput) {
+            setChangePasswordError('For security, please enter your Current Password above to authorize this change.');
+          } else {
+            setChangePasswordError('Security check failed. Please re-enter your current password or sign in again.');
+          }
+          return;
+        }
+        throw pwErr;
+      }
+    } catch (err: any) {
+      setChangePasswordError(err.message || 'Failed to update password. Please try again.');
+    } finally {
+      setChangePasswordLoading(false);
+    }
+  };
+
+  const handleSendResetPasswordEmail = async () => {
+    const targetEmail = fbUser?.email || user.email;
+    if (!targetEmail || targetEmail.includes('@taashbhatti.phone')) {
+      setChangePasswordError('No standard email linked to this account.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, targetEmail);
+      setResetEmailSent(true);
+      setStatusToast(`📧 Password reset email sent to ${targetEmail}`);
+      setTimeout(() => setResetEmailSent(false), 5000);
+    } catch (err: any) {
+      setChangePasswordError(err.message || 'Failed to send password reset email.');
+    }
+  };
+
+  // Handle permanent account deletion from database and Firebase Auth
+  const handlePermanentDeleteAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeleteAccountError(null);
+
+    if (deleteConfirmText.trim().toUpperCase() !== 'DELETE') {
+      setDeleteAccountError('Please type "DELETE" in uppercase to confirm permanent deletion.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      const currentUser = auth.currentUser;
+      const targetUid = currentUser?.uid || fbUser?.uid || user.id;
+
+      // 1. If password provided and email user, re-authenticate first to satisfy Firebase security
+      if (currentUser && currentUser.email && deletePasswordInput) {
+        try {
+          const credential = EmailAuthProvider.credential(currentUser.email, deletePasswordInput);
+          await reauthenticateWithCredential(currentUser, credential);
+        } catch (reauthErr: any) {
+          if (reauthErr.code === 'auth/wrong-password' || reauthErr.code === 'auth/invalid-credential') {
+            setDeleteAccountError('Security verification failed. Password is incorrect.');
+            setIsDeletingAccount(false);
+            return;
+          }
+          console.warn('Re-auth before deletion warning:', reauthErr);
+        }
+      }
+
+      // 2. Permanently delete user document from Firestore (users/{uid})
+      if (targetUid) {
+        try {
+          await deleteDoc(doc(db, 'users', targetUid));
+        } catch (fsErr: any) {
+          console.warn('Firestore user deletion warning:', fsErr);
+        }
+      }
+
+      // 3. Permanently delete user from Firebase Authentication
+      if (currentUser) {
+        try {
+          await deleteUser(currentUser);
+        } catch (authErr: any) {
+          if (authErr.code === 'auth/requires-recent-login') {
+            if (!deletePasswordInput) {
+              setDeleteAccountError('Security verification required: Please enter your password above to authorize permanent account deletion.');
+              setIsDeletingAccount(false);
+              return;
+            }
+            throw authErr;
+          }
+          console.warn('Firebase deleteUser warning:', authErr);
+        }
+      }
+
+      // 4. Wipe all local device storage
+      try {
+        localStorage.removeItem('fitzaika_auth_session');
+        localStorage.removeItem('fitzaika_cached_fb_user');
+        localStorage.removeItem('fitzaika_cached_user_profile');
+        localStorage.removeItem('fitzaika_onboarding_done');
+        localStorage.removeItem('fitzaika_admin_verified');
+        localStorage.removeItem('fitzaika_active_dp_session');
+        localStorage.removeItem('tb_active_group_room_id');
+        localStorage.removeItem('tb_group_room_pin');
+        if (targetUid) {
+          localStorage.removeItem(`taash_notifications_${targetUid}`);
+        }
+        localStorage.removeItem('taash_legal_age_consent_v1');
+      } catch (storageErr) {
+        console.warn('Storage cleanup warning:', storageErr);
+      }
+
+      // 5. Reset local state & sign out
+      setShowDeleteAccountModal(false);
+      setDeleteConfirmText('');
+      setDeletePasswordInput('');
+      onUpdateUser({
+        name: 'Guest Athlete',
+        email: '',
+        phone: '',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+        goal: 'general',
+        preferredGymId: '',
+        savedAddresses: [],
+        savedPayments: [],
+      });
+      onSignOut?.();
+      setShowGuestProfile(false);
+
+      alert('Your Taash Bhatti account and all database records have been permanently deleted.');
+    } catch (err: any) {
+      setDeleteAccountError(err.message || 'Failed to permanently delete account. Please try again.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const activeOrders = localOrders.filter((o) => o.status !== 'delivered' && o.status !== 'cancelled');
@@ -1068,6 +1277,14 @@ export default function AccountTab({
   if (!fbUser && !showGuestProfile) {
     return (
       <div className="max-w-md mx-auto px-4 py-8 space-y-6">
+        {/* LEGAL & AGE VERIFICATION CONSENT GATE (appears once per device until data is cleared) */}
+        <LegalAgeConsentModal
+          isOpen={!hasLegalAgeConsent}
+          onAccept={() => setHasLegalAgeConsent(true)}
+          onCancel={() => setShowGuestProfile(true)}
+          onOpenLegal={onOpenLegal}
+        />
+
         <div className="text-center space-y-3">
           <div className="w-16 h-16 bg-brand-green/10 text-brand-green rounded-full flex items-center justify-center mx-auto shadow-md">
             <Lock className="w-8 h-8" />
@@ -1301,7 +1518,12 @@ export default function AccountTab({
           </div>
         ) : (
           <button
-            onClick={() => setShowGuestProfile(false)}
+            onClick={() => {
+              if (!hasAcceptedLegalAgeConsent()) {
+                setHasLegalAgeConsent(false);
+              }
+              setShowGuestProfile(false);
+            }}
             className="px-4 py-2.5 rounded-xl bg-brand-green text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs hover:bg-brand-green/90 transition-all"
           >
             <Lock className="w-3.5 h-3.5" />
@@ -1455,7 +1677,12 @@ export default function AccountTab({
                     </p>
                   </div>
                   <button
-                    onClick={() => setShowGuestProfile(false)}
+                    onClick={() => {
+                      if (!hasAcceptedLegalAgeConsent()) {
+                        setHasLegalAgeConsent(false);
+                      }
+                      setShowGuestProfile(false);
+                    }}
                     className="shrink-0 bg-brand-orange hover:bg-brand-orange/95 text-white font-black text-[10px] uppercase px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
                   >
                     🔒 SECURE VAULT
@@ -1938,24 +2165,64 @@ export default function AccountTab({
 
               {/* Secure Cloud Controls */}
               {fbUser && (
-                <div className="bg-white border border-brand-green/10 rounded-3xl p-5 shadow-3xs flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="space-y-1 text-center sm:text-left">
-                    <h4 className="text-xs font-extrabold text-brand-green uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
-                      🔒 SECURE VAULT PREFERENCES
-                    </h4>
-                    <p className="text-[10px] text-brand-charcoal/50">
-                      Synchronized on: <b className="text-brand-charcoal">{user.phone || (fbUser.email && !fbUser.email.includes('@taashbhatti.phone') ? fbUser.email : 'Cloud Member')}</b>. All meal records safe.
-                    </p>
+                <div className="space-y-3">
+                  <div className="bg-white border border-brand-green/10 rounded-3xl p-5 shadow-3xs flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="space-y-1 text-center sm:text-left">
+                      <h4 className="text-xs font-extrabold text-brand-green uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
+                        🔒 SECURE VAULT PREFERENCES
+                      </h4>
+                      <p className="text-[10px] text-brand-charcoal/50">
+                        Synchronized on: <b className="text-brand-charcoal">{user.phone || (fbUser.email && !fbUser.email.includes('@taashbhatti.phone') ? fbUser.email : 'Cloud Member')}</b>. All meal records safe.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowChangePasswordModal(true);
+                          setChangePasswordError(null);
+                          setChangePasswordSuccess(null);
+                        }}
+                        className="w-full sm:w-auto bg-brand-cream/70 hover:bg-brand-cream border border-brand-green/20 text-brand-charcoal hover:text-brand-green px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                      >
+                        <KeyRound className="w-3.5 h-3.5 text-brand-green" /> CHANGE PASSWORD
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowGuestProfile(false);
+                          onSignOut?.();
+                        }}
+                        className="w-full sm:w-auto bg-brand-cream/60 border border-red-200 text-red-600 hover:bg-rose-50 px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                      >
+                        <LogOut className="w-4 h-4" /> SECURE LOGOUT
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowGuestProfile(false);
-                      onSignOut?.();
-                    }}
-                    className="w-full sm:w-auto bg-brand-cream/60 border border-red-200 text-red-600 hover:bg-rose-50 px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4" /> SECURE LOGOUT
-                  </button>
+
+                  {/* DANGER ZONE: PERMANENT ACCOUNT DELETION */}
+                  <div className="bg-rose-50/50 border border-rose-200/80 rounded-3xl p-5 shadow-3xs flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="space-y-1 text-center sm:text-left">
+                      <h4 className="text-xs font-black text-red-700 uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-red-600" /> DANGER ZONE • ACCOUNT DELETION
+                      </h4>
+                      <p className="text-[10px] text-red-900/70 max-w-lg leading-relaxed">
+                        Permanently erase your patron profile, dining vault, and credentials from our cloud database (<code className="font-mono text-[9px] bg-red-100 px-1 py-0.5 rounded">users/{fbUser?.uid || user.id || 'uid'}</code>). This operation is irreversible.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDeleteAccountModal(true);
+                        setDeleteAccountError(null);
+                        setDeleteConfirmText('');
+                        setDeletePasswordInput('');
+                      }}
+                      className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-black text-xs px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> DELETE ACCOUNT PERMANENTLY
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -3448,6 +3715,7 @@ export default function AccountTab({
         onClose={() => setShowPhoneLinkModal(false)}
         title={user.phone ? "Update Mobile Phone Number" : "Link Mobile Phone Number"}
         subtitle="Verify your number via 6-digit one-time passcode for secure orders"
+        onOpenLegal={onOpenLegal}
         onSuccess={(data) => {
           onUpdateUser(data.user);
           onPhoneAuthSuccess?.(data);
@@ -3455,6 +3723,288 @@ export default function AccountTab({
           setStatusToast(`📱 Mobile number ${data.user.phone} linked & verified!`);
         }}
       />
+
+      {/* 🔑 CHANGE PASSWORD MODAL */}
+      {showChangePasswordModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in font-sans">
+          <div className="w-full max-w-md bg-white rounded-3xl border border-brand-green/15 shadow-2xl overflow-hidden relative animate-scale-up">
+            {/* Header */}
+            <div className="px-6 pt-5 pb-3 border-b border-brand-green/5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-brand-green/10 text-brand-green flex items-center justify-center">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-brand-charcoal tracking-tight">
+                    Change Password
+                  </h3>
+                  <p className="text-[11px] text-brand-charcoal/60">
+                    Update your Taash Bhatti vault security credentials
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowChangePasswordModal(false)}
+                className="w-8 h-8 rounded-full bg-brand-cream/50 text-brand-charcoal/60 hover:text-brand-charcoal hover:bg-brand-cream flex items-center justify-center transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+              {/* Current Password Field (for email users) */}
+              {fbUser?.email && !fbUser.email.includes('@taashbhatti.phone') && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">
+                      Current Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleSendResetPasswordEmail}
+                      disabled={resetEmailSent}
+                      className="text-[10px] text-brand-green font-bold hover:underline cursor-pointer"
+                    >
+                      {resetEmailSent ? "Reset Email Sent ✓" : "Forgot Current Password?"}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? "text" : "password"}
+                      placeholder="Enter your current password"
+                      value={currentPasswordInput}
+                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                      className="w-full bg-brand-cream/15 border border-brand-green/10 rounded-xl pl-3.5 pr-11 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-charcoal/40 hover:text-brand-charcoal transition-colors p-1 cursor-pointer"
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* New Password */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">
+                  New Password (min. 6 characters)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    placeholder="Enter new password"
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    className="w-full bg-brand-cream/15 border border-brand-green/10 rounded-xl pl-3.5 pr-11 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-charcoal/40 hover:text-brand-charcoal transition-colors p-1 cursor-pointer"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    placeholder="Re-type new password"
+                    value={confirmPasswordInput}
+                    onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                    className="w-full bg-brand-cream/15 border border-brand-green/10 rounded-xl pl-3.5 pr-11 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-charcoal/40 hover:text-brand-charcoal transition-colors p-1 cursor-pointer"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Error Display */}
+              {changePasswordError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl animate-shake flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{changePasswordError}</span>
+                </div>
+              )}
+
+              {/* Success Display */}
+              {changePasswordSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{changePasswordSuccess}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowChangePasswordModal(false)}
+                  className="flex-1 py-3 px-4 rounded-xl border border-stone-200 text-stone-600 font-bold text-xs hover:bg-stone-50 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={changePasswordLoading}
+                  className="flex-1 py-3 px-4 rounded-xl bg-brand-green hover:bg-brand-green/90 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  {changePasswordLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <KeyRound className="w-4 h-4" />
+                      <span>Update Password</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ PERMANENT ACCOUNT DELETION CONFIRMATION MODAL */}
+      {showDeleteAccountModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in font-sans">
+          <div className="w-full max-w-md bg-white rounded-3xl border-2 border-red-500/30 shadow-2xl overflow-hidden relative animate-scale-up">
+            {/* Red accent bar */}
+            <div className="h-2 w-full bg-gradient-to-r from-red-600 via-rose-500 to-red-600" />
+
+            {/* Top Bar */}
+            <div className="px-6 pt-5 pb-3 border-b border-red-100 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-red-700 tracking-tight">
+                    Permanently Delete Account
+                  </h3>
+                  <p className="text-[11px] text-brand-charcoal/60">
+                    Irreversible database & auth erasure
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteAccountModal(false)}
+                className="w-8 h-8 rounded-full bg-stone-100 text-stone-500 hover:text-stone-800 hover:bg-stone-200 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content & Form */}
+            <form onSubmit={handlePermanentDeleteAccount} className="p-6 space-y-4">
+              <div className="p-4 bg-red-50 border border-red-200/80 rounded-2xl space-y-2 text-xs text-red-900">
+                <div className="flex items-center gap-1.5 font-black text-red-700 uppercase tracking-wide">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Permanent Action Warning</span>
+                </div>
+                <p className="leading-relaxed text-[11px] text-red-800/90">
+                  This action will <strong>permanently erase</strong> your profile and documents from the Cloud Database (<code className="font-mono text-[10px] bg-red-100 px-1 py-0.5 rounded">users/{fbUser?.uid || user.id}</code>), delete your credentials from Firebase Authentication, and clear all local device storage.
+                </p>
+                <p className="font-bold text-[11px] text-red-700">
+                  All active reward balances, saved addresses, and dining history will be permanently lost and cannot be recovered.
+                </p>
+              </div>
+
+              {/* Password Re-auth Field (if email user) */}
+              {fbUser?.email && !fbUser.email.includes('@taashbhatti.phone') && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">
+                    Account Password (For Security Verification)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showDeletePassword ? "text" : "password"}
+                      placeholder="Enter your current password"
+                      value={deletePasswordInput}
+                      onChange={(e) => setDeletePasswordInput(e.target.value)}
+                      className="w-full bg-brand-cream/15 border border-brand-green/10 rounded-xl pl-3.5 pr-11 py-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-red-400/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDeletePassword(!showDeletePassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-charcoal/40 hover:text-brand-charcoal transition-colors p-1 cursor-pointer"
+                    >
+                      {showDeletePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmation Text Input */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-brand-charcoal/60 block tracking-wide">
+                  Type <span className="font-mono text-red-600 font-extrabold select-all">DELETE</span> to Confirm
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Type DELETE"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-300 focus:border-red-500 rounded-xl px-3.5 py-3 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-red-400/20 uppercase"
+                />
+              </div>
+
+              {/* Error banner */}
+              {deleteAccountError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl animate-shake flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{deleteAccountError}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeletingAccount}
+                  onClick={() => setShowDeleteAccountModal(false)}
+                  className="flex-1 py-3 px-4 rounded-xl border border-stone-200 text-stone-600 font-bold text-xs hover:bg-stone-50 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDeletingAccount || deleteConfirmText.trim().toUpperCase() !== 'DELETE'}
+                  className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDeletingAccount ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Permanently Delete</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* REORDER GROUP FEAST MODAL */}
       {reorderGroupModalOrder && (
