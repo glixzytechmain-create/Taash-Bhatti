@@ -463,6 +463,7 @@ interface CartDrawerProps {
   allMeals?: Meal[];
   likedMeals?: string[];
   onAddToCart?: (meal: Meal) => void;
+  initialCouponCode?: string | null;
 }
 
 export default function CartDrawer({
@@ -481,12 +482,21 @@ export default function CartDrawer({
   allMeals = [],
   likedMeals = [],
   onAddToCart,
+  initialCouponCode,
 }: CartDrawerProps) {
   // Coupon input state
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupons, setAppliedCoupons] = useState<any[]>([]); // Array of applied coupons in stack
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+
+  // Preload coupon code if passed from Bhatti GameOn or User Vault
+  useEffect(() => {
+    if (initialCouponCode && isOpen) {
+      setCouponCode(initialCouponCode.trim().toUpperCase());
+      setCouponError(null);
+    }
+  }, [initialCouponCode, isOpen]);
 
   // App-wide feature flags (Accepting orders kill switch, etc.)
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(getStoredFeatureFlags);
@@ -938,11 +948,17 @@ export default function CartDrawer({
         return;
       }
 
-      if (couponData.scope === 'account_based') {
-        const userEmail = user?.email?.trim().toLowerCase() || '';
+      if (couponData.scope === 'account_based' || couponData.targetUserId) {
+        const currentUserId = user?.id || (auth.currentUser?.uid) || '';
+        const targetUserId = couponData.targetUserId || '';
+        const userEmail = user?.email?.trim().toLowerCase() || (auth.currentUser?.email?.toLowerCase()) || '';
         const targetEmail = couponData.targetUserEmail?.trim().toLowerCase() || '';
-        if (userEmail !== targetEmail) {
-          setCouponError('This personalized coupon is locked to a different account.');
+
+        const matchesId = Boolean(targetUserId && currentUserId && targetUserId === currentUserId);
+        const matchesEmail = Boolean(targetEmail && userEmail && targetEmail === userEmail);
+
+        if (!matchesId && !matchesEmail) {
+          setCouponError('🔒 This exclusive arcade reward coupon is locked to a specific account.');
           return;
         }
       }

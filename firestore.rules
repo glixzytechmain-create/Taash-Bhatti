@@ -32,6 +32,16 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Match games collection (Bhatti GameOn)
+    match /games/{gameId} {
+      allow read, write: if true;
+    }
+
+    // Match users won_rewards subcollection
+    match /users/{userId}/won_rewards/{rewardId} {
+      allow read, write: if true;
+    }
+
     // Match gym_chains collection
     match /gym_chains/{chainId} {
       allow read, write: if true;

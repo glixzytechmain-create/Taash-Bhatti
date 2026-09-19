@@ -72,6 +72,8 @@ import { smartPushService } from './lib/smartPushService';
 import { App as CapApp } from '@capacitor/app';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from './lib/featureFlags';
 import { AppFeatureFlags } from './types';
+import BhattiGameOnPortal from './components/gameon/BhattiGameOnPortal';
+import { saveWonRewardToUserVault } from './lib/gameonService';
 
 enum OperationType {
   CREATE = 'create',
@@ -285,6 +287,18 @@ export default function App() {
     setLegalModalTab(tab);
     setShowLegalModal(true);
   };
+
+  // Bhatti GameOn Physical Table Scan Route (?gameon=XXXXXX or ?game=XXXXXX)
+  const [urlGameId, setUrlGameId] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('gameon') || params.get('game') || null;
+      }
+    } catch (e) {}
+    return null;
+  });
+  const [preloadedCouponCode, setPreloadedCouponCode] = useState<string | null>(null);
 
   // Group Ordering Active State & Preloaded Meals (from Reorder)
   const [groupOrderPreloadMeals, setGroupOrderPreloadMeals] = useState<{ meal: Meal; quantity: number }[] | null>(null);
@@ -947,6 +961,34 @@ export default function App() {
     setTimeout(() => {
       setToastMessage(null);
     }, 2500);
+  };
+
+  // Check & claim any pending Bhatti GameOn reward upon sign in or registration
+  const claimPendingGameOnReward = async (targetUserId: string, targetUserEmail?: string) => {
+    try {
+      const stored = localStorage.getItem('tb_pending_gameon_reward');
+      if (!stored || !targetUserId) return;
+      const parsedReward = JSON.parse(stored);
+      if (parsedReward && parsedReward.couponCode) {
+        await saveWonRewardToUserVault(targetUserId, targetUserEmail, parsedReward);
+        localStorage.removeItem('tb_pending_gameon_reward');
+        showToast(`🎁 Claimed! Won coupon '${parsedReward.couponCode}' is now locked to your vault!`);
+      }
+    } catch (e) {
+      console.warn('Failed to claim pending GameOn reward:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (fbUser?.uid || (user?.id && user.id !== 'guest-user-muzaffarpur')) {
+      claimPendingGameOnReward(fbUser?.uid || user.id, fbUser?.email || user.email);
+    }
+  }, [fbUser?.uid, user?.id]);
+
+  const handleApplyRewardToCart = (couponCode: string) => {
+    setPreloadedCouponCode(couponCode);
+    setCartOpen(true);
+    showToast(`🎫 Reward coupon '${couponCode}' loaded to cart!`);
   };
 
   // Sync state with Firebase Auth and Firestore real-time snapshots
@@ -2822,6 +2864,7 @@ export default function App() {
             onOpenGroupOrder={handleOpenGroupOrderWithMeals}
             onOpenLegal={handleOpenLegal}
             onOpenPushTester={() => setShowPushTester(true)}
+            onApplyReward={handleApplyRewardToCart}
           />
         )}
 
@@ -2882,6 +2925,7 @@ export default function App() {
         allMeals={meals}
         likedMeals={likedMeals}
         onAddToCart={handleAddToCart}
+        initialCouponCode={preloadedCouponCode}
       />
 
       {/* PERSISTENT MOBILE BOTTOM TAB RAIL */}
@@ -3282,6 +3326,50 @@ export default function App() {
           handleSignOut();
         }}
       />
+
+      {/* 🎮 BHATTI GAMEON VINTAGE ARCADE PORTAL (Stealth Scan-Only Physical Table Route) */}
+      {urlGameId !== null && (
+        <BhattiGameOnPortal
+          gameId={urlGameId}
+          currentUser={user}
+          fbUser={fbUser}
+          onClose={() => {
+            setUrlGameId(null);
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('gameon');
+              url.searchParams.delete('game');
+              window.history.replaceState({}, '', url.toString());
+            } catch (e) {}
+          }}
+          onRequestSignIn={(pendingReward) => {
+            if (pendingReward) {
+              try {
+                localStorage.setItem('tb_pending_gameon_reward', JSON.stringify(pendingReward));
+              } catch (e) {}
+            }
+            setUrlGameId(null);
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('gameon');
+              url.searchParams.delete('game');
+              window.history.replaceState({}, '', url.toString());
+            } catch (e) {}
+            setActiveTab('account');
+            showToast('🔐 Please log in or register to claim and lock your won coupon!');
+          }}
+          onApplyRewardToCart={(couponCode) => {
+            setUrlGameId(null);
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('gameon');
+              url.searchParams.delete('game');
+              window.history.replaceState({}, '', url.toString());
+            } catch (e) {}
+            handleApplyRewardToCart(couponCode);
+          }}
+        />
+      )}
 
     </div>
   );

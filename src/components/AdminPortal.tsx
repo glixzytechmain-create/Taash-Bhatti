@@ -81,6 +81,7 @@ import {
   Printer,
   Sliders,
   Maximize2,
+  Gamepad2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import InAppDeliveryMap from './InAppDeliveryMap';
@@ -113,6 +114,7 @@ import { KdsRiderCashSection } from './KdsRiderCashSection';
 import KitchenEODSettlementModal from './KitchenEODSettlementModal';
 import KitchenWastageManager from './KitchenWastageManager';
 import { syncLowStockMenuWithFirestore, computeEODShiftReport } from '../lib/kitchenSettlement';
+import BhattiGameOnAdmin from './admin/BhattiGameOnAdmin';
 
 enum OperationType {
   CREATE = 'create',
@@ -682,7 +684,7 @@ interface AdminPortalProps {
 }
 
 export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, allGyms = [], gymChains = [], allKitchens = [] }: AdminPortalProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tracking' | 'meals' | 'deals' | 'coupons' | 'kitchens' | 'fleet' | 'support' | 'users' | 'banners' | 'legal'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tracking' | 'meals' | 'deals' | 'coupons' | 'kitchens' | 'fleet' | 'support' | 'users' | 'banners' | 'legal' | 'gameon'>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
 
   // Hero Banners State
@@ -3669,6 +3671,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
               { id: 'support' as const, label: 'Support Desk', icon: Mail, countBadge: supportTickets.filter(t => t.status === 'pending').length || null },
               { id: 'banners' as const, label: 'Hero Banners', icon: Layers, countBadge: banners.length > 0 ? banners.length : null },
               { id: 'legal' as const, label: 'Legal & Policies', icon: FileText, countBadge: null },
+              { id: 'gameon' as const, label: 'Bhatti GameOn', icon: Gamepad2, countBadge: null },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -3726,6 +3729,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                 { id: 'support' as const, label: 'Support & Complaints', icon: Mail, badge: supportTickets.filter(t => t.status === 'pending').length > 0 ? <span className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center font-black text-[9px] animate-pulse">{supportTickets.filter(t => t.status === 'pending').length}</span> : null },
                 { id: 'banners' as const, label: 'Hero Banners', icon: Layers, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-brand-orange/15 text-brand-orange border border-brand-orange/20">{banners.length} active</span> },
                 { id: 'legal' as const, label: 'Legal & Policies', icon: FileText, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-800/60">Editable</span> },
+                { id: 'gameon' as const, label: 'Bhatti GameOn', icon: Gamepad2, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/20">Arcade Studio</span> },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -12429,6 +12433,19 @@ Free express delivery directly to trainer desks"
                 <AdminLegalManager
                   adminEmail={user?.email || fbUser?.email || 'admin@taashbhatti.com'}
                 />
+              </motion.div>
+            )}
+
+            {/* BHATTI GAMEON RETRO ARCADE STUDIO */}
+            {activeTab === 'gameon' && (
+              <motion.div
+                key="gameon_workspace"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-6 text-left"
+              >
+                <BhattiGameOnAdmin />
               </motion.div>
             )}
 

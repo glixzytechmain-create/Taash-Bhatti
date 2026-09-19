@@ -46,6 +46,8 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  Gamepad2,
+  Ticket,
 } from 'lucide-react';
 import { User, Order, FAQ, SubscriptionPlan, Meal, SupportTicket, ChatMessage, OrderDeliveryRating, Kitchen, MealReview } from '../types';
 import { FAQS_DATA, SUBSCRIPTIONS_DATA } from '../data';
@@ -63,6 +65,8 @@ import PhoneAuthModal from './PhoneAuthModal';
 import BhattiWalletSection from './BhattiWalletSection';
 import { motion, AnimatePresence } from 'motion/react';
 import { canCustomerCancelOrder, cancelOrderWithInstantWalletRefund } from '../lib/walletService';
+import { subscribeToUserWonRewards } from '../lib/gameonService';
+import { WonRewardRecord } from '../types/gameon';
 
 const DELIVERY_STAGES = [
   { key: 'sent', label: 'Order Sent', icon: '📨' },
@@ -364,6 +368,7 @@ interface AccountTabProps {
   onOpenGroupOrder?: (preloadedItems?: any[]) => void;
   onOpenLegal?: (tab: 'terms' | 'privacy') => void;
   onOpenPushTester?: () => void;
+  onApplyReward?: (couponCode: string) => void;
 }
 
 
@@ -388,9 +393,33 @@ export default function AccountTab({
   onOpenGroupOrder,
   onOpenLegal,
   onOpenPushTester,
+  onApplyReward,
 }: AccountTabProps) {
   // Navigation inside Account screen
-  const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet'>('profile');
+  const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet' | 'rewards'>('profile');
+  const [wonRewards, setWonRewards] = useState<WonRewardRecord[]>([]);
+  const [copiedRewardCode, setCopiedRewardCode] = useState<string | null>(null);
+
+  // Subscribe to user won rewards in real-time
+  useEffect(() => {
+    const uid = user.id || fbUser?.uid;
+    if (!uid) {
+      setWonRewards([]);
+      return;
+    }
+    const unsub = subscribeToUserWonRewards(uid, (list) => {
+      setWonRewards(list);
+    });
+    return () => unsub();
+  }, [user.id, fbUser?.uid]);
+
+  const handleCopyRewardCode = (code: string) => {
+    try {
+      navigator.clipboard.writeText(code);
+      setCopiedRewardCode(code);
+      setTimeout(() => setCopiedRewardCode(null), 2000);
+    } catch (e) {}
+  };
 
   // Reorder Group Feast modal state
   const [reorderGroupModalOrder, setReorderGroupModalOrder] = useState<Order | null>(null);
@@ -1566,17 +1595,23 @@ export default function AccountTab({
       </div>
 
       {/* INTERNAL SUBSECTION BUTTONS */}
-      <div className="grid grid-cols-4 gap-1.5 mb-5 bg-brand-green/5 p-1 rounded-2xl border border-brand-green/5">
+      <div className="grid grid-cols-5 gap-1 mb-5 bg-brand-green/5 p-1 rounded-2xl border border-brand-green/5">
         {[
           { id: 'profile', label: 'Preferences', icon: UserIcon },
           { id: 'orders', label: 'Orders', icon: ShoppingBag, count: activeOrders.length },
           {
             id: 'wallet',
-            label: 'Bhatti Wallet',
+            label: 'Wallet',
             icon: Flame,
             count: (((user.goldenEmberBalance || 0) + (user.standardEmberBalance || 0)) > 0
               ? `${(user.goldenEmberBalance || 0) + (user.standardEmberBalance || 0)} 🪙`
               : (user.walletBalance && user.walletBalance > 0 ? `${user.walletBalance} 🪙` : undefined))
+          },
+          {
+            id: 'rewards',
+            label: 'Rewards',
+            icon: Gift,
+            count: wonRewards.filter(r => !r.isRedeemed).length || undefined,
           },
           { id: 'support', label: 'Support', icon: HelpCircle },
         ].map((sub) => {
@@ -2963,6 +2998,168 @@ export default function AccountTab({
           onUpdateUser={onUpdateUser}
           onNavigateToMenu={() => onSelectTab('menu')}
         />
+      )}
+
+      {/* 4. BHATTI GAMEON REWARDS & WON COUPONS VAULT */}
+      {activeSubSection === 'rewards' && (
+        <div className="space-y-4 animate-fade-in text-left">
+          {/* BANNER HEADER */}
+          <div className="bg-gradient-to-br from-[#1c1917] via-[#292524] to-[#0c0a09] border border-amber-500/30 rounded-3xl p-5 sm:p-6 shadow-xl text-white relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center">
+                    <Gift className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
+                    EXCLUSIVE VAULT
+                  </span>
+                </div>
+                <h3 className="text-lg font-black tracking-tight text-white">
+                  Arcade Rewards & Won Coupons
+                </h3>
+                <p className="text-xs text-stone-300 max-w-md leading-relaxed">
+                  Coupons won via Bhatti GameOn physical table QR arenas. Locked strictly to your account to prevent sharing or unauthorized redemption.
+                </p>
+              </div>
+
+              <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-amber-500/20 pt-3 sm:pt-0 sm:pl-5">
+                <span className="text-[10px] text-stone-400 uppercase font-black tracking-wider">
+                  Available Rewards
+                </span>
+                <span className="text-2xl font-black font-mono text-amber-400">
+                  {wonRewards.filter(r => !r.isRedeemed).length}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* REWARDS LIST */}
+          {wonRewards.length === 0 ? (
+            <div className="bg-white border border-brand-green/10 rounded-3xl p-8 text-center space-y-4 shadow-3xs">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto border border-amber-500/20">
+                <Gamepad2 className="w-8 h-8" />
+              </div>
+              <div className="space-y-1 max-w-sm mx-auto">
+                <h4 className="text-base font-extrabold text-brand-charcoal">
+                  No Game Rewards Won Yet
+                </h4>
+                <p className="text-xs text-brand-charcoal/60 leading-relaxed">
+                  Next time you dine at Taash Bhatti, scan the physical GameOn QR code on your table coaster or standee to play roulette, scratch cards, coin flips, or trivia!
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onSelectTab('menu')}
+                className="px-6 py-2.5 bg-brand-green hover:bg-brand-green/90 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-2"
+              >
+                <span>Browse Feast Menu</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {wonRewards.map((reward) => {
+                const isExpired = reward.expiryDate && new Date(reward.expiryDate) < new Date();
+                const isUsable = !reward.isRedeemed && !isExpired;
+
+                return (
+                  <div
+                    key={reward.id}
+                    className={`rounded-3xl border p-5 transition-all relative overflow-hidden flex flex-col justify-between gap-4 ${
+                      isUsable
+                        ? 'bg-gradient-to-br from-white via-amber-50/20 to-white border-amber-500/30 shadow-3xs hover:border-amber-500/50'
+                        : 'bg-stone-50 border-stone-200 opacity-70'
+                    }`}
+                  >
+                    {/* TOP INFO ROW */}
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 border border-amber-500/20">
+                          🎮 {reward.gameTitle || 'Bhatti GameOn'}
+                        </span>
+                        {reward.isRedeemed ? (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-stone-200 text-stone-600">
+                            Redeemed
+                          </span>
+                        ) : isExpired ? (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">
+                            Expired
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Ready to Use
+                          </span>
+                        )}
+                      </div>
+
+                      <h4 className="text-base font-extrabold text-brand-charcoal leading-snug">
+                        {reward.perkName || `Special Discount (${reward.couponCode})`}
+                      </h4>
+                      <p className="text-[11px] text-brand-charcoal/60 mt-0.5">
+                        Won on {new Date(reward.wonAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} • Valid until {reward.expiryDate}
+                      </p>
+                    </div>
+
+                    {/* VINTAGE COUPON TICKET CUTOUT */}
+                    <div className="bg-stone-900 rounded-2xl p-3 text-white flex items-center justify-between gap-2 border border-stone-800">
+                      <div className="min-w-0">
+                        <span className="text-[8px] uppercase tracking-wider text-amber-400 font-bold block">
+                          Locked Coupon Code
+                        </span>
+                        <span className="text-sm font-mono font-black text-amber-300 tracking-wider truncate block">
+                          {reward.couponCode}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyRewardCode(reward.couponCode)}
+                        className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-amber-200 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                      >
+                        {copiedRewardCode === reward.couponCode ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* BOTTOM ACTIONS */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <span className="text-[10px] text-brand-charcoal/50 flex items-center gap-1 font-medium">
+                        <Lock className="w-3 h-3 text-amber-600" />
+                        <span>Account Protected</span>
+                      </span>
+
+                      {isUsable && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onApplyReward) {
+                              onApplyReward(reward.couponCode);
+                            }
+                          }}
+                          className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-stone-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                        >
+                          <span>Apply to Order</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* 3. HELP / SUPPORT */}
