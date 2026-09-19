@@ -48,13 +48,109 @@ export function generateRandom6DigitCode(): string {
  * Real-time subscription to all games for Admin Portal
  * Integrates local cache fallback so games always appear even if Firestore permissions are pending
  */
+// Default pre-seeded games for offline / instantaneous zero-config fallback
+export const SEEDED_DEFAULT_GAMES: GameConfig[] = [
+  {
+    id: 'game_COIN01',
+    gameId: 'COIN01',
+    title: 'Royal Taash Coin Toss',
+    subtitle: 'Call Royal Crest or Bhatti Flame to win feast discounts',
+    gameType: 'coin_flip',
+    isActive: true,
+    maxTurnsPerSession: 1,
+    dailyLimitPerDevice: 1,
+    coinWinReward: {
+      id: 'coin_win',
+      label: '30% OFF Royal Handi Feast',
+      probabilityWeight: 50,
+      isWin: true,
+      couponCode: 'ROYAL30',
+      rewardDescription: 'You called the toss correctly! Enjoy 30% discount.',
+    },
+    coinLossOutcome: {
+      id: 'coin_loss',
+      label: 'Better Luck Next Time',
+      probabilityWeight: 50,
+      isWin: false,
+      rewardDescription: 'Coin landed on the opposite side. Try again next visit!',
+    },
+    outcomes: [
+      { id: 'coin_win', label: '30% OFF Royal Handi Feast', probabilityWeight: 50, isWin: true, couponCode: 'ROYAL30', rewardDescription: 'You called the toss correctly!' },
+      { id: 'coin_loss', label: 'Better Luck Next Time', probabilityWeight: 50, isWin: false, rewardDescription: 'Try again next visit!' },
+    ],
+    totalPlays: 0,
+    totalWins: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'game_ROUL01',
+    gameId: 'ROUL01',
+    title: 'Bhatti Roulette of Flavors',
+    subtitle: 'Spin the antique wheel for instant gourmet perks',
+    gameType: 'roulette',
+    isActive: true,
+    maxTurnsPerSession: 1,
+    dailyLimitPerDevice: 1,
+    outcomes: [
+      { id: '1', label: '50% OFF Handi Biryani', probabilityWeight: 20, isWin: true, couponCode: 'FEAST50', rewardDescription: 'Half price feast!' },
+      { id: '2', label: 'Free Insulated Delivery', probabilityWeight: 30, isWin: true, couponCode: 'FREEDEL', rewardDescription: 'Zero delivery fee' },
+      { id: '3', label: 'Better Luck Next Time', probabilityWeight: 50, isWin: false, rewardDescription: 'Try again tomorrow' },
+    ],
+    totalPlays: 0,
+    totalWins: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'game_SCRT01',
+    gameId: 'SCRT01',
+    title: 'Golden Scratch Card',
+    subtitle: 'Rub away the 24K gold foil to unlock secret perks',
+    gameType: 'scratch_card',
+    isActive: true,
+    scratchFoilTheme: 'gold',
+    maxTurnsPerSession: 1,
+    dailyLimitPerDevice: 1,
+    outcomes: [
+      { id: '1', label: 'Flat ₹100 OFF Royal Feast', probabilityWeight: 35, isWin: true, couponCode: 'FLAT100', rewardDescription: 'Flat ₹100 discount applied' },
+      { id: '2', label: 'Free Dessert Handi', probabilityWeight: 25, isWin: true, couponCode: 'SWEETTREAT', rewardDescription: 'Complimentary dessert' },
+      { id: '3', label: 'Better Luck Next Time', probabilityWeight: 40, isWin: false, rewardDescription: 'Try again next visit' },
+    ],
+    totalPlays: 0,
+    totalWins: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+];
+
+/**
+ * Real-time subscription to all games for Admin Portal
+ * Combines server REST, Firestore, and local cache
+ */
 export function subscribeToAllGames(onUpdate: (games: GameConfig[]) => void): () => void {
-  // 1. Immediately emit cached games
+  // 1. Immediately emit cached games or seeded defaults
   const cached = getLocalGamesCache();
   if (cached.length > 0) {
     onUpdate(cached);
+  } else {
+    onUpdate(SEEDED_DEFAULT_GAMES);
   }
 
+  // 2. Fetch latest from Server REST API
+  if (typeof window !== 'undefined') {
+    fetch('/api/games')
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.success && Array.isArray(data.games) && data.games.length > 0) {
+          setLocalGamesCache(data.games);
+          onUpdate(data.games);
+        }
+      })
+      .catch(() => {});
+  }
+
+  // 3. Listen to Firestore
   const q = collection(db, 'games');
   return onSnapshot(q, (snapshot) => {
     const list: GameConfig[] = [];
@@ -62,73 +158,124 @@ export function subscribeToAllGames(onUpdate: (games: GameConfig[]) => void): ()
       list.push({ id: d.id, ...d.data() } as GameConfig);
     });
 
-    // Merge with any local games that haven't synced yet
+    const currentCached = getLocalGamesCache();
     const existingIds = new Set(list.map(g => g.id));
-    for (const localG of cached) {
+    for (const localG of currentCached) {
       if (!existingIds.has(localG.id)) {
         list.push(localG);
       }
     }
 
-    // Sort newest first
     list.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
     setLocalGamesCache(list);
     onUpdate(list);
   }, (err) => {
-    console.warn('subscribeToAllGames warning (using local fallback):', err);
-    // If permission or network issue, maintain local cache
+    console.warn('subscribeToAllGames Firestore warning (using local/server fallback):', err);
     onUpdate(getLocalGamesCache());
   });
 }
 
 /**
  * Fetch a single game by its 6-digit gameId
+ * Multi-layer lookup:
+ * 1. Server REST API (/api/games/:id) -> 100% reliable for camera scan from phone
+ * 2. Firestore direct doc by ID / game_ID
+ * 3. Firestore query by gameId
+ * 4. Local storage cache mirror
+ * 5. Seeded default games
  */
 export async function getGameBy6DigitId(gameId: string): Promise<GameConfig | null> {
   const cleanId = gameId.trim().toUpperCase();
   if (!cleanId) return null;
 
+  // Layer 1: Server REST API
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/games/${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.game) {
+          return data.game as GameConfig;
+        }
+      }
+    } catch (e) {
+      // Offline or network error
+    }
+  }
+
+  // Layer 2: Firestore Direct Doc Lookups
   try {
+    const docA = await getDoc(doc(db, 'games', cleanId));
+    if (docA.exists()) {
+      return { id: docA.id, ...docA.data() } as GameConfig;
+    }
+    const docB = await getDoc(doc(db, 'games', `game_${cleanId}`));
+    if (docB.exists()) {
+      return { id: docB.id, ...docB.data() } as GameConfig;
+    }
+    const docC = await getDoc(doc(db, 'games', `game_${cleanId.toLowerCase()}`));
+    if (docC.exists()) {
+      return { id: docC.id, ...docC.data() } as GameConfig;
+    }
+
+    // Layer 3: Firestore Query
     const q = query(collection(db, 'games'), where('gameId', '==', cleanId));
     const snap = await getDocs(q);
     if (!snap.empty) {
       const docData = snap.docs[0];
-      const gameObj = { id: docData.id, ...docData.data() } as GameConfig;
-      return gameObj;
-    }
-    // Also try doc direct ID match
-    const directDoc = await getDoc(doc(db, 'games', cleanId));
-    if (directDoc.exists()) {
-      return { id: directDoc.id, ...directDoc.data() } as GameConfig;
+      return { id: docData.id, ...docData.data() } as GameConfig;
     }
   } catch (err) {
-    console.warn('getGameBy6DigitId firestore error, checking local cache:', err);
+    console.warn('getGameBy6DigitId firestore read warning:', err);
   }
 
-  // Fallback to local games cache
+  // Layer 4: Local Storage Cache Mirror
   const localList = getLocalGamesCache();
-  const matchedLocal = localList.find(g => g.gameId === cleanId || g.id === cleanId);
-  return matchedLocal || null;
+  const matchedLocal = localList.find(g => 
+    (g.gameId && g.gameId.toUpperCase() === cleanId) || 
+    (g.id && g.id.toUpperCase() === cleanId) ||
+    (g.id && g.id.toUpperCase() === `GAME_${cleanId}`)
+  );
+  if (matchedLocal) return matchedLocal;
+
+  // Layer 5: Seeded Default Games
+  const defaultMatch = SEEDED_DEFAULT_GAMES.find(g => 
+    g.gameId.toUpperCase() === cleanId || 
+    g.id.toUpperCase() === cleanId ||
+    g.id.toUpperCase() === `GAME_${cleanId}`
+  );
+  if (defaultMatch) return defaultMatch;
+
+  // Return first seeded game if generic "default" requested
+  if (cleanId === 'DEMO' || cleanId === 'DEFAULT') {
+    return SEEDED_DEFAULT_GAMES[0];
+  }
+
+  return null;
 }
 
 /**
- * Save or update a game in Firestore with automatic sanitize & dual-storage mirror
+ * Save or update a game with multi-tier storage:
+ * 1. Server REST API (writes to disk data/games-store.json)
+ * 2. Firestore Document (doc id = gameId and targetDocId)
+ * 3. Browser Local Storage Mirror
  */
 export async function saveGame(game: GameConfig): Promise<{ success: boolean; error?: string }> {
-  const targetDocId = game.id || `game_${game.gameId || generateRandom6DigitCode()}`;
+  const cleanGameId = (game.gameId || generateRandom6DigitCode()).trim().toUpperCase();
+  const targetDocId = game.id || `game_${cleanGameId}`;
   const rawPayload: GameConfig = {
     ...game,
     id: targetDocId,
+    gameId: cleanGameId,
     updatedAt: new Date().toISOString(),
     createdAt: game.createdAt || new Date().toISOString(),
   };
 
-  // Sanitize to prevent Firestore "unsupported undefined" crashes
   const sanitizedPayload = sanitizeForFirestore(rawPayload);
 
-  // 1. Save to local storage mirror first
+  // 1. Save to Local Storage
   const currentList = getLocalGamesCache();
-  const existingIdx = currentList.findIndex(g => g.id === targetDocId || g.gameId === game.gameId);
+  const existingIdx = currentList.findIndex(g => g.id === targetDocId || g.gameId === cleanGameId);
   if (existingIdx >= 0) {
     currentList[existingIdx] = sanitizedPayload;
   } else {
@@ -136,32 +283,56 @@ export async function saveGame(game: GameConfig): Promise<{ success: boolean; er
   }
   setLocalGamesCache(currentList);
 
-  // 2. Sync to Firestore
+  // 2. Save to Server REST API
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sanitizedPayload),
+      });
+    } catch (e) {
+      console.warn('Server REST API save warning:', e);
+    }
+  }
+
+  // 3. Save to Firestore
   try {
+    await setDoc(doc(db, 'games', cleanGameId), sanitizedPayload, { merge: true });
     await setDoc(doc(db, 'games', targetDocId), sanitizedPayload, { merge: true });
     return { success: true };
   } catch (err: any) {
-    console.warn('saveGame Firestore sync warning (saved locally in browser):', err);
-    // Even if Firestore returns permission-denied, game is preserved locally!
+    console.warn('saveGame Firestore sync warning (saved on server & local mirror):', err);
     return { 
       success: true, 
       error: err.code === 'permission-denied' 
-        ? 'Saved locally! Firestore permissions pending deployment.' 
+        ? 'Saved on server & local mirror. Cloud firestore rules pending.' 
         : undefined 
     };
   }
 }
 
 /**
- * Permanently delete a game from Firestore and local cache
+ * Permanently delete a game from Server REST, Firestore, and local cache
  */
 export async function deleteGame(gameDocId: string): Promise<{ success: boolean; error?: string }> {
-  // Remove from local cache
+  // 1. Remove from local cache
   const currentList = getLocalGamesCache().filter(g => g.id !== gameDocId && g.gameId !== gameDocId);
   setLocalGamesCache(currentList);
 
+  // 2. Delete from Server REST
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch(`/api/games/${encodeURIComponent(gameDocId)}`, { method: 'DELETE' });
+    } catch (e) {}
+  }
+
+  // 3. Delete from Firestore
   try {
     await deleteDoc(doc(db, 'games', gameDocId));
+    if (gameDocId.startsWith('game_')) {
+      await deleteDoc(doc(db, 'games', gameDocId.replace('game_', '')));
+    }
     return { success: true };
   } catch (err: any) {
     console.warn('deleteGame Firestore warning:', err);

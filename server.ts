@@ -193,6 +193,188 @@ app.post('/api/otp/verify', async (req, res) => {
   }
 });
 
+// ============================================================================
+// 🎮 BHATTI GAMEON PERMANENT STORAGE & REST API (100% Zero-Permission Failure)
+// ============================================================================
+const GAMES_FILE = path.resolve(process.cwd(), 'data', 'games-store.json');
+
+function ensureDataDir() {
+  const dir = path.dirname(GAMES_FILE);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+const DEFAULT_GAMES: any[] = [
+  {
+    id: 'game_COIN01',
+    gameId: 'COIN01',
+    title: 'Royal Taash Coin Toss',
+    subtitle: 'Call Royal Crest or Bhatti Flame to win feast discounts',
+    gameType: 'coin_flip',
+    isActive: true,
+    maxTurnsPerSession: 1,
+    dailyLimitPerDevice: 1,
+    coinWinReward: {
+      id: 'coin_win',
+      label: '30% OFF Royal Handi Feast',
+      probabilityWeight: 50,
+      isWin: true,
+      couponCode: 'ROYAL30',
+      rewardDescription: 'You called the toss correctly! Enjoy 30% discount.',
+    },
+    coinLossOutcome: {
+      id: 'coin_loss',
+      label: 'Better Luck Next Time',
+      probabilityWeight: 50,
+      isWin: false,
+      rewardDescription: 'Coin landed on the opposite side. Try again next visit!',
+    },
+    outcomes: [
+      { id: 'coin_win', label: '30% OFF Royal Handi Feast', probabilityWeight: 50, isWin: true, couponCode: 'ROYAL30', rewardDescription: 'You called the toss correctly!' },
+      { id: 'coin_loss', label: 'Better Luck Next Time', probabilityWeight: 50, isWin: false, rewardDescription: 'Try again next visit!' },
+    ],
+    totalPlays: 0,
+    totalWins: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'game_ROUL01',
+    gameId: 'ROUL01',
+    title: 'Bhatti Roulette of Flavors',
+    subtitle: 'Spin the antique wheel for instant gourmet perks',
+    gameType: 'roulette',
+    isActive: true,
+    maxTurnsPerSession: 1,
+    dailyLimitPerDevice: 1,
+    outcomes: [
+      { id: '1', label: '50% OFF Handi Biryani', probabilityWeight: 20, isWin: true, couponCode: 'FEAST50', rewardDescription: 'Half price feast!' },
+      { id: '2', label: 'Free Insulated Delivery', probabilityWeight: 30, isWin: true, couponCode: 'FREEDEL', rewardDescription: 'Zero delivery fee' },
+      { id: '3', label: 'Better Luck Next Time', probabilityWeight: 50, isWin: false, rewardDescription: 'Try again tomorrow' },
+    ],
+    totalPlays: 0,
+    totalWins: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'game_SCRT01',
+    gameId: 'SCRT01',
+    title: 'Golden Scratch Card',
+    subtitle: 'Rub away the 24K gold foil to unlock secret perks',
+    gameType: 'scratch_card',
+    isActive: true,
+    scratchFoilTheme: 'gold',
+    maxTurnsPerSession: 1,
+    dailyLimitPerDevice: 1,
+    outcomes: [
+      { id: '1', label: 'Flat ₹100 OFF Royal Feast', probabilityWeight: 35, isWin: true, couponCode: 'FLAT100', rewardDescription: 'Flat ₹100 discount applied' },
+      { id: '2', label: 'Free Dessert Handi', probabilityWeight: 25, isWin: true, couponCode: 'SWEETTREAT', rewardDescription: 'Complimentary dessert' },
+      { id: '3', label: 'Better Luck Next Time', probabilityWeight: 40, isWin: false, rewardDescription: 'Try again next visit' },
+    ],
+    totalPlays: 0,
+    totalWins: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+];
+
+function readServerGames(): any[] {
+  ensureDataDir();
+  try {
+    if (fs.existsSync(GAMES_FILE)) {
+      const raw = fs.readFileSync(GAMES_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading games-store.json:', e);
+  }
+  writeServerGames(DEFAULT_GAMES);
+  return DEFAULT_GAMES;
+}
+
+function writeServerGames(games: any[]) {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(GAMES_FILE, JSON.stringify(games, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('Error writing games-store.json:', e);
+  }
+}
+
+// GET all games
+app.get('/api/games', (req, res) => {
+  const games = readServerGames();
+  res.json({ success: true, games });
+});
+
+// GET single game by 6-digit ID or slug
+app.get('/api/games/:gameId', (req, res) => {
+  const targetId = (req.params.gameId || '').trim().toUpperCase();
+  const games = readServerGames();
+  const match = games.find(g => 
+    (g.gameId && g.gameId.toUpperCase() === targetId) ||
+    (g.id && g.id.toUpperCase() === targetId) ||
+    (g.id && g.id.toUpperCase() === `GAME_${targetId}`)
+  );
+  if (match) {
+    return res.json({ success: true, game: match });
+  }
+  res.status(404).json({ success: false, error: 'Game not found' });
+});
+
+// POST upsert game
+app.post('/api/games', (req, res) => {
+  try {
+    const gameData = req.body;
+    if (!gameData || !gameData.gameId) {
+      return res.status(400).json({ success: false, error: 'Valid gameId is required' });
+    }
+    const cleanId = String(gameData.gameId).trim().toUpperCase();
+    const games = readServerGames();
+    const idx = games.findIndex(g => 
+      (g.gameId && g.gameId.toUpperCase() === cleanId) || 
+      (g.id && g.id === gameData.id)
+    );
+    const updatedGame = {
+      ...gameData,
+      gameId: cleanId,
+      id: gameData.id || `game_${cleanId}`,
+      updatedAt: new Date().toISOString()
+    };
+    if (idx >= 0) {
+      games[idx] = updatedGame;
+    } else {
+      games.unshift(updatedGame);
+    }
+    writeServerGames(games);
+    res.json({ success: true, game: updatedGame });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// DELETE game
+app.delete('/api/games/:gameId', (req, res) => {
+  try {
+    const targetId = (req.params.gameId || '').trim().toUpperCase();
+    const games = readServerGames();
+    const filtered = games.filter(g => 
+      g.gameId?.toUpperCase() !== targetId && 
+      g.id !== targetId && 
+      g.id !== `game_${targetId}`
+    );
+    writeServerGames(filtered);
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // API endpoint for AI meal recommendations
 app.post('/api/gemini/suggest', async (req, res) => {
   const { goal, budget, isVeg, mealTime, flavorProfile } = req.body;

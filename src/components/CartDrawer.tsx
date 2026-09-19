@@ -30,6 +30,10 @@ import {
   Zap,
   ShieldCheck,
   Maximize2,
+  Utensils,
+  User as UserIcon,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder } from '../lib/walletService';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -464,6 +468,8 @@ interface CartDrawerProps {
   likedMeals?: string[];
   onAddToCart?: (meal: Meal) => void;
   initialCouponCode?: string | null;
+  dineInSession?: { tableNumber: string; bhattiId: string; bhattiName?: string; isFromQR?: boolean } | null;
+  onClearDineInSession?: () => void;
 }
 
 export default function CartDrawer({
@@ -483,6 +489,8 @@ export default function CartDrawer({
   likedMeals = [],
   onAddToCart,
   initialCouponCode,
+  dineInSession,
+  onClearDineInSession,
 }: CartDrawerProps) {
   // Coupon input state
   const [couponCode, setCouponCode] = useState('');
@@ -508,8 +516,55 @@ export default function CartDrawer({
     return () => unsubscribe();
   }, []);
 
-  // Fulfillment Mode: Delivery vs Takeaway (Self-Pickup) - Strictly NO Dine-In
-  const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway'>('delivery');
+  // Fulfillment Mode: Delivery vs Takeaway vs Dine-In Table Service
+  const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'takeaway' | 'dine_in'>('delivery');
+
+  // Dine-In Specific State
+  const [dineInGuestName, setDineInGuestName] = useState(user.name || '');
+  const [dineInGuestPhone, setDineInGuestPhone] = useState(user.phone || '');
+  const [selectedTableNumber, setSelectedTableNumber] = useState(dineInSession?.tableNumber || '');
+  const [selectedDineInKitchenId, setSelectedDineInKitchenId] = useState(dineInSession?.bhattiId || selectedBhatti?.id || (allKitchens[0]?.id || ''));
+
+  // Sync when dineInSession changes or is active
+  useEffect(() => {
+    if (dineInSession) {
+      setFulfillmentType('dine_in');
+      setSelectedTableNumber(dineInSession.tableNumber);
+      if (dineInSession.bhattiId) {
+        setSelectedDineInKitchenId(dineInSession.bhattiId);
+      }
+    }
+  }, [dineInSession]);
+
+  // Sync user profile name/phone into guest fields if empty
+  useEffect(() => {
+    if (user.name && !dineInGuestName) setDineInGuestName(user.name);
+    if (user.phone && !dineInGuestPhone) setDineInGuestPhone(user.phone);
+  }, [user.name, user.phone]);
+
+  // Derived selected Dine-In Kitchen
+  const selectedDineInKitchen = useMemo(() => {
+    if (selectedDineInKitchenId) {
+      const match = allKitchens.find(k => k.id === selectedDineInKitchenId);
+      if (match) return match;
+    }
+    if (selectedBhatti) return selectedBhatti;
+    return allKitchens[0] || null;
+  }, [selectedDineInKitchenId, selectedBhatti, allKitchens]);
+
+  // Derived Table Occupancy Status for Selected Bhatti
+  const dineInTableStatus = useMemo(() => {
+    if (!selectedDineInKitchen) return { hasTables: false, allOccupied: false, availableCount: 0, totalCount: 0, tables: [] };
+    const tables = selectedDineInKitchen.tables || [];
+    const available = tables.filter(t => !t.isOccupied);
+    return {
+      hasTables: tables.length > 0,
+      allOccupied: tables.length > 0 && available.length === 0,
+      availableCount: available.length,
+      totalCount: tables.length,
+      tables,
+    };
+  }, [selectedDineInKitchen]);
 
   // Order Timing State: ASAP vs Scheduled Slot
   const [orderTiming, setOrderTiming] = useState<'asap' | 'scheduled'>('asap');
@@ -862,8 +917,8 @@ export default function CartDrawer({
   }, [appliedCoupons]);
 
   const totalDiscount = gymDiscountVal + couponDiscountVal;
-  // Free delivery for Takeaway OR if order is above ₹300, OR a free delivery coupon is applied
-  const deliveryFee = (fulfillmentType === 'takeaway' || subtotal > 300 || isFreeDeliveryCoupon) ? 0 : 30;
+  // Free delivery for Takeaway & Dine-In Table Service OR if order is above ₹300, OR a free delivery coupon is applied
+  const deliveryFee = (fulfillmentType === 'takeaway' || fulfillmentType === 'dine_in' || subtotal > 300 || isFreeDeliveryCoupon) ? 0 : 30;
   const billBeforeEmbers = Math.max(0, subtotal - totalDiscount + deliveryFee);
 
   // BHATTI WALLET & EMBER COINS CHECKOUT STATE
@@ -1026,11 +1081,37 @@ export default function CartDrawer({
   const handleCheckout = async () => {
     if (cartItems.length === 0) return;
 
-    if (!auth.currentUser) {
+    const isDineIn = fulfillmentType === 'dine_in';
+    const isTakeaway = fulfillmentType === 'takeaway';
+
+    if (!auth.currentUser && !isDineIn) {
       alert("🔒 Authentication Required: Please sign in or register to place your meal order.");
       onClose();
       onSelectTab('account');
       return;
+    }
+
+    if (isDineIn) {
+      const gName = (dineInGuestName || user.name || '').trim();
+      const gPhone = (dineInGuestPhone || user.phone || '').replace(/\D/g, '');
+      if (!gName) {
+        alert("👤 Please enter your name for the table service.");
+        return;
+      }
+      if (!gPhone || gPhone.length < 10) {
+        alert("📱 Please enter a valid 10-digit mobile number for table order updates.");
+        return;
+      }
+      const effectiveTable = (selectedTableNumber || dineInSession?.tableNumber || '').trim();
+      if (!effectiveTable) {
+        alert("🍽️ Please select or enter your table number for dine-in service.");
+        return;
+      }
+      // Check if Bhatti all tables occupied (unless from physical table QR code)
+      if (!dineInSession?.isFromQR && dineInTableStatus.allOccupied) {
+        alert(`⚠️ All tables at ${selectedDineInKitchen?.name || 'this Bhatti'} are currently occupied. Dine-in is temporarily full.`);
+        return;
+      }
     }
 
     if (fulfillmentType === 'delivery' && !selectedAddress.trim()) {
@@ -1048,18 +1129,22 @@ export default function CartDrawer({
     }
 
     const anyKitchenAvailable = allKitchens.some((k) => k.isActive !== false && k.isTakingOrders !== false);
-    if (fulfillmentType === 'takeaway' && allKitchens.length > 0 && !anyKitchenAvailable) {
+    if ((fulfillmentType === 'takeaway' || isDineIn) && allKitchens.length > 0 && !anyKitchenAvailable) {
       alert("⚠️ All Kitchens Unavailable: All kitchen counters are currently paused or taking no orders. Please try again later!");
       return;
     }
-
-    const isTakeaway = fulfillmentType === 'takeaway';
 
     // 8-digit numeric code for order ID
     const orderId = Math.floor(10000000 + Math.random() * 90000000).toString();
     const takeawayOtp = isTakeaway ? Math.floor(1000 + Math.random() * 9000).toString() : undefined;
 
-    let finalAddress = isTakeaway
+    const effectiveTable = isDineIn ? (selectedTableNumber || dineInSession?.tableNumber || 'Table 1').trim() : undefined;
+    const finalCustomerName = isDineIn ? (dineInGuestName || user.name || 'Dine-In Guest').trim() : (user.name || 'Customer');
+    const finalCustomerPhone = isDineIn ? (dineInGuestPhone || user.phone || 'N/A').trim() : (user.phone || 'N/A');
+
+    let finalAddress = isDineIn
+      ? `Dine-In • ${effectiveTable} (${selectedDineInKitchen?.name || 'Taash Bhatti'})`
+      : isTakeaway
       ? (selectedAddress ? `Self-Pickup (Customer Area: ${selectedAddress})` : 'Self-Pickup (Cloud Kitchen Counter)')
       : selectedAddress;
 
@@ -1070,8 +1155,10 @@ export default function CartDrawer({
       finalAddress = `${finalAddress} (🎁 Unlocked Perks: ${perksDesc})`;
     }
 
-    const destinationTitle = isTakeaway ? 'Counter Pickup' : 'Doorstep Drop';
-    const destinationDesc = isTakeaway
+    const destinationTitle = isDineIn ? `Table Service (${effectiveTable})` : isTakeaway ? 'Counter Pickup' : 'Doorstep Drop';
+    const destinationDesc = isDineIn
+      ? `Fresh Handi cooked and served directly to ${effectiveTable} at ${selectedDineInKitchen?.name || 'Taash Bhatti'}`
+      : isTakeaway
       ? 'Self-Pickup at Cloud Kitchen Counter with OTP'
       : 'Warm carrier dispatched to your pinpointed doorstep';
 
@@ -1087,9 +1174,10 @@ export default function CartDrawer({
       }
     }
 
-    // Kitchen targeting: If preferred Bhatti is selected, target it exclusively.
-    // Otherwise, broadcast to all active kitchens (no auto-dispatch; first to accept proceeds).
-    const eligibleKitchenIds = selectedBhatti 
+    // Kitchen targeting: For Dine-in, target the selected Dine-In kitchen
+    const eligibleKitchenIds = isDineIn && selectedDineInKitchen
+      ? [selectedDineInKitchen.id]
+      : selectedBhatti 
       ? [selectedBhatti.id] 
       : allKitchens.map(k => k.id);
 
@@ -1115,7 +1203,15 @@ export default function CartDrawer({
     const newOrder: Order = {
       id: orderId,
       items: enrichedItems,
-      userId: auth.currentUser?.uid || '',
+      userId: auth.currentUser?.uid || (isDineIn ? `guest_table_${orderId}` : ''),
+      isDineInGuest: isDineIn && !auth.currentUser,
+      customerName: finalCustomerName,
+      customerPhone: finalCustomerPhone,
+      guestName: isDineIn ? finalCustomerName : undefined,
+      guestPhone: isDineIn ? finalCustomerPhone : undefined,
+      tableNumber: isDineIn ? effectiveTable : undefined,
+      dineInBhattiId: isDineIn ? (selectedDineInKitchen?.id || selectedBhatti?.id) : undefined,
+      dineInBhattiName: isDineIn ? (selectedDineInKitchen?.name || selectedBhatti?.name) : undefined,
       date: new Date().toLocaleDateString('en-IN', {
         day: 'numeric',
         month: 'short',
@@ -1127,7 +1223,9 @@ export default function CartDrawer({
       scheduledSlot: slotLabel,
       takeawayPickupOtp: takeawayOtp,
       lane: lane,
-      chefNote: `Nutritional balance verified. Timing: ${slotLabel}`,
+      chefNote: isDineIn 
+        ? `DINE-IN ORDER FOR ${effectiveTable}. Customer: ${finalCustomerName} (${finalCustomerPhone})`
+        : `Nutritional balance verified. Timing: ${slotLabel}`,
       createdAt: new Date().toISOString(),
       subtotal,
       discount: totalDiscount,
@@ -1162,8 +1260,6 @@ export default function CartDrawer({
       acceptedKitchenName: "",
       acceptedKitchenAddress: selectedBhatti ? selectedBhatti.address : "",
       rejectedByKitchenIds: [],
-      customerName: user.name || 'Athlete Customer',
-      customerPhone: user.phone || 'N/A',
     };
 
     // Increment coupon usage count dynamically and accumulate totalSavings in Firestore
@@ -1313,6 +1409,21 @@ export default function CartDrawer({
               </div>
             )}
 
+            {/* DINE-IN TABLE BADGE IF DINE-IN */}
+            {fulfillmentType === 'dine_in' && (
+              <div className="w-full bg-emerald-50 border-2 border-brand-green/40 rounded-2xl p-4 text-center max-w-xs space-y-1.5 shadow-sm">
+                <span className="text-[10px] font-black text-brand-green uppercase tracking-widest block">
+                  🍽️ DINE-IN SERVICE CONFIRMED
+                </span>
+                <span className="text-2xl font-black text-brand-charcoal tracking-wide block font-mono bg-white py-1 rounded-xl border border-brand-green/30">
+                  {selectedTableNumber || dineInSession?.tableNumber || 'Table'}
+                </span>
+                <p className="text-[9px] text-emerald-900/80 font-bold leading-tight">
+                  Dishes will be delivered piping hot to your table at {selectedDineInKitchen?.name || dineInSession?.bhattiName || 'Taash Bhatti'}. Enjoy your meal!
+                </p>
+              </div>
+            )}
+
             {/* Summed macros review */}
             <div className="w-full bg-brand-cream/40 border border-brand-green/10 rounded-2xl p-4 text-xs font-bold text-brand-green space-y-1.5 max-w-xs">
               <span className="text-[9px] font-black uppercase text-brand-orange tracking-widest block mb-1">
@@ -1386,52 +1497,77 @@ export default function CartDrawer({
             </div>
           ) : (
             <>
-              {/* FULFILLMENT MODE SELECTOR: DELIVERY vs TAKEAWAY (STRICTLY NO DINE-IN) */}
+              {/* FULFILLMENT MODE SELECTOR: DELIVERY vs TAKEAWAY vs DINE-IN TABLE */}
               <div className="bg-brand-cream/30 border border-brand-green/15 rounded-2xl p-3 space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black uppercase text-brand-charcoal/60 tracking-wider block">
                     Fulfillment Method
                   </span>
-                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
-                    Strictly No Dine-In
-                  </span>
+                  {dineInSession?.isFromQR ? (
+                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-brand-green/10 text-brand-green border border-brand-green/30 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-ping" />
+                      Table QR Seated
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-brand-green/10 text-brand-green border border-brand-green/20">
+                      3 Modes Available
+                    </span>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => setFulfillmentType('delivery')}
-                    className={`p-3 rounded-xl border text-left font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left font-bold text-xs transition-all flex flex-col justify-between cursor-pointer ${
                       fulfillmentType === 'delivery'
                         ? 'border-2 border-brand-green bg-brand-green text-white shadow-sm'
                         : 'border-brand-green/10 bg-white text-brand-charcoal hover:bg-brand-cream/20'
                     }`}
                   >
-                    <span className="text-base">🚚</span>
-                    <div>
-                      <span className="block leading-tight font-extrabold">Delivery Drop</span>
-                      <span className={`text-[9px] block font-normal ${fulfillmentType === 'delivery' ? 'text-emerald-100' : 'text-gray-500'}`}>
-                        Home or Gym Locker
-                      </span>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-base">🚚</span>
+                      <span className="block leading-tight font-black text-[11px]">Delivery</span>
                     </div>
+                    <span className={`text-[8px] block font-normal leading-tight ${fulfillmentType === 'delivery' ? 'text-emerald-100' : 'text-gray-500'}`}>
+                      Doorstep Drop
+                    </span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setFulfillmentType('takeaway')}
-                    className={`p-3 rounded-xl border text-left font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left font-bold text-xs transition-all flex flex-col justify-between cursor-pointer ${
                       fulfillmentType === 'takeaway'
                         ? 'border-2 border-brand-green bg-brand-green text-white shadow-sm'
                         : 'border-brand-green/10 bg-white text-brand-charcoal hover:bg-brand-cream/20'
                     }`}
                   >
-                    <span className="text-base">🛍️</span>
-                    <div>
-                      <span className="block leading-tight font-extrabold">Self-Pickup</span>
-                      <span className={`text-[9px] block font-normal ${fulfillmentType === 'takeaway' ? 'text-emerald-100' : 'text-gray-500'}`}>
-                        Cloud Kitchen Counter (₹0 Fee)
-                      </span>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-base">🛍️</span>
+                      <span className="block leading-tight font-black text-[11px]">Pickup</span>
                     </div>
+                    <span className={`text-[8px] block font-normal leading-tight ${fulfillmentType === 'takeaway' ? 'text-emerald-100' : 'text-gray-500'}`}>
+                      Counter (₹0 Fee)
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFulfillmentType('dine_in')}
+                    className={`p-2.5 rounded-xl border text-left font-bold text-xs transition-all flex flex-col justify-between cursor-pointer ${
+                      fulfillmentType === 'dine_in'
+                        ? 'border-2 border-brand-green bg-brand-green text-white shadow-sm'
+                        : 'border-brand-green/10 bg-white text-brand-charcoal hover:bg-brand-cream/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-base">🍽️</span>
+                      <span className="block leading-tight font-black text-[11px]">Dine-In</span>
+                    </div>
+                    <span className={`text-[8px] block font-normal leading-tight ${fulfillmentType === 'dine_in' ? 'text-emerald-100' : 'text-gray-500'}`}>
+                      Table Service (₹0)
+                    </span>
                   </button>
                 </div>
 
@@ -1440,6 +1576,38 @@ export default function CartDrawer({
                     <span className="font-extrabold block text-emerald-950">📍 Cloud Kitchen Pickup Counter:</span>
                     <p className="leading-snug">Order will be transmitted to nearby cloud kitchens. Counter address will be shown once accepted.</p>
                     <p className="text-[9px] text-emerald-700 font-bold">🔑 A 4-digit Pickup OTP will be generated upon checkout for counter verification.</p>
+                  </div>
+                )}
+
+                {fulfillmentType === 'dine_in' && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-[10px] text-emerald-950 font-semibold space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold flex items-center gap-1 text-emerald-900">
+                        <span>🍽️ Handi Table Service</span>
+                        {dineInSession?.isFromQR && (
+                          <span className="text-[8px] bg-brand-green text-white font-black px-1.5 py-0.5 rounded">QR SCANNED</span>
+                        )}
+                      </span>
+                      {dineInSession && onClearDineInSession && (
+                        <button
+                          type="button"
+                          onClick={onClearDineInSession}
+                          className="text-[9px] text-rose-700 underline font-bold cursor-pointer"
+                        >
+                          Clear Table
+                        </button>
+                      )}
+                    </div>
+                    <p className="leading-snug text-emerald-800">
+                      {dineInSession?.isFromQR
+                        ? `Seated at ${selectedTableNumber || dineInSession.tableNumber} • Orders prepared fresh in clay oven and served to your table.`
+                        : `Fresh clay-oven meals served directly to your designated table at the selected Bhatti.`}
+                    </p>
+                    {dineInTableStatus.allOccupied && !dineInSession?.isFromQR && (
+                      <div className="p-2 bg-red-100 border border-red-300 rounded-lg text-red-800 text-[10px] font-bold">
+                        ⚠️ All tables currently occupied at {selectedDineInKitchen?.name || 'this Bhatti'}. You may still order for Takeaway or Delivery!
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2075,7 +2243,7 @@ export default function CartDrawer({
                         )}
                       </div>
                     </div>
-                  ) : (
+                  ) : fulfillmentType === 'takeaway' ? (
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
                   <span className="text-[10px] font-black uppercase text-emerald-900 tracking-wider block">
                     📍 Self-Pickup Selected
@@ -2089,6 +2257,175 @@ export default function CartDrawer({
                   <p className="text-[9px] text-emerald-700 font-bold bg-white/70 p-2 rounded-xl border border-emerald-200">
                     ⚡ Instant Counter Pickup: Your 4-digit pickup code will be generated immediately after confirming payment. Show it at the counter for fast, zero-wait order pickup.
                   </p>
+                </div>
+              ) : (
+                /* DINE-IN SERVICE: TABLE & GUEST FORM */
+                <div className="space-y-3.5 bg-brand-cream/20 border border-brand-green/15 rounded-3xl p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-brand-charcoal/60 tracking-wider block">
+                      1. Table Service & Contact Details
+                    </span>
+                    {dineInSession?.isFromQR ? (
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        ⚡ Scanned Table QR
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-bold text-brand-green">
+                        ₹0 Delivery Charge
+                      </span>
+                    )}
+                  </div>
+
+                  {/* If Scanned from QR: Locked Table Card */}
+                  {dineInSession?.isFromQR ? (
+                    <div className="p-3 bg-white border border-brand-green/20 rounded-2xl flex items-center justify-between">
+                      <div>
+                        <span className="text-[8px] font-black uppercase tracking-wider text-brand-charcoal/40 block">Seated Table</span>
+                        <div className="text-base font-black text-brand-charcoal flex items-center gap-1.5">
+                          <span>🍽️</span>
+                          <span>{selectedTableNumber || dineInSession.tableNumber}</span>
+                        </div>
+                        <span className="text-[10px] text-brand-charcoal/60 font-semibold block">
+                          Branch: {selectedDineInKitchen?.name || dineInSession.bhattiName || 'Assigned Bhatti'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[9px] bg-brand-green/10 text-brand-green font-extrabold px-2 py-1 rounded-lg border border-brand-green/20 inline-block">
+                          Direct Seating Verified
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Manual Dine-In Selection: Choose Bhatti and Table */
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-wider text-brand-charcoal/50 block mb-1">
+                          Select Bhatti Branch for Dine-In
+                        </label>
+                        <select
+                          value={selectedDineInKitchenId}
+                          onChange={(e) => setSelectedDineInKitchenId(e.target.value)}
+                          className="w-full bg-white border border-brand-green/20 rounded-xl px-3 py-2 text-xs font-bold text-brand-charcoal focus:outline-none focus:ring-1 focus:ring-brand-green"
+                        >
+                          {allKitchens.filter(k => k.hasDineIn !== false).map((k) => (
+                            <option key={k.id} value={k.id}>
+                              {k.name} ({k.area || k.address || 'Taash Bhatti'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Availability status badge */}
+                      <div className="flex items-center justify-between text-[10px] px-1 font-bold">
+                        <span className="text-brand-charcoal/60">Table Availability:</span>
+                        {dineInTableStatus.hasTables ? (
+                          dineInTableStatus.allOccupied ? (
+                            <span className="text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full font-black">
+                              🔴 All {dineInTableStatus.totalCount} Tables Occupied
+                            </span>
+                          ) : (
+                            <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-black">
+                              🟢 {dineInTableStatus.availableCount} of {dineInTableStatus.totalCount} Available
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-black">
+                            Tables Open
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Occupancy warning block */}
+                      {dineInTableStatus.allOccupied && (
+                        <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[10px] text-rose-800 font-bold space-y-1">
+                          <span className="block font-black">⚠️ Currently Full for Dine-In</span>
+                          <p className="font-medium leading-snug">All tables at {selectedDineInKitchen?.name} are occupied. You may switch branch, switch to Takeaway / Delivery, or wait a few minutes.</p>
+                        </div>
+                      )}
+
+                      {/* Select or enter table number */}
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-wider text-brand-charcoal/50 block mb-1">
+                          Table Number / Name
+                        </label>
+                        {dineInTableStatus.tables && dineInTableStatus.tables.length > 0 ? (
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {dineInTableStatus.tables.map((tbl) => (
+                              <button
+                                key={tbl.id}
+                                type="button"
+                                disabled={tbl.isOccupied}
+                                onClick={() => setSelectedTableNumber(tbl.tableNumber)}
+                                className={`p-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                                  selectedTableNumber === tbl.tableNumber
+                                    ? 'bg-brand-green text-white border-brand-green shadow-xs'
+                                    : tbl.isOccupied
+                                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed line-through'
+                                    : 'bg-white text-brand-charcoal border-brand-green/15 hover:border-brand-green'
+                                }`}
+                              >
+                                {tbl.tableNumber}
+                                <span className="block text-[8px] font-normal opacity-80">
+                                  {tbl.isOccupied ? 'Full' : `Cap: ${tbl.capacity || 4}`}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="e.g. Table 4"
+                            value={selectedTableNumber}
+                            onChange={(e) => setSelectedTableNumber(e.target.value)}
+                            className="w-full bg-white border border-brand-green/20 rounded-xl px-3 py-2 text-xs font-bold text-brand-charcoal focus:outline-none focus:ring-1 focus:ring-brand-green"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Diner Guest Form (Name & 10-digit mobile) */}
+                  <div className="space-y-2 pt-2 border-t border-brand-green/10">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-brand-charcoal/50 block">
+                      Diner Details (Required for Table Service)
+                    </span>
+
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-[8px] font-black text-brand-charcoal/40 uppercase block mb-1">Diner Full Name *</span>
+                        <input
+                          type="text"
+                          placeholder="e.g. Rahul Sharma"
+                          value={dineInGuestName}
+                          onChange={(e) => setDineInGuestName(e.target.value)}
+                          className="w-full bg-white border border-brand-green/20 rounded-xl px-3 py-2 text-xs font-semibold text-brand-charcoal focus:outline-none focus:ring-1 focus:ring-brand-green"
+                        />
+                      </div>
+
+                      <div>
+                        <span className="text-[8px] font-black text-brand-charcoal/40 uppercase block mb-1">10-Digit Mobile Number *</span>
+                        <input
+                          type="tel"
+                          maxLength={10}
+                          placeholder="e.g. 9876543210"
+                          value={dineInGuestPhone}
+                          onChange={(e) => setDineInGuestPhone(e.target.value.replace(/\D/g, ''))}
+                          className="w-full bg-white border border-brand-green/20 rounded-xl px-3 py-2 text-xs font-semibold text-brand-charcoal focus:outline-none focus:ring-1 focus:ring-brand-green"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-2 bg-emerald-50/70 border border-emerald-200/70 rounded-xl text-[9px] text-emerald-900 font-semibold space-y-0.5">
+                      <p className="flex items-center gap-1 font-bold text-emerald-950">
+                        <span>✨ No Account Login Required!</span>
+                      </p>
+                      <p className="text-emerald-800">
+                        {auth.currentUser
+                          ? `You are signed in as ${user.name || 'member'}. This table order will be tied to your profile and history!`
+                          : 'Orders are transmitted directly to the kitchen KDS for your table and stored locally on your device.'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -2440,13 +2777,16 @@ export default function CartDrawer({
                 !featureFlags.acceptingOrders ||
                 (allKitchens.length > 0 && (
                   (fulfillmentType === 'delivery' && !deliveryKitchenInfo.inRange) ||
-                  !allKitchens.some(k => k.isActive !== false && k.isTakingOrders !== false)
+                  !allKitchens.some(k => k.isActive !== false && k.isTakingOrders !== false) ||
+                  (fulfillmentType === 'dine_in' && !dineInSession?.isFromQR && dineInTableStatus.allOccupied)
                 ))
               }
               className="w-full mt-2 bg-brand-green hover:bg-brand-green/95 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 disabled:cursor-not-allowed text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {!featureFlags.acceptingOrders ? (
                 <span>ORDERS CURRENTLY PAUSED</span>
+              ) : fulfillmentType === 'dine_in' && !dineInSession?.isFromQR && dineInTableStatus.allOccupied ? (
+                <span>TABLES CURRENTLY FULL AT THIS BHATTI</span>
               ) : (
                 <>
                   <Lock className="w-3.5 h-3.5 text-brand-orange" /> CONFIRM & PLACE MEAL ORDER

@@ -32,8 +32,8 @@ export default function OrderInvoiceModal({
   const invoiceNumber = `TB-INV-${order.id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10)}`;
   const invoiceDate = order.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const itemsSubtotal = order.items.reduce((acc, it) => acc + (it.meal?.price || 0) * (it.quantity || 1), 0);
-  const packagingFee = 20;
-  const deliveryFee = order.fulfillmentMode === 'takeaway' ? 0 : 35;
+  const packagingFee = order.fulfillmentMode === 'dine_in' ? 0 : 20;
+  const deliveryFee = (order.fulfillmentMode === 'takeaway' || order.fulfillmentMode === 'dine_in') ? 0 : 35;
   const taxesGst = Math.round(itemsSubtotal * 0.05); // 5% GST on Restaurant Dining
   const discountAmount = Math.max(0, (itemsSubtotal + packagingFee + deliveryFee + taxesGst) - (order.total || itemsSubtotal));
 
@@ -139,6 +139,13 @@ export default function OrderInvoiceModal({
                   📞 {order.customerPhone}
                 </p>
               )}
+              {order.tableNumber && (
+                <div className="pt-0.5">
+                  <span className="inline-block text-[10px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md uppercase">
+                    🍽️ Seated at: {order.tableNumber} {order.isDineInGuest ? '(Guest Order)' : ''}
+                  </span>
+                </div>
+              )}
               <p className="text-[11px] text-slate-600 leading-snug">
                 📍 {order.address || 'Address on file'}
               </p>
@@ -153,14 +160,24 @@ export default function OrderInvoiceModal({
                 {kitchenName}
               </h4>
               <p className="text-[11px] text-slate-600">
-                Mode: <strong className="text-amber-800 uppercase">{order.fulfillmentMode === 'takeaway' ? 'Self Takeaway / Counter Pickup' : 'Express Doorstep Delivery'}</strong>
+                Mode: <strong className="text-amber-800 uppercase">
+                  {order.fulfillmentMode === 'dine_in' 
+                    ? `🍽️ Dine-In Table Service (${order.tableNumber || 'Table'})` 
+                    : order.fulfillmentMode === 'takeaway' 
+                    ? 'Self Takeaway / Counter Pickup' 
+                    : 'Express Doorstep Delivery'}
+                </strong>
               </p>
-              {riderName && order.fulfillmentMode !== 'takeaway' && (
+              {order.fulfillmentMode === 'dine_in' ? (
+                <p className="text-[11px] text-emerald-800 font-medium pt-0.5">
+                  🍽️ Table Service: <strong className="text-slate-900">Served Direct to {order.tableNumber || 'Table'}</strong>
+                </p>
+              ) : riderName && order.fulfillmentMode !== 'takeaway' ? (
                 <p className="text-[11px] text-emerald-800 font-medium pt-0.5">
                   🛵 Rider: <strong className="text-slate-900">{riderName}</strong>
                   {vehicleNumber && <span className="font-mono text-slate-600"> ({vehicleNumber})</span>}
                 </p>
-              )}
+              ) : null}
             </div>
           </div>
 

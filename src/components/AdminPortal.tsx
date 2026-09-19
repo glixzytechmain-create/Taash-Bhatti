@@ -6995,6 +6995,15 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                   <p className="font-mono text-[10px] text-gray-500">
                                     Coords: {kitchen.lat && kitchen.lng ? `${kitchen.lat.toFixed(5)}, ${kitchen.lng.toFixed(5)}` : 'No Coordinates Set'}
                                   </p>
+                                  <p className="flex items-center gap-1.5 pt-0.5 text-xs">
+                                    <strong className="text-gray-300">Dine-In Tables:</strong>
+                                    <span className="font-mono text-amber-300 font-bold">
+                                      {(kitchen.tables || []).length} Tables ({(kitchen.tables || []).filter(t => !t.isOccupied).length} Open)
+                                    </span>
+                                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-extrabold ${kitchen.hasDineIn !== false ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800' : 'bg-rose-950/60 text-rose-400 border border-rose-800'}`}>
+                                      {kitchen.hasDineIn !== false ? 'Active' : 'Paused'}
+                                    </span>
+                                  </p>
                                 </div>
 
                                 {/* Weather & Rain Mode Toggle */}

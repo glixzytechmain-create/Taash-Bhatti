@@ -232,7 +232,14 @@ export interface Order {
   items: OrderItem[];
   date: string;
   status: 'sent' | 'kitchen_accepted' | 'cooking' | 'prepared' | 'ready_for_pickup' | 'out_for_delivery' | 'delivered' | 'cancelled';
-  fulfillmentMode?: 'delivery' | 'takeaway'; // Delivery vs Self-Pickup (Takeaway) - strictly NO Dine-in
+  fulfillmentMode?: 'delivery' | 'takeaway' | 'dine_in'; // Delivery vs Self-Pickup vs Table Dine-In
+  tableNumber?: string; // e.g. "Table 1", "T-04", "VIP Handi Lounge"
+  tableId?: string;
+  isDineInGuest?: boolean; // Dine-in guest order without login requirement
+  guestName?: string;
+  guestPhone?: string;
+  dineInBhattiId?: string;
+  dineInBhattiName?: string;
   scheduledSlot?: string; // 'ASAP (20-30 mins)' or 'Today, 2:00 PM - 2:30 PM'
   takeawayPickupOtp?: string; // 4-digit OTP generated for Cloud Kitchen counter pickup
   total: number;
@@ -529,6 +536,18 @@ export interface SubscriptionPlan {
   popular?: boolean;
 }
 
+export interface BhattiTable {
+  id: string; // e.g. "tbl_1", "tbl_bhatti1_4"
+  tableNumber: string; // e.g. "Table 1", "T-04", "VIP Handi Lounge 1"
+  capacity: number; // e.g. 2, 4, 6, 8 seats
+  isOccupied: boolean; // toggle: true = occupied, false = available
+  section?: string; // e.g. "Main Dining Hall", "Outdoor Courtyard", "Rooftop Terrace"
+  notes?: string;
+  occupiedAt?: string;
+  currentOrderId?: string;
+  qrCodeDataUrl?: string;
+}
+
 export interface Kitchen {
   id: string;
   name: string;
@@ -551,6 +570,8 @@ export interface Kitchen {
   specialties?: string[];
   image?: string;
   description?: string;
+  tables?: BhattiTable[]; // Configured dine-in tables
+  hasDineIn?: boolean; // Toggle: Dine-in accepted at this Bhatti
 }
 
 export interface KitchenInventoryItem {
@@ -598,7 +619,7 @@ export interface WastageOrderMetadata {
   orderTotal?: number;
   itemsSummary?: string;
   orderStatus?: string;
-  fulfillmentMode?: 'delivery' | 'takeaway';
+  fulfillmentMode?: 'delivery' | 'takeaway' | 'dine_in';
   quickActionTaken?: string;
 }
 

@@ -53,10 +53,12 @@ import {
   Building,
   Copy,
   Navigation,
-  Bike
+  Bike,
+  QrCode,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord } from '../types';
+import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord, BhattiTable } from '../types';
 import { doc, updateDoc, collection, onSnapshot, setDoc, query, where, addDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import InAppDeliveryMap from './InAppDeliveryMap';
@@ -65,6 +67,7 @@ import KitchenEODSettlementModal from './KitchenEODSettlementModal';
 import KitchenWastageManager from './KitchenWastageManager';
 import { syncLowStockMenuWithFirestore, computeEODShiftReport } from '../lib/kitchenSettlement';
 import { autoDispatchPlatedOrder } from '../lib/proximityDispatch';
+import { generateQRCodeDataUrl, generateQRCodeSvg, downloadFile } from '../lib/qrCodeGenerator';
 
 // Web Audio API Synthesizer Chimes
 const playKitchenChime = (type: 'new' | 'complete' | 'alert') => {
@@ -417,8 +420,96 @@ export default function KitchenManagerApp({
     setIsEODReadOnly(false);
   };
 
-  // Workspace Sub-Section: 'prep_lanes' vs 'rider_desk' vs 'inventory' vs 'radar' vs 'eod_settlement'
-  const [kdsSubSection, setKdsSubSection] = useState<'prep_lanes' | 'rider_desk' | 'inventory' | 'radar' | 'eod_settlement'>('prep_lanes');
+  // Workspace Sub-Section: 'prep_lanes' vs 'rider_desk' vs 'inventory' vs 'radar' vs 'eod_settlement' vs 'tables'
+  const [kdsSubSection, setKdsSubSection] = useState<'prep_lanes' | 'rider_desk' | 'inventory' | 'radar' | 'eod_settlement' | 'tables'>('prep_lanes');
+
+  // Dine-In Table Management State
+  const [showAddTableModal, setShowAddTableModal] = useState<boolean>(false);
+  const [newTableNumber, setNewTableNumber] = useState<string>('');
+  const [newTableCapacity, setNewTableCapacity] = useState<number>(4);
+  const [newTableSection, setNewTableSection] = useState<string>('Main Dining Hall');
+  const [selectedTableForQrModal, setSelectedTableForQrModal] = useState<BhattiTable | null>(null);
+  const [tableQrDataUrl, setTableQrDataUrl] = useState<string>('');
+  const [tableQrSvg, setTableQrSvg] = useState<string>('');
+
+  // Auto-generate QR code for selected table
+  useEffect(() => {
+    if (!selectedTableForQrModal || !activeKitchen) {
+      setTableQrDataUrl('');
+      setTableQrSvg('');
+      return;
+    }
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://taashbhatti.com';
+    const qrUrl = `${origin}/?table=${encodeURIComponent(selectedTableForQrModal.tableNumber)}&bhatti=${encodeURIComponent(activeKitchen.id)}&bhattiName=${encodeURIComponent(activeKitchen.name)}`;
+    generateQRCodeDataUrl(qrUrl, { width: 600, margin: 2 }).then(setTableQrDataUrl);
+    generateQRCodeSvg(qrUrl, { width: 600, margin: 2 }).then(setTableQrSvg);
+  }, [selectedTableForQrModal, activeKitchen]);
+
+  const handleToggleTableOccupied = async (tableId: string, currentOccupied: boolean) => {
+    if (!activeKitchen) return;
+    const currentTables = activeKitchen.tables || [];
+    const updated = currentTables.map(t => {
+      if (t.id === tableId) {
+        return {
+          ...t,
+          isOccupied: !currentOccupied,
+          occupiedAt: !currentOccupied ? new Date().toISOString() : undefined,
+          currentOrderId: !currentOccupied ? t.currentOrderId : undefined,
+        };
+      }
+      return t;
+    });
+    await updateDoc(doc(db, 'kitchens', activeKitchen.id), { tables: updated });
+    playKitchenChime('alert');
+  };
+
+  const handleAddTable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeKitchen || !newTableNumber.trim()) return;
+    const currentTables = activeKitchen.tables || [];
+    const newTable: BhattiTable = {
+      id: `tbl_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      tableNumber: newTableNumber.trim(),
+      capacity: Number(newTableCapacity) || 4,
+      isOccupied: false,
+      section: newTableSection.trim() || 'Main Dining Hall',
+    };
+    await updateDoc(doc(db, 'kitchens', activeKitchen.id), {
+      tables: [...currentTables, newTable],
+      hasDineIn: true
+    });
+    setNewTableNumber('');
+    setShowAddTableModal(false);
+    playKitchenChime('complete');
+  };
+
+  const handleDeleteTable = async (tableId: string) => {
+    if (!activeKitchen || !window.confirm("Delete this dining table from this branch?")) return;
+    const currentTables = activeKitchen.tables || [];
+    const updated = currentTables.filter(t => t.id !== tableId);
+    await updateDoc(doc(db, 'kitchens', activeKitchen.id), { tables: updated });
+    playKitchenChime('alert');
+  };
+
+  const handleToggleDineInEnabled = async () => {
+    if (!activeKitchen) return;
+    const current = activeKitchen.hasDineIn !== false;
+    await updateDoc(doc(db, 'kitchens', activeKitchen.id), { hasDineIn: !current });
+    playKitchenChime('complete');
+  };
+
+  const handleSeedDefaultTables = async () => {
+    if (!activeKitchen) return;
+    const defaults: BhattiTable[] = [
+      { id: `tbl_${Date.now()}_1`, tableNumber: 'Table 1', capacity: 2, isOccupied: false, section: 'Main Dining' },
+      { id: `tbl_${Date.now()}_2`, tableNumber: 'Table 2', capacity: 4, isOccupied: false, section: 'Main Dining' },
+      { id: `tbl_${Date.now()}_3`, tableNumber: 'Table 3', capacity: 4, isOccupied: false, section: 'Main Dining' },
+      { id: `tbl_${Date.now()}_4`, tableNumber: 'Table 4', capacity: 6, isOccupied: false, section: 'Family Patio' },
+      { id: `tbl_${Date.now()}_5`, tableNumber: 'Table 5', capacity: 8, isOccupied: false, section: 'Royal Lounge' },
+    ];
+    await updateDoc(doc(db, 'kitchens', activeKitchen.id), { tables: defaults, hasDineIn: true });
+    playKitchenChime('complete');
+  };
 
   // Chef Station Filter ('all' | 'lane_a' | 'lane_b')
   const [chefStation, setChefStation] = useState<'all' | 'lane_a' | 'lane_b'>('all');
@@ -769,6 +860,19 @@ export default function KitchenManagerApp({
         deliveredAt: new Date().toISOString()
       });
       playKitchenChime('complete');
+
+      // Auto-vacate table if dine-in order
+      const targetOrder = liveOrders.find(o => o.id === orderId);
+      if (targetOrder?.fulfillmentMode === 'dine_in' && activeKitchen) {
+        const currentTables = activeKitchen.tables || [];
+        const updated = currentTables.map(t => {
+          if (t.tableNumber.toLowerCase() === targetOrder.tableNumber?.toLowerCase() || t.id === targetOrder.tableId || t.currentOrderId === orderId) {
+            return { ...t, isOccupied: false, currentOrderId: undefined, occupiedAt: undefined };
+          }
+          return t;
+        });
+        await updateDoc(doc(db, 'kitchens', activeKitchen.id), { tables: updated }).catch(() => {});
+      }
     } catch (e) {
       console.warn("Failed to mark delivered:", e);
     }
@@ -1289,6 +1393,24 @@ export default function KitchenManagerApp({
               <FileText className="w-4 h-4" />
               <span>EOD Shift Settlements ({eodReports.length})</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setKdsSubSection('tables')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer relative ${
+                kdsSubSection === 'tables'
+                  ? 'bg-amber-400 text-stone-950 shadow-lg shadow-amber-400/20 font-black'
+                  : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <UtensilsCrossed className="w-4 h-4" />
+              <span>Dine-In Tables & QRs ({(activeKitchen?.tables || []).length})</span>
+              {(activeKitchen?.tables || []).some(t => t.isOccupied) && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-md">
+                  {(activeKitchen?.tables || []).filter(t => t.isOccupied).length} Seated
+                </span>
+              )}
+            </button>
           </div>
 
           <div className="flex items-center gap-2 px-2">
@@ -1386,6 +1508,11 @@ export default function KitchenManagerApp({
                                 <span className="text-[9px] text-gray-400 font-mono block mt-0.5">
                                   Customer: {o.customerName || (o as any).userName || 'Valued Patron'}
                                 </span>
+                                {o.fulfillmentMode === 'dine_in' && (
+                                  <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase">
+                                    🍽️ DINE-IN • {o.tableNumber || 'Table 1'} {o.isDineInGuest ? '(Guest)' : ''}
+                                  </span>
+                                )}
                               </div>
                               <span className={`text-[7px] font-black px-1.5 py-0.5 rounded border uppercase ${
                                 o.lane === 'lane_a' 
@@ -1506,6 +1633,11 @@ export default function KitchenManagerApp({
                               <span className="text-[8px] text-gray-400 block font-mono">
                                 Slot: {o.scheduledSlot || 'ASAP Rush'}
                               </span>
+                              {o.fulfillmentMode === 'dine_in' && (
+                                <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[8px] font-black uppercase">
+                                  🍽️ DINE-IN • {o.tableNumber || 'Table 1'}
+                                </span>
+                              )}
                             </div>
                             <KDSTimer createdAt={o.cookingStartedAt || o.createdAt} />
                           </div>
@@ -1614,7 +1746,7 @@ export default function KitchenManagerApp({
                             <div>
                               <span className="text-xs font-mono font-black text-white">#{o.id}</span>
                               <span className="text-[9px] text-gray-400 block mt-0.5 font-mono">
-                                Mode: {o.fulfillmentMode === 'takeaway' ? '🥡 Counter Takeaway' : '🛵 Doorstep Delivery'}
+                                Mode: {o.fulfillmentMode === 'dine_in' ? `🍽️ Dine-In (${o.tableNumber || 'Table'})` : o.fulfillmentMode === 'takeaway' ? '🥡 Counter Takeaway' : '🛵 Doorstep Delivery'}
                               </span>
                             </div>
                             <span className="text-[9px] font-mono font-black text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
@@ -1623,14 +1755,20 @@ export default function KitchenManagerApp({
                           </div>
 
                           <div className="bg-[#10151C] p-2.5 rounded-xl border border-white/5 space-y-1 text-xs">
-                            <span className="text-[9px] font-black uppercase text-gray-400 block">Rider Logistics</span>
+                            <span className="text-[9px] font-black uppercase text-gray-400 block">
+                              {o.fulfillmentMode === 'dine_in' ? 'Table Service' : 'Rider Logistics'}
+                            </span>
                             {o.deliveryPartnerName ? (
                               <p className="text-emerald-400 font-bold text-[11px] flex items-center gap-1">
                                 <Truck className="w-3.5 h-3.5" /> Rider: {o.deliveryPartnerName} ({o.deliveryVehicleNumber || 'EV'})
                               </p>
                             ) : (
                               <p className="text-gray-400 text-[10px]">
-                                {o.fulfillmentMode === 'takeaway' ? 'Awaiting customer counter pickup with OTP' : 'Awaiting fleet partner pickup'}
+                                {o.fulfillmentMode === 'dine_in' 
+                                  ? `Ready to serve directly to ${o.tableNumber || 'Table'} • Guest: ${o.guestName || o.customerName || 'Diner'} (${o.guestPhone || o.customerPhone || 'N/A'})` 
+                                  : o.fulfillmentMode === 'takeaway' 
+                                  ? 'Awaiting customer counter pickup with OTP' 
+                                  : 'Awaiting fleet partner pickup'}
                               </p>
                             )}
                           </div>
@@ -1642,7 +1780,7 @@ export default function KitchenManagerApp({
                               className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
                             >
                               <CheckCheck className="w-3.5 h-3.5" />
-                              <span>Handover / Dispatch</span>
+                              <span>{o.fulfillmentMode === 'dine_in' ? `Deliver & Serve to ${o.tableNumber || 'Table'}` : 'Handover / Dispatch'}</span>
                             </button>
                             <button
                               type="button"
@@ -1693,17 +1831,26 @@ export default function KitchenManagerApp({
                             <div>
                               <span className="text-xs font-mono font-black text-white">#{o.id}</span>
                               <span className="text-[9px] text-gray-400 block mt-0.5 font-mono">
-                                Total: ₹{o.total} • {o.paymentMethod || 'Prepaid'}
+                                Total: ₹{o.total} • {o.fulfillmentMode === 'dine_in' ? `🍽️ ${o.tableNumber || 'Table'}` : (o.paymentMethod || 'Prepaid')}
                               </span>
                             </div>
-                            <span className="text-[9px] font-mono font-black text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded">
-                              EN ROUTE
+                            <span className={`text-[9px] font-mono font-black px-2 py-0.5 rounded ${
+                              o.fulfillmentMode === 'dine_in'
+                                ? 'text-amber-300 bg-amber-500/20'
+                                : 'text-purple-300 bg-purple-500/20'
+                            }`}>
+                              {o.fulfillmentMode === 'dine_in' ? 'AT TABLE' : 'EN ROUTE'}
                             </span>
                           </div>
 
                           <div className="bg-[#10151C] p-2.5 rounded-xl border border-white/5 space-y-1">
-                            <span className="text-[9px] font-black uppercase text-gray-400 block">Recipient</span>
-                            <p className="text-xs font-bold text-gray-200">{o.customerName || (o as any).userName || 'Customer'}</p>
+                            <span className="text-[9px] font-black uppercase text-gray-400 block">
+                              {o.fulfillmentMode === 'dine_in' ? 'Diner Seated' : 'Recipient'}
+                            </span>
+                            <p className="text-xs font-bold text-gray-200">
+                              {o.customerName || (o as any).userName || 'Customer'}
+                              {o.fulfillmentMode === 'dine_in' && o.tableNumber && ` (${o.tableNumber})`}
+                            </p>
                             <p className="text-[10px] text-gray-400 truncate">{o.address}</p>
                           </div>
 
@@ -1713,7 +1860,7 @@ export default function KitchenManagerApp({
                             className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Mark Delivered / Handed Over</span>
+                            <span>{o.fulfillmentMode === 'dine_in' ? `✨ Mark Served & Vacate ${o.tableNumber || 'Table'}` : 'Mark Delivered / Handed Over'}</span>
                           </button>
                         </motion.div>
                       ))}
@@ -2744,7 +2891,439 @@ export default function KitchenManagerApp({
           </div>
         )}
 
+        {/* ======================================================== */}
+        {/* SUBSECTION 6: BHATTI DINE-IN TABLES & QR MANAGEMENT      */}
+        {/* ======================================================== */}
+        {kdsSubSection === 'tables' && (
+          <div className="bg-[#121820] border border-white/10 rounded-3xl p-6 space-y-6 shadow-xl">
+            
+            {/* Header with Dine-In Toggle & Add Table CTA */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+              <div>
+                <h3 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
+                  <UtensilsCrossed className="w-4 h-4 text-amber-400" />
+                  <span>{activeKitchen?.name} • Dining Room & Table QR Setup</span>
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Manage table seating availability, instant guest table ordering, and permanent scannable acrylic tent QRs.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Branch Dine-In Enable/Disable Switch */}
+                <button
+                  type="button"
+                  onClick={handleToggleDineInEnabled}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border ${
+                    activeKitchen?.hasDineIn !== false
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                  }`}
+                  title="Toggle dine-in service availability for customers at this Bhatti branch"
+                >
+                  <span className={`w-2 h-2 rounded-full ${activeKitchen?.hasDineIn !== false ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                  <span>{activeKitchen?.hasDineIn !== false ? 'Dine-In Enabled' : 'Dine-In Paused'}</span>
+                </button>
+
+                {(!activeKitchen?.tables || activeKitchen.tables.length === 0) && (
+                  <button
+                    type="button"
+                    onClick={handleSeedDefaultTables}
+                    className="px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer"
+                  >
+                    ⚡ Seed 5 Default Tables
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddTableModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Table</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-[#0A0E13] p-3.5 rounded-2xl border border-white/5">
+                <span className="text-[9px] font-black uppercase text-gray-400 block">Total Configured Tables</span>
+                <span className="text-xl font-black text-white font-mono mt-0.5 block">
+                  {(activeKitchen?.tables || []).length}
+                </span>
+              </div>
+              <div className="bg-[#0A0E13] p-3.5 rounded-2xl border border-emerald-500/20">
+                <span className="text-[9px] font-black uppercase text-emerald-400 block">Available for Seating</span>
+                <span className="text-xl font-black text-emerald-400 font-mono mt-0.5 block">
+                  {(activeKitchen?.tables || []).filter(t => !t.isOccupied).length}
+                </span>
+              </div>
+              <div className="bg-[#0A0E13] p-3.5 rounded-2xl border border-rose-500/20">
+                <span className="text-[9px] font-black uppercase text-rose-400 block">Currently Occupied</span>
+                <span className="text-xl font-black text-rose-400 font-mono mt-0.5 block">
+                  {(activeKitchen?.tables || []).filter(t => t.isOccupied).length}
+                </span>
+              </div>
+              <div className="bg-[#0A0E13] p-3.5 rounded-2xl border border-amber-500/20">
+                <span className="text-[9px] font-black uppercase text-amber-300 block">Active Dine-In Tickets</span>
+                <span className="text-xl font-black text-amber-300 font-mono mt-0.5 block">
+                  {kitchenOrders.filter(o => o.fulfillmentMode === 'dine_in' && o.status !== 'delivered' && o.status !== 'cancelled').length}
+                </span>
+              </div>
+            </div>
+
+            {/* Live Dining Tables Grid */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-gray-300">
+                  Floor Plan & Table Occupancy Controls
+                </span>
+                <span className="text-[10px] text-gray-500">
+                  Click any table status toggle to instantly free or occupy it
+                </span>
+              </div>
+
+              {(!activeKitchen?.tables || activeKitchen.tables.length === 0) ? (
+                <div className="p-12 text-center border border-dashed border-white/10 rounded-3xl space-y-3 bg-[#0A0E13]">
+                  <span className="text-4xl block">🍽️</span>
+                  <h4 className="text-sm font-black text-white">No Dining Tables Configured Yet</h4>
+                  <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                    Configure your physical tables to generate vector QR standees and allow diners to order directly from their seats.
+                  </p>
+                  <div className="flex justify-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleSeedDefaultTables}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      ⚡ Quick Setup (5 Tables)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddTableModal(true)}
+                      className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-xs rounded-xl cursor-pointer"
+                    >
+                      + Add Custom Table
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {activeKitchen.tables.map((tbl) => {
+                    const activeOrder = tbl.isOccupied && tbl.currentOrderId 
+                      ? kitchenOrders.find(o => o.id === tbl.currentOrderId) 
+                      : kitchenOrders.find(o => o.fulfillmentMode === 'dine_in' && (o.tableNumber?.toLowerCase() === tbl.tableNumber.toLowerCase() || o.tableId === tbl.id) && o.status !== 'delivered' && o.status !== 'cancelled');
+
+                    return (
+                      <div
+                        key={tbl.id}
+                        className={`bg-[#151C24] border rounded-2xl p-4 space-y-3 transition-all relative overflow-hidden shadow-lg ${
+                          tbl.isOccupied 
+                            ? 'border-rose-500/50 bg-gradient-to-b from-[#181318] to-[#151C24]' 
+                            : 'border-emerald-500/30 hover:border-emerald-500/60'
+                        }`}
+                      >
+                        {/* Status bar pill */}
+                        <div className={`absolute top-0 left-0 right-0 h-1 ${tbl.isOccupied ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+
+                        <div className="flex items-start justify-between gap-2 pt-1">
+                          <div>
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
+                              {tbl.section || 'Dining Section'}
+                            </span>
+                            <h4 className="text-lg font-black text-white tracking-tight flex items-center gap-1.5">
+                              <span>🍽️</span>
+                              <span>{tbl.tableNumber}</span>
+                            </h4>
+                            <span className="text-[10px] text-gray-400 font-mono">
+                              Capacity: {tbl.capacity || 4} Guests
+                            </span>
+                          </div>
+
+                          {/* 1-Click Availability Toggle */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTableOccupied(tbl.id, tbl.isOccupied)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm border ${
+                              tbl.isOccupied
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                            }`}
+                            title="Click to toggle Available vs Occupied"
+                          >
+                            {tbl.isOccupied ? '🔴 Occupied' : '🟢 Available'}
+                          </button>
+                        </div>
+
+                        {/* Active Order Notice if Occupied */}
+                        {activeOrder ? (
+                          <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-[10px] font-mono">
+                              <span className="text-amber-400 font-black">#{activeOrder.id}</span>
+                              <span className="text-gray-400 uppercase">{activeOrder.status}</span>
+                            </div>
+                            <p className="text-white font-bold text-[11px] truncate">
+                              {activeOrder.customerName || activeOrder.guestName || 'Dine-In Guest'}
+                            </p>
+                            <div className="flex items-center justify-between text-[10px] text-gray-400">
+                              <span>₹{activeOrder.total} ({activeOrder.items?.length || 0} dishes)</span>
+                              <button
+                                type="button"
+                                onClick={() => setKdsSubSection('prep_lanes')}
+                                className="text-amber-400 hover:underline font-bold cursor-pointer"
+                              >
+                                View in KDS ➜
+                              </button>
+                            </div>
+                          </div>
+                        ) : tbl.isOccupied ? (
+                          <div className="p-2 bg-white/5 rounded-xl text-[10px] text-gray-400 flex items-center justify-between">
+                            <span>Seated without digital ticket</span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTableOccupied(tbl.id, true)}
+                              className="text-emerald-400 underline font-bold cursor-pointer"
+                            >
+                              Vacate Table
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {/* Action buttons footer */}
+                        <div className="flex items-center justify-between pt-2 border-t border-white/5 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTableForQrModal(tbl)}
+                            className="flex-1 py-1.5 px-2 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                            <span>View & Print QR</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTable(tbl.id)}
+                            className="p-2 bg-white/5 hover:bg-rose-500/20 text-gray-400 hover:text-rose-400 rounded-xl transition-all cursor-pointer"
+                            title="Delete Table"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
       </div>
+
+      {/* ======================================================== */}
+      {/* MODAL: ADD DINE-IN TABLE                                 */}
+      {/* ======================================================== */}
+      {showAddTableModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#161D24] border border-white/10 rounded-3xl p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <h4 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                <UtensilsCrossed className="w-4 h-4 text-amber-400" />
+                <span>Add Dining Room Table</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowAddTableModal(false)}
+                className="text-gray-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddTable} className="space-y-3.5 text-xs">
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
+                  Table Number / Identifier *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Table 6 or Patio 2"
+                  value={newTableNumber}
+                  onChange={(e) => setNewTableNumber(e.target.value)}
+                  className="w-full bg-[#10151C] border border-white/10 rounded-xl px-3 py-2.5 text-white font-bold focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
+                    Seating Capacity
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={newTableCapacity}
+                    onChange={(e) => setNewTableCapacity(Number(e.target.value))}
+                    className="w-full bg-[#10151C] border border-white/10 rounded-xl px-3 py-2.5 text-white font-bold focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
+                    Dining Section
+                  </label>
+                  <select
+                    value={newTableSection}
+                    onChange={(e) => setNewTableSection(e.target.value)}
+                    className="w-full bg-[#10151C] border border-white/10 rounded-xl px-3 py-2.5 text-white font-bold focus:outline-none focus:border-amber-400"
+                  >
+                    <option value="Main Dining Hall">Main Dining Hall</option>
+                    <option value="Garden Patio">Garden Patio</option>
+                    <option value="Family Lounge">Family Lounge</option>
+                    <option value="Rooftop Terrace">Rooftop Terrace</option>
+                    <option value="VIP Cabin">VIP Cabin</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddTableModal(false)}
+                  className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 font-black text-xs uppercase rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-xs uppercase rounded-xl cursor-pointer shadow-md"
+                >
+                  Create & Save Table
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: TABLE QR CODE & PRINTABLE ACRYLIC STANDEE         */}
+      {/* ======================================================== */}
+      {selectedTableForQrModal && activeKitchen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:fixed print:inset-0">
+          <div className="w-full max-w-md bg-white text-slate-900 rounded-3xl p-6 space-y-5 shadow-2xl border border-amber-500/30 my-auto print:max-w-none print:border-none print:shadow-none print:rounded-none">
+            
+            {/* Modal Header (Hidden in Print) */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 print:hidden">
+              <div className="flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-amber-600" />
+                <span className="text-xs font-black uppercase tracking-wider text-slate-900">
+                  Table QR & Acrylic Standee
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedTableForQrModal(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Printable Acrylic Standee Tent Card */}
+            <div className="border-4 border-amber-900/40 rounded-3xl p-6 text-center space-y-4 bg-gradient-to-b from-amber-50/50 via-white to-amber-50/30 shadow-inner print:border-8 print:border-amber-950 print:p-8">
+              {/* Crest */}
+              <div className="flex flex-col items-center">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-900 text-white flex items-center justify-center font-black text-2xl shadow-md border border-amber-400/40">
+                  ♠
+                </div>
+                <h2 className="text-lg font-black tracking-tight text-slate-950 mt-1 uppercase">
+                  TAASH BHATTI
+                </h2>
+                <span className="text-[8px] font-black uppercase tracking-widest text-amber-800">
+                  Authentic Clay-Oven Cuisine
+                </span>
+              </div>
+
+              {/* Table Number Badge */}
+              <div className="bg-amber-100/80 border-2 border-amber-300 rounded-2xl py-2 px-4 inline-block">
+                <span className="text-[9px] font-black uppercase tracking-widest text-amber-900 block leading-none">
+                  SEATED AT
+                </span>
+                <span className="text-2xl font-black text-slate-950 font-mono tracking-tight">
+                  {selectedTableForQrModal.tableNumber}
+                </span>
+                <span className="text-[9px] text-amber-800 font-bold block mt-0.5">
+                  {activeKitchen.name} • {selectedTableForQrModal.section || 'Dining Hall'}
+                </span>
+              </div>
+
+              {/* QR Code Container */}
+              <div className="bg-white p-3 rounded-2xl border-2 border-slate-900/20 shadow-md inline-block max-w-[240px] mx-auto">
+                {tableQrDataUrl ? (
+                  <img
+                    src={tableQrDataUrl}
+                    alt={`Table ${selectedTableForQrModal.tableNumber} QR Code`}
+                    className="w-52 h-52 object-contain mx-auto"
+                  />
+                ) : (
+                  <div className="w-52 h-52 flex items-center justify-center text-xs text-slate-400 font-bold">
+                    Generating High-Res QR...
+                  </div>
+                )}
+              </div>
+
+              {/* Steps for Diner */}
+              <div className="space-y-1 text-slate-700">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                  Scan to Browse & Order
+                </h3>
+                <p className="text-[10px] text-slate-600 font-medium max-w-xs mx-auto leading-relaxed">
+                  Open your phone camera • No app download required • Instant kitchen transmission to your table!
+                </p>
+              </div>
+            </div>
+
+            {/* Actions Bar (Hidden in Print) */}
+            <div className="space-y-2 print:hidden pt-1">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => downloadFile(tableQrDataUrl, `TaashBhatti_QR_${selectedTableForQrModal.tableNumber.replace(/\s+/g, '_')}.png`, false)}
+                  className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download PNG</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => downloadFile(tableQrSvg, `TaashBhatti_QR_${selectedTableForQrModal.tableNumber.replace(/\s+/g, '_')}.svg`, true)}
+                  className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download SVG</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="w-full py-3 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Acrylic Tent Standee</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* MODAL: PREP DELAY RUSH BUFFER CONTROLLER                  */}

@@ -300,6 +300,59 @@ export default function App() {
   });
   const [preloadedCouponCode, setPreloadedCouponCode] = useState<string | null>(null);
 
+  // Dine-In Table QR Scanner Session (?table=Table%201&bhatti=k1)
+  const [dineInSession, setDineInSession] = useState<{
+    tableNumber: string;
+    bhattiId?: string;
+    bhattiName?: string;
+    isFromQR: boolean;
+  } | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const tbl = params.get('table') || params.get('tableNumber') || params.get('t');
+        if (tbl) {
+          const bhatti = params.get('bhatti') || params.get('kitchen') || params.get('bhattiId') || undefined;
+          const bhattiName = params.get('bhattiName') || undefined;
+          const session = {
+            tableNumber: decodeURIComponent(tbl),
+            bhattiId: bhatti ? decodeURIComponent(bhatti) : undefined,
+            bhattiName: bhattiName ? decodeURIComponent(bhattiName) : undefined,
+            isFromQR: true,
+          };
+          try {
+            localStorage.setItem('tb_active_dine_in_session', JSON.stringify(session));
+          } catch (e) {}
+          return session;
+        }
+        const cached = localStorage.getItem('tb_active_dine_in_session');
+        if (cached) {
+          return JSON.parse(cached);
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  const handleClearDineInSession = () => {
+    setDineInSession(null);
+    try {
+      localStorage.removeItem('tb_active_dine_in_session');
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('table');
+        url.searchParams.delete('tableNumber');
+        url.searchParams.delete('t');
+        url.searchParams.delete('bhatti');
+        url.searchParams.delete('kitchen');
+        url.searchParams.delete('bhattiId');
+        url.searchParams.delete('bhattiName');
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+      }
+    } catch (e) {}
+    showToast("🍽️ Dine-in table session cleared.");
+  };
+
   // Group Ordering Active State & Preloaded Meals (from Reorder)
   const [groupOrderPreloadMeals, setGroupOrderPreloadMeals] = useState<{ meal: Meal; quantity: number }[] | null>(null);
   const [activeGroupRoom, setActiveGroupRoom] = useState<GroupOrderRoom | null>(null);
@@ -1572,22 +1625,32 @@ export default function App() {
 
   // Place order wrapper (synced to Firestore for both authenticated and guest users)
   const handlePlaceOrder = async (order: Order) => {
+    const isDineIn = order.fulfillmentMode === 'dine_in';
+
     // MANDATORY PHONE VERIFICATION CHECK:
-    // Every user (Google, Apple, Email, Guest) MUST have a verified phone number via OTP
-    const cleanPhone = (user.phone || auth.currentUser?.phoneNumber || order.customerPhone || '').replace(/\D/g, '');
-    const isVerified = user.isPhoneVerified || !!auth.currentUser?.phoneNumber;
-    if (!cleanPhone || cleanPhone.length < 10 || !isVerified) {
+    // Delivery & Takeaway users MUST have a verified phone number via OTP.
+    // Dine-In guests fill form name & phone directly without OTP verification or account login required.
+    const cleanPhone = (user.phone || auth.currentUser?.phoneNumber || order.customerPhone || order.guestPhone || '').replace(/\D/g, '');
+    const isVerified = user.isPhoneVerified || !!auth.currentUser?.phoneNumber || isDineIn;
+
+    if (!isDineIn && (!cleanPhone || cleanPhone.length < 10 || !isVerified)) {
       setShowMandatoryPhoneModal(true);
       showToast("📱 Mobile verification with SMS OTP is required before placing your order.");
       return;
     }
 
-    const activeUserId = auth.currentUser?.uid || getGuestUserId();
+    if (isDineIn && (!cleanPhone || cleanPhone.length < 10)) {
+      showToast("📱 Please enter a valid 10-digit mobile number for table service.");
+      return;
+    }
+
+    const activeUserId = auth.currentUser?.uid || (isDineIn ? `guest_table_${cleanPhone || Date.now()}` : getGuestUserId());
     const orderWithUser: Order = {
       ...order,
       userId: activeUserId,
-      customerName: user.name || order.customerName || 'Customer',
-      customerPhone: user.phone || auth.currentUser?.phoneNumber || order.customerPhone || 'N/A',
+      customerName: isDineIn ? (order.guestName || order.customerName || user.name || 'Dine-In Guest') : (user.name || order.customerName || 'Customer'),
+      customerPhone: isDineIn ? (order.guestPhone || order.customerPhone || user.phone || 'N/A') : (user.phone || auth.currentUser?.phoneNumber || order.customerPhone || 'N/A'),
+      isDineInGuest: isDineIn && !auth.currentUser,
     };
     const sanitizedOrder = sanitizeForFirestore(orderWithUser);
     const pathForWrite = `orders/${order.id}`;
@@ -1606,6 +1669,30 @@ export default function App() {
       await setDoc(doc(db, 'orders', order.id), sanitizedOrder);
       smartPushService.cancelAbandonedCartPush();
       showToast("🎉 Order placed and live synced to Cloud KDS Counter!");
+
+      // If dine-in order, automatically flag the table as occupied in Firestore
+      if (isDineIn && order.tableNumber && (order.assignedKitchenId || order.dineInBhattiId)) {
+        const kId = order.assignedKitchenId || order.dineInBhattiId;
+        if (kId) {
+          try {
+            const kRef = doc(db, 'kitchens', kId);
+            const kDoc = await getDoc(kRef);
+            if (kDoc.exists()) {
+              const kData = kDoc.data() as Kitchen;
+              const currentTables = kData.tables || [];
+              const updatedTables = currentTables.map(tbl => {
+                if (tbl.tableNumber.toLowerCase() === order.tableNumber?.toLowerCase() || tbl.id === order.tableId) {
+                  return { ...tbl, isOccupied: true, occupiedAt: new Date().toISOString(), currentOrderId: order.id };
+                }
+                return tbl;
+              });
+              await updateDoc(kRef, { tables: updatedTables });
+            }
+          } catch (tableErr) {
+            console.warn("Could not auto-mark table as occupied:", tableErr);
+          }
+        }
+      }
     } catch (error) {
       console.error("Error saving order to Firestore:", error);
       showToast("🎉 Order saved locally (offline mode)");
@@ -2695,6 +2782,40 @@ export default function App() {
         </div>
       )}
 
+      {/* ROYAL DINE-IN STICKY BANNER */}
+      {dineInSession && (
+        <div className="sticky top-0 z-40 bg-gradient-to-r from-emerald-950 via-brand-green to-emerald-900 text-white px-4 py-2.5 shadow-lg border-b border-emerald-400/30 flex items-center justify-between text-xs font-bold animate-fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base shrink-0">🍽️</span>
+            <div className="truncate">
+              <span className="font-black text-amber-300 mr-1.5 uppercase tracking-wide text-[10px] sm:text-xs">
+                Seated at {dineInSession.tableNumber}
+              </span>
+              <span className="text-emerald-100 text-[10px] sm:text-xs font-medium">
+                • {dineInSession.bhattiName || kitchens.find(k => k.id === dineInSession.bhattiId)?.name || 'Taash Bhatti'}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setCartOpen(true)}
+              className="bg-amber-400 hover:bg-amber-300 text-stone-950 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-xs cursor-pointer transition-all"
+            >
+              Order ({cart.length})
+            </button>
+            <button
+              type="button"
+              onClick={handleClearDineInSession}
+              className="text-[10px] text-emerald-200 hover:text-white underline cursor-pointer"
+              title="Leave Dine-in session"
+            >
+              Leave
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* RENDER ACTIVE TAB COHORT */}
       <main className="flex-1">
         {activeTab === 'home' && (
@@ -2926,6 +3047,8 @@ export default function App() {
         likedMeals={likedMeals}
         onAddToCart={handleAddToCart}
         initialCouponCode={preloadedCouponCode}
+        dineInSession={dineInSession}
+        onClearDineInSession={handleClearDineInSession}
       />
 
       {/* PERSISTENT MOBILE BOTTOM TAB RAIL */}
