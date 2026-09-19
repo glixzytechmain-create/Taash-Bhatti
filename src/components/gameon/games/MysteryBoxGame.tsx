@@ -20,11 +20,13 @@ export default function MysteryBoxGame({ game, onFinishTurn, disabled }: Mystery
   const [isOpening, setIsOpening] = useState(false);
   const [openedOutcome, setOpenedOutcome] = useState<GameOutcome | null>(null);
 
+  const boxCount = Number(game.mysteryBoxCount) === 4 ? 4 : 3;
   const boxes = [
     { id: 1, name: 'Clay Handi #1', color: 'from-amber-800 to-amber-950' },
     { id: 2, name: 'Royal Chest #2', color: 'from-orange-800 to-amber-950' },
     { id: 3, name: 'Bhatti Vault #3', color: 'from-yellow-700 to-amber-950' },
-  ];
+    { id: 4, name: 'Ember Handi #4', color: 'from-red-800 to-amber-950' },
+  ].slice(0, boxCount);
 
   const handlePickBox = (index: number) => {
     if (chosenBoxIndex !== null || isOpening || disabled) return;
@@ -56,8 +58,8 @@ export default function MysteryBoxGame({ game, onFinishTurn, disabled }: Mystery
         </p>
       </div>
 
-      {/* 3 MYSTERY BOXES / CLAY HANDIS */}
-      <div className="grid grid-cols-3 gap-3 sm:gap-4 w-full max-w-md">
+      {/* MYSTERY BOXES / CLAY HANDIS */}
+      <div className={boxCount === 4 ? "grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-md" : "grid grid-cols-3 gap-3 sm:gap-4 w-full max-w-md"}>
         {boxes.map((box, idx) => {
           const isSelected = chosenBoxIndex === idx;
           const isOther = chosenBoxIndex !== null && chosenBoxIndex !== idx;

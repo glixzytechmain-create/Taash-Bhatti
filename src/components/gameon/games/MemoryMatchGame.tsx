@@ -31,16 +31,20 @@ const DEFAULT_PAIRS = [
 ];
 
 export default function MemoryMatchGame({ game, onFinishTurn, disabled }: MemoryMatchGameProps) {
+  const maxTurns = Number(game.memoryMaxTurns) || 6;
+  const pairCount = Number(game.memoryPairsCount) || 3;
   const [cards, setCards] = useState<CardItem[]>([]);
   const [selectedCards, setSelectedCards] = useState<number[]>([]);
-  const [remainingTurns, setRemainingTurns] = useState(6);
+  const [remainingTurns, setRemainingTurns] = useState(maxTurns);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Initialize and shuffle cards
   useEffect(() => {
-    const pairs = game.memoryPairs && game.memoryPairs.length >= 3 ? game.memoryPairs.slice(0, 3) : DEFAULT_PAIRS;
+    const rawPairs = game.memoryPairs && game.memoryPairs.length >= pairCount 
+      ? game.memoryPairs.slice(0, pairCount) 
+      : DEFAULT_PAIRS.slice(0, pairCount);
     const deck: CardItem[] = [];
-    pairs.forEach((p) => {
+    rawPairs.forEach((p) => {
       deck.push({ uid: `${p.id}_a`, pairId: p.id, name: p.name, emoji: p.emoji, isFlipped: false, isMatched: false });
       deck.push({ uid: `${p.id}_b`, pairId: p.id, name: p.name, emoji: p.emoji, isFlipped: false, isMatched: false });
     });
@@ -52,9 +56,9 @@ export default function MemoryMatchGame({ game, onFinishTurn, disabled }: Memory
     }
 
     setCards(deck);
-    setRemainingTurns(6);
+    setRemainingTurns(Number(game.memoryMaxTurns) || 6);
     setSelectedCards([]);
-  }, [game.memoryPairs]);
+  }, [game.memoryPairs, game.memoryMaxTurns, game.memoryPairsCount]);
 
   const handleCardClick = (index: number) => {
     if (disabled || isProcessing || remainingTurns <= 0) return;
@@ -126,15 +130,15 @@ export default function MemoryMatchGame({ game, onFinishTurn, disabled }: Memory
       <div className="flex items-center justify-between w-full max-w-sm px-3 py-2 bg-stone-900/80 rounded-2xl border border-amber-500/20">
         <div className="flex items-center gap-1.5 text-xs font-bold text-stone-300">
           <Flame className="w-4 h-4 text-amber-500 fill-amber-500" />
-          <span>Match All 3 Pairs</span>
+          <span>Match All {cards.length > 0 ? cards.length / 2 : 3} Pairs</span>
         </div>
         <div className="px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-xl text-xs font-black text-amber-300">
           {remainingTurns} TURNS LEFT
         </div>
       </div>
 
-      {/* 2x3 CARD GRID */}
-      <div className="grid grid-cols-3 gap-3 w-full max-w-sm">
+      {/* DYNAMIC CARD GRID */}
+      <div className={cards.length > 6 ? "grid grid-cols-4 gap-2.5 w-full max-w-md" : "grid grid-cols-3 gap-3 w-full max-w-sm"}>
         {cards.map((card, idx) => {
           const showFront = card.isFlipped || card.isMatched;
 

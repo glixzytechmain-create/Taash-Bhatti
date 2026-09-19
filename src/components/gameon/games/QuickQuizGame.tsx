@@ -82,8 +82,8 @@ export default function QuickQuizGame({ game, onFinishTurn, disabled }: QuickQui
         setIsAnswered(false);
         setTimeLeft(12);
       } else {
-        // Finished all questions! If score >= 2 (or 3/3), player wins
-        const winThreshold = Math.ceil(questions.length * 0.6);
+        // Finished all questions! Check passing score
+        const winThreshold = Number(game.quizPassingScore) || Math.ceil(questions.length * 0.6);
         if (nextScore >= winThreshold) {
           const winOutcome = game.outcomes.find((o) => o.isWin) || pickWeightedOutcome(game.outcomes);
           onFinishTurn(winOutcome);

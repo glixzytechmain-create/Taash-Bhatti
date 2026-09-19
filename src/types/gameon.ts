@@ -48,7 +48,14 @@ export interface GameConfig {
   description?: string;      // Patron rules
   outcomes: GameOutcome[];   // Outcomelist with probability weights & attached coupons
   quizQuestions?: GameQuizQuestion[]; // For quick_quiz games
+  quizPassingScore?: number;          // Min score to win (e.g. 2 of 3)
   memoryPairs?: MemoryCardPair[];     // For memory match games
+  memoryMaxTurns?: number;            // Allowed turns before loss (e.g. 6, 8, 10)
+  memoryPairsCount?: number;          // 3 or 4 pairs
+  coinWinReward?: GameOutcome;        // Authentic fair 50/50 winning reward
+  coinLossOutcome?: GameOutcome;      // Consolation outcome on wrong side
+  mysteryBoxCount?: number;           // 3 or 4 clay handis
+  scratchFoilTheme?: 'gold' | 'charcoal' | 'ember';
   totalPlays: number;
   totalWins: number;
   createdAt: string;

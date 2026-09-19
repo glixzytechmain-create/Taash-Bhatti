@@ -32,13 +32,27 @@ export default function ScratchCardGame({ game, onFinishTurn, disabled }: Scratc
     const width = canvas.width;
     const height = canvas.height;
 
-    // Metallic Gold Gradient
-    const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, '#d97706'); // amber-600
-    grad.addColorStop(0.2, '#fef08a'); // amber-100 highlight
-    grad.addColorStop(0.4, '#b45309'); // amber-700
-    grad.addColorStop(0.7, '#fef08a'); // highlight
-    grad.addColorStop(1, '#78350f'); // dark amber
+    // Foil Gradient (Gold, Charcoal Titanium, or Royal Ember)
+    const theme = game.scratchFoilTheme || 'gold';
+    if (theme === 'charcoal') {
+      grad.addColorStop(0, '#374151');
+      grad.addColorStop(0.2, '#9ca3af');
+      grad.addColorStop(0.4, '#1f2937');
+      grad.addColorStop(0.7, '#d1d5db');
+      grad.addColorStop(1, '#111827');
+    } else if (theme === 'ember') {
+      grad.addColorStop(0, '#c2410c');
+      grad.addColorStop(0.2, '#fdba74');
+      grad.addColorStop(0.4, '#9a3412');
+      grad.addColorStop(0.7, '#fef08a');
+      grad.addColorStop(1, '#7c2d12');
+    } else {
+      grad.addColorStop(0, '#d97706'); // amber-600
+      grad.addColorStop(0.2, '#fef08a'); // amber-100 highlight
+      grad.addColorStop(0.4, '#b45309'); // amber-700
+      grad.addColorStop(0.7, '#fef08a'); // highlight
+      grad.addColorStop(1, '#78350f'); // dark amber
+    }
 
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);

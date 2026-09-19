@@ -27,15 +27,30 @@ export default function CoinFlipGame({ game, onFinishTurn, disabled }: CoinFlipG
     setIsFlipping(true);
     playCoinToss();
 
-    // 1. Pick outcome based on weights
-    const outcome = pickWeightedOutcome(game.outcomes);
+    // Authentic fair 50/50 physical coin flip
+    const willLandOn: 'heads' | 'tails' = Math.random() < 0.5 ? 'heads' : 'tails';
+    const isPlayerWin = willLandOn === selectedSide;
 
-    // If outcome is a win, make it land on user's chosen side! If not a win, land on opposite.
-    const willLandOn: 'heads' | 'tails' = outcome.isWin
-      ? selectedSide
-      : selectedSide === 'heads'
-      ? 'tails'
-      : 'heads';
+    // Determine win vs loss outcome
+    let outcome: GameOutcome;
+    if (isPlayerWin) {
+      outcome = game.coinWinReward || game.outcomes.find((o) => o.isWin) || {
+        id: 'coin_win',
+        label: `Toss Won: Landed on ${willLandOn === 'heads' ? 'Royal Crest' : 'Bhatti Flame'}!`,
+        isWin: true,
+        couponCode: 'ROYALFEAST',
+        probabilityWeight: 50,
+        rewardDescription: 'You called the coin toss correctly!',
+      };
+    } else {
+      outcome = game.coinLossOutcome || game.outcomes.find((o) => !o.isWin) || {
+        id: 'coin_loss',
+        label: `Landed on ${willLandOn === 'heads' ? 'Royal Crest' : 'Bhatti Flame'}`,
+        isWin: false,
+        probabilityWeight: 50,
+        rewardDescription: 'The coin landed on the opposite side. Better luck next time!',
+      };
+    }
 
     // 5-7 complete flips + side target
     const flips = 6;
