@@ -6,6 +6,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Phone, 
+  PhoneCall,
+  MessageSquare,
+  MessageCircle,
   KeyRound, 
   ShieldCheck, 
   ArrowRight, 
@@ -77,6 +80,12 @@ export default function PhoneAuthComponent({
   const [email, setEmail] = useState('');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
 
+  // 2Factor OTP Delivery Channels: 'voice' (Receive a Call) | 'sms' | 'whatsapp'
+  const [selectedChannel, setSelectedChannel] = useState<'voice' | 'sms' | 'whatsapp'>('voice');
+  const [activeDeliveryChannel, setActiveDeliveryChannel] = useState<'voice' | 'sms' | 'whatsapp'>('voice');
+  const [twoFactorSessionId, setTwoFactorSessionId] = useState<string | null>(null);
+  const [isUsingTwoFactor, setIsUsingTwoFactor] = useState<boolean>(true);
+
   // Registered account state
   const [knownUserAccount, setKnownUserAccount] = useState<{ user: User; id: string } | null>(null);
   const [verifyMode, setVerifyMode] = useState<'atp' | 'sms'>('atp'); // within registered_verify
@@ -86,7 +95,7 @@ export default function PhoneAuthComponent({
   const [showAtpMasked, setShowAtpMasked] = useState<boolean>(true);
   const atpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // SMS OTP states
+  // SMS / Voice OTP states
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [timerSeconds, setTimerSeconds] = useState<number>(60);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -188,7 +197,44 @@ export default function PhoneAuthComponent({
     }
   };
 
-  // Helper: Dispatch real cellular SMS OTP via Firebase Auth
+  // Helper: Dispatch 2Factor OTP (Voice Call, SMS, WhatsApp)
+  const dispatchTwoFactorOtp = async (channel: 'voice' | 'sms' | 'whatsapp' = selectedChannel) => {
+    setErrorMessage(null);
+    setLoading(true);
+    setActiveDeliveryChannel(channel);
+    setSelectedChannel(channel);
+
+    try {
+      const res = await fetch('/api/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: fullE164Phone, channel }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to dispatch verification code via 2Factor.');
+      }
+
+      setTwoFactorSessionId(data.sessionId);
+      setIsUsingTwoFactor(true);
+      setTimerSeconds(60);
+      setIsTimerRunning(true);
+      setOtpDigits(['', '', '', '', '', '']);
+      setTimeout(() => {
+        inputRefs.current[0]?.focus();
+      }, 300);
+      return true;
+    } catch (err: any) {
+      console.error('2Factor dispatch error:', err);
+      setErrorMessage(err.message || 'Failed to dispatch verification code.');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper: Dispatch real cellular SMS OTP via Firebase Auth (with 2Factor fallback)
   const dispatchRealSmsOtp = async () => {
     setErrorMessage(null);
     setLoading(true);
@@ -202,6 +248,7 @@ export default function PhoneAuthComponent({
 
       const confirmation = await signInWithPhoneNumber(auth, fullE164Phone, verifier);
       setConfirmationResult(confirmation);
+      setIsUsingTwoFactor(false);
       setTimerSeconds(60);
       setIsTimerRunning(true);
       setOtpDigits(['', '', '', '', '', '']);
@@ -210,18 +257,10 @@ export default function PhoneAuthComponent({
       }, 300);
       return true;
     } catch (err: any) {
-      console.error('Failed to dispatch cellular SMS OTP:', err);
+      console.error('Failed to dispatch cellular SMS OTP, falling back to 2Factor:', err);
       cleanupRecaptcha();
-      if (err?.code === 'auth/invalid-phone-number') {
-        setErrorMessage('Invalid phone number format. Please check your country code and digits.');
-      } else if (err?.code === 'auth/too-many-requests') {
-        setErrorMessage('Too many SMS attempts. Please wait 60 seconds or use your All-Time Password (ATP).');
-      } else if (err?.code === 'auth/captcha-check-failed') {
-        setErrorMessage('reCAPTCHA verification failed. Please try again.');
-      } else {
-        setErrorMessage(err?.message || 'Failed to send SMS OTP. Please check cellular connectivity.');
-      }
-      return false;
+      // Fallback directly to 2Factor gateway
+      return await dispatchTwoFactorOtp('sms');
     } finally {
       setLoading(false);
     }
@@ -266,16 +305,15 @@ export default function PhoneAuthComponent({
         }, 300);
       } else {
         // NEW FIRST-TIME USER!
-        // Dispatch real cellular SMS OTP
-        const sent = await dispatchRealSmsOtp();
+        // Dispatch chosen 2Factor OTP (Voice Call, SMS, WhatsApp)
+        const sent = await dispatchTwoFactorOtp(selectedChannel);
         if (sent) {
           setStep('new_user_otp');
         }
       }
     } catch (err: any) {
       console.error('Error checking account:', err);
-      // Fallback: send SMS OTP
-      const sent = await dispatchRealSmsOtp();
+      const sent = await dispatchTwoFactorOtp(selectedChannel);
       if (sent) {
         setStep('new_user_otp');
       }
@@ -394,7 +432,15 @@ export default function PhoneAuthComponent({
 
   // Switch registered user to SMS OTP
   const handleRequestSmsOtpForRegistered = async () => {
-    const sent = await dispatchRealSmsOtp();
+    const sent = await dispatchTwoFactorOtp('sms');
+    if (sent) {
+      setVerifyMode('sms');
+    }
+  };
+
+  // Switch registered user to Voice Call OTP
+  const handleRequestVoiceOtpForRegistered = async () => {
+    const sent = await dispatchTwoFactorOtp('voice');
     if (sent) {
       setVerifyMode('sms');
     }
@@ -449,22 +495,91 @@ export default function PhoneAuthComponent({
     }
   };
 
-  // Verify SMS OTP
+  // Verify OTP (2Factor or Firebase Auth)
   const handleVerifyOtp = async (codeToVerify?: string) => {
     const code = codeToVerify || otpDigits.join('');
     setErrorMessage(null);
 
     if (code.length !== 6) {
-      setErrorMessage('Please enter all 6 digits of the SMS code.');
-      return;
-    }
-
-    if (!confirmationResult) {
-      setErrorMessage('Verification session expired. Please request a new SMS code.');
+      setErrorMessage('Please enter all 6 digits of the verification code.');
       return;
     }
 
     setLoading(true);
+
+    // Flow 1: 2Factor verification (Voice / SMS / WhatsApp)
+    if (isUsingTwoFactor && twoFactorSessionId) {
+      try {
+        const res = await fetch('/api/otp/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: twoFactorSessionId,
+            otp: code,
+            phone: fullE164Phone,
+            channel: activeDeliveryChannel,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Invalid or expired OTP entered.');
+        }
+
+        if (knownUserAccount) {
+          setStep('verifying');
+
+          const finalProfile: User = {
+            ...knownUserAccount.user,
+            phone: fullE164Phone,
+            isPhoneVerified: true,
+          };
+
+          try {
+            localStorage.setItem('fitzaika_auth_session', 'true');
+            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
+            localStorage.setItem(
+              'fitzaika_cached_fb_user',
+              JSON.stringify({
+                uid: knownUserAccount.id,
+                phoneNumber: fullE164Phone,
+                displayName: finalProfile.name,
+                email: finalProfile.email || '',
+              })
+            );
+          } catch (e) {}
+
+          await new Promise((r) => setTimeout(r, 1200));
+
+          onSuccess({
+            user: finalProfile,
+            fbUser: {
+              uid: knownUserAccount.id,
+              phoneNumber: fullE164Phone,
+              displayName: finalProfile.name,
+              email: finalProfile.email || '',
+            },
+            isNewUser: false,
+          });
+          return;
+        } else {
+          setStep('new_user_profile');
+          return;
+        }
+      } catch (err: any) {
+        console.error('2Factor verify error:', err);
+        setErrorMessage(err.message || 'Incorrect verification code. Please check and try again.');
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Flow 2: Firebase confirmationResult fallback
+    if (!confirmationResult) {
+      setErrorMessage('Verification session expired. Please request a new code.');
+      setLoading(false);
+      return;
+    }
 
     try {
       const cred = await confirmationResult.confirm(code);
@@ -679,7 +794,7 @@ export default function PhoneAuthComponent({
             <div>
               <p className="font-bold text-brand-charcoal">Fast Mobile Sign-In</p>
               <p className="text-[10px] text-brand-charcoal/60">
-                Instant login with your All-Time Password (ATP) or SMS code.
+                Sign in with an instant automated call, SMS, or All-Time Password (ATP).
               </p>
             </div>
           </div>
@@ -746,6 +861,53 @@ export default function PhoneAuthComponent({
             </div>
           </div>
 
+          {/* Delivery Method Selection: Voice Call, SMS, WhatsApp */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase text-brand-charcoal/60 block tracking-wide">
+              Select OTP Delivery Option
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedChannel('voice')}
+                className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                  selectedChannel === 'voice'
+                    ? 'bg-amber-500/15 border-amber-500 text-amber-800 ring-1 ring-amber-500/30'
+                    : 'bg-white border-brand-green/15 text-brand-charcoal/70 hover:bg-brand-cream/30'
+                }`}
+              >
+                <PhoneCall className="w-4 h-4 text-amber-600" />
+                <span className="text-[10px] font-bold">Receive Call</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedChannel('sms')}
+                className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                  selectedChannel === 'sms'
+                    ? 'bg-brand-green/15 border-brand-green text-brand-green ring-1 ring-brand-green/30'
+                    : 'bg-white border-brand-green/15 text-brand-charcoal/70 hover:bg-brand-cream/30'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4 text-brand-green" />
+                <span className="text-[10px] font-bold">SMS OTP</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedChannel('whatsapp')}
+                className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                  selectedChannel === 'whatsapp'
+                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-800 ring-1 ring-emerald-500/30'
+                    : 'bg-white border-brand-green/15 text-brand-charcoal/70 hover:bg-brand-cream/30'
+                }`}
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-600" />
+                <span className="text-[10px] font-bold">WhatsApp</span>
+              </button>
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={loading || cleanPhone.length < selectedCountry.length - 2}
@@ -755,7 +917,22 @@ export default function PhoneAuthComponent({
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <span>CONTINUE</span>
+                {selectedChannel === 'voice' ? (
+                  <>
+                    <PhoneCall className="w-4 h-4" />
+                    <span>Receive Verification Call</span>
+                  </>
+                ) : selectedChannel === 'whatsapp' ? (
+                  <>
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Send WhatsApp Code</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Send SMS Verification Code</span>
+                  </>
+                )}
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
@@ -769,7 +946,7 @@ export default function PhoneAuthComponent({
       )}
 
       {/* ============================================================ */}
-      {/* STEP 2A: REGISTERED USER LOGIN (ATP vs SMS OTP) */}
+      {/* STEP 2A: REGISTERED USER LOGIN (ATP vs SMS / CALL) */}
       {/* ============================================================ */}
       {step === 'registered_verify' && (
         <div className="space-y-4 animate-fade-in">
@@ -808,7 +985,7 @@ export default function PhoneAuthComponent({
                   <span>Do you have your 6-digit code (ATP)?</span>
                 </div>
                 <p className="text-[11px] text-brand-charcoal/70 leading-relaxed">
-                  Enter your All-Time Password for instant sign-in without waiting for SMS.
+                  Enter your All-Time Password for instant sign-in without waiting for SMS or Call.
                 </p>
               </div>
 
@@ -870,24 +1047,51 @@ export default function PhoneAuthComponent({
                 <span className="bg-white px-3 text-[10px] uppercase font-bold text-brand-charcoal/40 absolute">or</span>
               </div>
 
-              {/* Option to send SMS OTP instead */}
-              <button
-                type="button"
-                onClick={handleRequestSmsOtpForRegistered}
-                disabled={loading}
-                className="w-full bg-brand-cream/30 hover:bg-brand-cream/60 text-brand-charcoal border border-brand-green/20 font-bold text-xs py-3 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Phone className="w-3.5 h-3.5 text-brand-green" />
-                <span>Don&apos;t have or forgot your ATP? Send OTP via SMS</span>
-              </button>
+              {/* Options to Receive a Call or send SMS */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleRequestVoiceOtpForRegistered}
+                  disabled={loading}
+                  className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 border border-amber-500/25 font-bold text-xs py-2.5 px-2 rounded-2xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Receive a Call</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRequestSmsOtpForRegistered}
+                  disabled={loading}
+                  className="bg-brand-cream/30 hover:bg-brand-cream/60 text-brand-charcoal border border-brand-green/20 font-bold text-xs py-2.5 px-2 rounded-2xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-brand-green" />
+                  <span>Send SMS OTP</span>
+                </button>
+              </div>
             </div>
           ) : (
-            /* Mode 2: SMS OTP Entry (User requested SMS) */
+            /* Mode 2: Verification Code Entry for registered user */
             <div className="space-y-4">
               <div className="p-3.5 rounded-2xl bg-brand-cream/25 border border-brand-green/15 text-center space-y-1">
-                <p className="text-xs font-black text-brand-charcoal">Enter SMS Verification Code</p>
+                <div className="inline-flex items-center gap-1.5 text-xs font-black text-brand-charcoal">
+                  {activeDeliveryChannel === 'voice' ? (
+                    <>
+                      <PhoneCall className="w-4 h-4 text-amber-600 animate-pulse" />
+                      <span>Calling Your Phone...</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="w-4 h-4 text-brand-green" />
+                      <span>Enter SMS Verification Code</span>
+                    </>
+                  )}
+                </div>
                 <p className="text-[11px] text-brand-charcoal/70">
-                  6-digit SMS code dispatched to <span className="font-bold">{fullE164Phone}</span>
+                  {activeDeliveryChannel === 'voice' ? (
+                    <>Answer the call on <span className="font-bold">{fullE164Phone}</span> to hear your code.</>
+                  ) : (
+                    <>6-digit SMS code dispatched to <span className="font-bold">{fullE164Phone}</span></>
+                  )}
                 </p>
               </div>
 
@@ -925,7 +1129,7 @@ export default function PhoneAuthComponent({
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>VERIFY SMS CODE & SIGN IN</span>
+                    <span>VERIFY CODE & SIGN IN</span>
                   </>
                 )}
               </button>
@@ -942,15 +1146,26 @@ export default function PhoneAuthComponent({
                 {isTimerRunning ? (
                   <span className="text-brand-charcoal/50 text-[11px]">Resend in {timerSeconds}s</span>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={dispatchRealSmsOtp}
-                    disabled={loading}
-                    className="text-brand-green font-bold hover:underline cursor-pointer flex items-center gap-1"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Resend SMS</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => dispatchTwoFactorOtp('voice')}
+                      disabled={loading}
+                      className="text-amber-600 font-bold hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
+                    >
+                      <PhoneCall className="w-3 h-3" />
+                      <span>Call me</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => dispatchTwoFactorOtp('sms')}
+                      disabled={loading}
+                      className="text-brand-green font-bold hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>SMS</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -959,17 +1174,29 @@ export default function PhoneAuthComponent({
       )}
 
       {/* ============================================================ */}
-      {/* STEP 2B: NEW USER STRICT SMS OTP */}
+      {/* STEP 2B: NEW USER STRICT OTP (VOICE / SMS / WHATSAPP) */}
       {/* ============================================================ */}
       {step === 'new_user_otp' && (
         <div className="space-y-4 animate-fade-in">
           <div className="bg-brand-cream/25 border border-brand-green/10 rounded-2xl p-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-brand-green/10 text-brand-green flex items-center justify-center shrink-0">
-                <KeyRound className="w-4 h-4" />
+                {activeDeliveryChannel === 'voice' ? (
+                  <PhoneCall className="w-4 h-4 text-amber-600" />
+                ) : activeDeliveryChannel === 'whatsapp' ? (
+                  <MessageCircle className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <KeyRound className="w-4 h-4" />
+                )}
               </div>
               <div>
-                <p className="text-[10px] uppercase font-black text-brand-charcoal/50 tracking-wider">SMS Code Sent To</p>
+                <p className="text-[10px] uppercase font-black text-brand-charcoal/50 tracking-wider">
+                  {activeDeliveryChannel === 'voice'
+                    ? 'Automated Call To'
+                    : activeDeliveryChannel === 'whatsapp'
+                    ? 'WhatsApp Code Sent To'
+                    : 'SMS Code Sent To'}
+                </p>
                 <p className="text-xs font-black text-brand-charcoal">{fullE164Phone}</p>
               </div>
             </div>
@@ -987,9 +1214,33 @@ export default function PhoneAuthComponent({
           </div>
 
           <div className="p-3.5 rounded-2xl bg-brand-green/5 border border-brand-green/10 text-center space-y-1">
-            <p className="text-xs font-black text-brand-charcoal">Verify Mobile Number</p>
+            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-green/10 text-brand-green text-[10px] font-black uppercase tracking-wider mb-0.5">
+              {activeDeliveryChannel === 'voice' ? (
+                <>
+                  <PhoneCall className="w-3 h-3 text-amber-600 animate-pulse" />
+                  <span>Incoming Voice Call Verification</span>
+                </>
+              ) : activeDeliveryChannel === 'whatsapp' ? (
+                <>
+                  <MessageCircle className="w-3 h-3 text-emerald-600" />
+                  <span>WhatsApp Verification</span>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-3 h-3 text-brand-green" />
+                  <span>SMS Verification</span>
+                </>
+              )}
+            </div>
+            <p className="text-xs font-black text-brand-charcoal">
+              {activeDeliveryChannel === 'voice'
+                ? 'Answer the incoming call to hear your code'
+                : 'Enter 6-digit verification code'}
+            </p>
             <p className="text-[11px] text-brand-charcoal/70">
-              Enter the 6-digit verification passcode sent to your mobile.
+              {activeDeliveryChannel === 'voice'
+                ? 'Our automated system will read your 6-digit code clearly.'
+                : 'Enter the code sent to your mobile phone.'}
             </p>
           </div>
 
@@ -1032,19 +1283,57 @@ export default function PhoneAuthComponent({
             )}
           </button>
 
-          <div className="text-center text-xs">
-            {isTimerRunning ? (
-              <span className="text-brand-charcoal/50 text-[11px]">Resend SMS code in {timerSeconds}s</span>
-            ) : (
-              <button
-                type="button"
-                onClick={dispatchRealSmsOtp}
-                disabled={loading}
-                className="text-brand-green font-bold hover:underline cursor-pointer inline-flex items-center gap-1"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Resend SMS Code</span>
-              </button>
+          {/* Channel Switchers & Resend Controls */}
+          <div className="space-y-2 pt-1 border-t border-brand-green/10">
+            <div className="text-center text-xs">
+              {isTimerRunning ? (
+                <span className="text-brand-charcoal/50 text-[11px]">Resend code in {timerSeconds}s</span>
+              ) : (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => dispatchTwoFactorOtp('voice')}
+                    disabled={loading}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-800 hover:bg-amber-500/25 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <PhoneCall className="w-3 h-3 text-amber-600" />
+                    <span>Receive a Call</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dispatchTwoFactorOtp('sms')}
+                    disabled={loading}
+                    className="px-2.5 py-1 rounded-lg bg-brand-cream/30 text-brand-charcoal hover:bg-brand-cream/60 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <MessageSquare className="w-3 h-3 text-brand-green" />
+                    <span>Send SMS</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dispatchTwoFactorOtp('whatsapp')}
+                    disabled={loading}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-800 hover:bg-emerald-500/25 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <MessageCircle className="w-3 h-3 text-emerald-600" />
+                    <span>WhatsApp</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Instant "Receive a Call" shortcut if user is on SMS or WhatsApp */}
+            {activeDeliveryChannel !== 'voice' && (
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => dispatchTwoFactorOtp('voice')}
+                  disabled={loading}
+                  className="text-xs text-amber-700 hover:text-amber-800 font-bold inline-flex items-center gap-1 hover:underline cursor-pointer"
+                >
+                  <PhoneCall className="w-3 h-3 text-amber-600" />
+                  <span>Didn&apos;t get the code? Tap to Receive a Call</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

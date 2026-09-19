@@ -6,6 +6,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Phone,
+  PhoneCall,
+  MessageSquare,
+  MessageCircle,
   KeyRound,
   ShieldCheck,
   ArrowRight,
@@ -67,12 +70,18 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [showCountryPicker, setShowCountryPicker] = useState<boolean>(false);
 
+  // 2Factor OTP Delivery Channels: 'voice' (Receive a Call) | 'sms' | 'whatsapp'
+  const [selectedChannel, setSelectedChannel] = useState<'voice' | 'sms' | 'whatsapp'>('voice');
+  const [activeDeliveryChannel, setActiveDeliveryChannel] = useState<'voice' | 'sms' | 'whatsapp'>('voice');
+  const [twoFactorSessionId, setTwoFactorSessionId] = useState<string | null>(null);
+  const [isUsingTwoFactor, setIsUsingTwoFactor] = useState<boolean>(true);
+
   // Registered account All-Time Password (ATP) state
   const [registeredAtp, setRegisteredAtp] = useState<string | null>(null);
   const [atpDigits, setAtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const atpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Real cellular SMS OTP states
+  // Real cellular SMS / Voice OTP states
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [timerSeconds, setTimerSeconds] = useState<number>(60);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -150,7 +159,7 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
         callback: () => {},
         'expired-callback': () => {
           cleanupRecaptcha();
-          setErrorMessage('Verification session expired. Please tap Resend SMS Code.');
+          setErrorMessage('Verification session expired. Please tap Resend Code.');
         },
       });
 
@@ -177,16 +186,69 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
     }
   };
 
-  // Dispatch real cellular SMS OTP via Firebase Phone Auth
-  const dispatchRealSmsOtp = async () => {
+  // Dispatch OTP via 2Factor High-Speed Indian Gateway (Voice Call / SMS / WhatsApp)
+  const dispatchTwoFactorOtp = async (channel: 'voice' | 'sms' | 'whatsapp' = selectedChannel) => {
+    setLoading(true);
+    setErrorMessage(null);
+    setInfoMessage(null);
+    setActiveDeliveryChannel(channel);
+    setSelectedChannel(channel);
+
+    try {
+      const res = await fetch('/api/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: fullE164Phone, channel }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to dispatch verification code via 2Factor.');
+      }
+
+      setTwoFactorSessionId(data.sessionId);
+      setIsUsingTwoFactor(true);
+      setStep('otp_input');
+      setTimerSeconds(60);
+      setIsTimerRunning(true);
+      setOtpDigits(['', '', '', '', '', '']);
+
+      if (channel === 'voice') {
+        setInfoMessage(`📞 Incoming phone call in progress! Answer your mobile phone (${fullE164Phone}) to hear your 6-digit OTP.`);
+      } else if (channel === 'whatsapp') {
+        setInfoMessage(`🟢 6-digit verification code dispatched via WhatsApp to ${fullE164Phone}`);
+      } else {
+        setInfoMessage(`💬 6-digit verification code dispatched via high-speed SMS to ${fullE164Phone}`);
+      }
+
+      setTimeout(() => {
+        inputRefs.current[0]?.focus();
+      }, 300);
+    } catch (err: any) {
+      console.error('2Factor dispatch error:', err);
+      setErrorMessage(err.message || 'Failed to dispatch verification code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Dispatch cellular OTP with automatic fallback to 2Factor if Firebase throws invalid-app-credential
+  const dispatchRealSmsOtp = async (preferredChannel: 'voice' | 'sms' = 'voice') => {
     setLoading(true);
     setErrorMessage(null);
     setInfoMessage(null);
 
+    // If it's an Indian mobile number (+91), prioritize 2Factor directly to guarantee delivery & avoid invalid-app-credential
+    if (selectedCountry.code === '+91') {
+      await dispatchTwoFactorOtp(selectedChannel || preferredChannel);
+      return;
+    }
+
     try {
       const verifier = getOrCreateRecaptchaVerifier();
       if (!verifier) {
-        throw new Error('Verification setup failed. Please try again.');
+        await dispatchTwoFactorOtp(preferredChannel);
+        return;
       }
 
       let result: ConfirmationResult;
@@ -209,7 +271,10 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
           }
           cleanupRecaptcha();
           const retryVerifier = getOrCreateRecaptchaVerifier();
-          if (!retryVerifier) throw new Error('Verification setup failed.');
+          if (!retryVerifier) {
+            await dispatchTwoFactorOtp(preferredChannel);
+            return;
+          }
           result = await signInWithPhoneNumber(auth, fullE164Phone, retryVerifier);
         }
       } else {
@@ -217,6 +282,8 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
       }
 
       setConfirmationResult(result);
+      setIsUsingTwoFactor(false);
+      setActiveDeliveryChannel('sms');
       setStep('otp_input');
       setTimerSeconds(60);
       setIsTimerRunning(true);
@@ -226,28 +293,29 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
         inputRefs.current[0]?.focus();
       }, 300);
     } catch (err: any) {
-      console.warn('Firebase Phone Auth error:', err?.code, err?.message);
+      console.warn('Firebase Phone Auth error, falling back to 2Factor:', err?.code, err?.message);
       cleanupRecaptcha();
 
-      if (err?.code === 'auth/invalid-phone-number') {
+      // Automatically fallback to 2Factor if invalid-app-credential, reCAPTCHA or network fails
+      if (
+        err?.code === 'auth/invalid-app-credential' || 
+        err?.code === 'auth/captcha-check-failed' ||
+        err?.code === 'auth/too-many-requests' ||
+        err?.code === 'auth/quota-exceeded' ||
+        err?.message?.includes('invalid-app-credential')
+      ) {
+        console.log('Firebase credential error encountered. Auto-routing via 2Factor Gateway...');
+        await dispatchTwoFactorOtp(preferredChannel);
+      } else if (err?.code === 'auth/invalid-phone-number') {
         setErrorMessage('Invalid mobile number format. Please check the digits.');
-      } else if (err?.code === 'auth/too-many-requests') {
-        setErrorMessage('Too many SMS requests for this number. Please wait a few minutes.');
-      } else if (err?.code === 'auth/quota-exceeded') {
-        setErrorMessage('Daily SMS quota reached on this network. Please try again shortly.');
-      } else if (err?.code === 'auth/invalid-app-credential' || err?.message?.includes('invalid-app-credential')) {
-        setErrorMessage('Device verification failed. Please check network connection and try again.');
-      } else if (err?.code === 'auth/captcha-check-failed') {
-        setErrorMessage('Security check failed. Please tap Resend SMS Code to try again.');
+        setLoading(false);
       } else {
-        setErrorMessage(err?.message || 'Failed to dispatch SMS. Please check your connection and try again.');
+        await dispatchTwoFactorOtp(preferredChannel);
       }
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Check Phone: First-come first-served check & Route to ATP (Registered) vs real SMS OTP (First-time)
+  // Check Phone: First-come first-served check & Route to ATP (Registered) vs real SMS/Call OTP (First-time)
   const handleCheckPhone = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMessage(null);
@@ -284,11 +352,11 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
       // 2. Check if this is a REGISTERED account with an existing All-Time Password (ATP)
       const knownAtp = user.atp || existingAccountWithPhone?.data?.atp;
       if (knownAtp && knownAtp.trim().length === 6) {
-        // Registered account with ATP! Allow instant ATP entry with option to request SMS code
+        // Registered account with ATP! Allow instant ATP entry with option to request Call / SMS code
         setRegisteredAtp(knownAtp.trim());
         setStep('atp_input');
         setAtpDigits(['', '', '', '', '', '']);
-        setInfoMessage('Welcome back! Enter your 6-digit All-Time Password (ATP) or request an SMS OTP.');
+        setInfoMessage('Welcome back! Enter your 6-digit All-Time Password (ATP) or request a Voice Call / SMS OTP.');
         setLoading(false);
         setTimeout(() => {
           atpInputRefs.current[0]?.focus();
@@ -296,12 +364,18 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
         return;
       }
 
-      // 3. FIRST-TIME account (no ATP yet): Strictly real cellular SMS OTP
-      await dispatchRealSmsOtp();
+      // 3. FIRST-TIME account (no ATP yet): Dispatch via selected channel
+      if (selectedChannel === 'voice') {
+        await dispatchTwoFactorOtp('voice');
+      } else if (selectedChannel === 'whatsapp') {
+        await dispatchTwoFactorOtp('whatsapp');
+      } else {
+        await dispatchRealSmsOtp('sms');
+      }
     } catch (err: any) {
       console.warn('Phone check note:', err);
-      // Fallback to real SMS OTP
-      await dispatchRealSmsOtp();
+      // Fallback: 2Factor Voice or SMS
+      await dispatchTwoFactorOtp(selectedChannel || 'voice');
     }
   };
 
@@ -365,7 +439,7 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
     }
 
     if (!registeredAtp || code !== registeredAtp) {
-      setErrorMessage('Incorrect All-Time Password (ATP). Please check or request an SMS OTP.');
+      setErrorMessage('Incorrect All-Time Password (ATP). Please check or request a Voice Call / SMS OTP.');
       return;
     }
 
@@ -450,29 +524,93 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
     }
   };
 
-  // Verify Real SMS OTP
+  // Verify OTP (Voice Call, SMS, WhatsApp via 2Factor or Firebase Confirmation)
   const handleVerifyOtp = async (codeToVerify?: string) => {
     const code = codeToVerify || otpDigits.join('');
     setErrorMessage(null);
 
     if (code.length !== 6) {
-      setErrorMessage('Please enter all 6 digits of the SMS verification code.');
-      return;
-    }
-
-    if (!confirmationResult) {
-      setErrorMessage('Verification session expired. Please request a new SMS code.');
+      setErrorMessage('Please enter all 6 digits of the verification code.');
       return;
     }
 
     setLoading(true);
-    setStep('verifying');
+
+    // If verified via 2Factor (Voice Call, WhatsApp, or SMS)
+    if (isUsingTwoFactor && twoFactorSessionId) {
+      try {
+        const res = await fetch('/api/otp/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: twoFactorSessionId,
+            otp: code,
+            phone: fullE164Phone,
+            channel: activeDeliveryChannel,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Invalid or expired OTP entered.');
+        }
+
+        setStep('verifying');
+
+        // Update Firestore user record
+        const activeUid = auth.currentUser?.uid || user.id;
+        const atpCode = user.atp || Math.floor(100000 + Math.random() * 900000).toString();
+        if (activeUid) {
+          const userRef = doc(db, 'users', activeUid);
+          await setDoc(
+            userRef,
+            {
+              phone: fullE164Phone,
+              isPhoneVerified: true,
+              atp: atpCode,
+              atpUpdatedAt: user.atpUpdatedAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        }
+
+        try {
+          const cached = localStorage.getItem('fitzaika_cached_user_profile');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            parsed.phone = fullE164Phone;
+            parsed.isPhoneVerified = true;
+            parsed.atp = atpCode;
+            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(parsed));
+          }
+        } catch (e) {}
+
+        // Plain logo verifying animation duration (1.2s)
+        await new Promise((r) => setTimeout(r, 1200));
+
+        onSuccess(fullE164Phone, atpCode);
+        return;
+      } catch (err: any) {
+        console.warn('2Factor OTP Confirmation error:', err);
+        setStep('otp_input');
+        setErrorMessage(err?.message || 'Incorrect verification code. Please check and try again.');
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Fallback: Firebase confirmationResult
+    if (!confirmationResult) {
+      setErrorMessage('Verification session expired. Please request a new code.');
+      setLoading(false);
+      return;
+    }
 
     try {
-      // Strictly real Firebase confirmation via cellular telecom OTP
       await confirmationResult.confirm(code);
+      setStep('verifying');
 
-      // Successfully confirmed! First-time accounts receive a generated 6-digit All-Time Password (ATP)
       const activeUid = auth.currentUser?.uid || user.id;
       const atpCode = user.atp || Math.floor(100000 + Math.random() * 900000).toString();
       if (activeUid) {
@@ -490,15 +628,13 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
         );
       }
 
-      // Plain logo verifying animation duration (1.2s)
       await new Promise((r) => setTimeout(r, 1200));
-
       onSuccess(fullE164Phone, atpCode);
     } catch (err: any) {
-      console.warn('OTP Confirmation error:', err);
+      console.warn('Firebase OTP confirmation error:', err);
       setStep('otp_input');
       if (err?.code === 'auth/invalid-verification-code') {
-        setErrorMessage('Incorrect 6-digit SMS code. Please verify your message and try again.');
+        setErrorMessage('Incorrect 6-digit code. Please verify your message and try again.');
       } else if (err?.code === 'auth/code-expired') {
         setErrorMessage('This verification code has expired. Please request a new code.');
       } else {
@@ -627,6 +763,53 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
                 </div>
               </div>
 
+              {/* Delivery Method Selection: Voice Call, SMS, WhatsApp */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block">
+                  Select OTP Delivery Option
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedChannel('voice')}
+                    className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                      selectedChannel === 'voice'
+                        ? 'bg-amber-500/20 border-amber-400 text-amber-300 ring-1 ring-amber-400/30'
+                        : 'bg-black/30 border-white/10 text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <PhoneCall className="w-4 h-4 text-amber-400" />
+                    <span className="text-[10px] font-bold">Receive Call</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedChannel('sms')}
+                    className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                      selectedChannel === 'sms'
+                        ? 'bg-amber-500/20 border-amber-400 text-amber-300 ring-1 ring-amber-400/30'
+                        : 'bg-black/30 border-white/10 text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <MessageSquare className="w-4 h-4 text-amber-400" />
+                    <span className="text-[10px] font-bold">SMS OTP</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedChannel('whatsapp')}
+                    className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                      selectedChannel === 'whatsapp'
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 ring-1 ring-emerald-400/30'
+                        : 'bg-black/30 border-white/10 text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-400" />
+                    <span className="text-[10px] font-bold">WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+
               <button
                 type="submit"
                 disabled={loading || !cleanPhone}
@@ -636,7 +819,22 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
                   <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    <span>Verify Mobile Number</span>
+                    {selectedChannel === 'voice' ? (
+                      <>
+                        <PhoneCall className="w-4 h-4" />
+                        <span>Receive Verification Call</span>
+                      </>
+                    ) : selectedChannel === 'whatsapp' ? (
+                      <>
+                        <MessageCircle className="w-4 h-4" />
+                        <span>Send WhatsApp OTP</span>
+                      </>
+                    ) : (
+                      <>
+                        <MessageSquare className="w-4 h-4" />
+                        <span>Send SMS Verification Code</span>
+                      </>
+                    )}
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -700,32 +898,68 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
                 )}
               </button>
 
-              {/* Alternative: Request real SMS OTP */}
-              <div className="text-center pt-1 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => dispatchRealSmsOtp()}
-                  disabled={loading}
-                  className="text-xs text-amber-400/90 hover:text-amber-300 font-bold hover:underline cursor-pointer inline-flex items-center gap-1.5"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Don&apos;t know your ATP? Verify with SMS OTP</span>
-                </button>
+              {/* Alternatives: Receive Call or SMS OTP */}
+              <div className="pt-2 border-t border-white/10 space-y-2 text-center">
+                <p className="text-[11px] text-gray-400">Don&apos;t remember your ATP passcode?</p>
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => dispatchTwoFactorOtp('voice')}
+                    disabled={loading}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5" />
+                    <span>Receive a Call</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dispatchTwoFactorOtp('sms')}
+                    disabled={loading}
+                    className="px-3 py-1.5 rounded-xl bg-white/10 text-gray-200 hover:bg-white/20 border border-white/15 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Send SMS</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
-          {/* STEP 2B: FIRST-TIME ACCOUNT STRICT SMS OTP */}
+          {/* STEP 2B: FIRST-TIME ACCOUNT STRICT OTP (VOICE / SMS / WHATSAPP) */}
           {step === 'otp_input' && (
             <div className="space-y-4">
-              <div className="text-center">
+              <div className="text-center space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-bold">
+                  {activeDeliveryChannel === 'voice' ? (
+                    <>
+                      <PhoneCall className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                      <span>Voice Call Verification In Progress</span>
+                    </>
+                  ) : activeDeliveryChannel === 'whatsapp' ? (
+                    <>
+                      <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>WhatsApp OTP Sent</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                      <span>SMS OTP Sent</span>
+                    </>
+                  )}
+                </div>
+
                 <p className="text-xs text-gray-300">
-                  Enter the 6-digit code sent via SMS to <span className="font-bold text-white">{fullE164Phone}</span>
+                  {activeDeliveryChannel === 'voice' ? (
+                    <>Answer the incoming call on <span className="font-bold text-white">{fullE164Phone}</span> to hear your code.</>
+                  ) : (
+                    <>Enter the 6-digit verification code sent to <span className="font-bold text-white">{fullE164Phone}</span></>
+                  )}
                 </p>
+
                 <button
                   type="button"
                   onClick={() => setStep('phone_input')}
-                  className="text-[11px] text-amber-400 hover:underline mt-1 cursor-pointer"
+                  className="text-[11px] text-amber-400 hover:underline cursor-pointer inline-block"
                 >
                   Change mobile number
                 </button>
@@ -767,19 +1001,57 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
                 )}
               </button>
 
-              {/* Resend SMS Timer */}
-              <div className="text-center text-xs text-gray-400">
-                {isTimerRunning ? (
-                  <span>Resend SMS code in {timerSeconds}s</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => dispatchRealSmsOtp()}
-                    disabled={loading}
-                    className="text-amber-400 hover:underline font-bold cursor-pointer"
-                  >
-                    Resend SMS Code Now
-                  </button>
+              {/* Delivery channel alternates / Quick switchers */}
+              <div className="pt-2 border-t border-white/10 space-y-2">
+                <div className="text-center text-xs text-gray-400">
+                  {isTimerRunning ? (
+                    <span>Resend code in {timerSeconds}s</span>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => dispatchTwoFactorOtp('voice')}
+                        disabled={loading}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <PhoneCall className="w-3 h-3" />
+                        <span>Receive a Call</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => dispatchTwoFactorOtp('sms')}
+                        disabled={loading}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        <span>Send SMS</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => dispatchTwoFactorOtp('whatsapp')}
+                        disabled={loading}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <MessageCircle className="w-3 h-3" />
+                        <span>WhatsApp</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Instant "Receive a Call" shortcut if user is currently on SMS or WhatsApp */}
+                {activeDeliveryChannel !== 'voice' && (
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => dispatchTwoFactorOtp('voice')}
+                      disabled={loading}
+                      className="text-xs text-amber-400 hover:text-amber-300 font-bold inline-flex items-center gap-1.5 hover:underline cursor-pointer"
+                    >
+                      <PhoneCall className="w-3.5 h-3.5 animate-pulse" />
+                      <span>Didn&apos;t get code? Tap to Receive a Call</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

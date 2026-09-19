@@ -146,23 +146,29 @@ app.post('/api/otp/verify', async (req, res) => {
     const cleanOtp = String(otp).trim();
     const apiKey = TWO_FACTOR_API_KEY;
     
-    // Voice vs SMS/WhatsApp verify endpoint
-    let url = `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${encodeURIComponent(sessionId)}/${encodeURIComponent(cleanOtp)}`;
-    if (channel === 'voice') {
-      url = `https://2factor.in/API/V1/${apiKey}/VOICE/VERIFY/${encodeURIComponent(sessionId)}/${encodeURIComponent(cleanOtp)}`;
-    }
+    // Check if voice session (either requested as voice or sessionId has voice format)
+    const isVoice = channel === 'voice' || (typeof sessionId === 'string' && sessionId.includes('.'));
+    
+    // Primary URL to verify
+    let primaryUrl = isVoice
+      ? `https://2factor.in/API/V1/${apiKey}/VOICE/VERIFY/${encodeURIComponent(sessionId)}/${encodeURIComponent(cleanOtp)}`
+      : `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${encodeURIComponent(sessionId)}/${encodeURIComponent(cleanOtp)}`;
 
-    let response = await fetch(url, { method: 'GET' });
+    let response = await fetch(primaryUrl, { method: 'GET' });
     let data = (await response.json()) as { Status?: string; Details?: string };
 
-    // If voice verify didn't match or failed, try SMS verify just in case
-    if (channel === 'voice' && data.Status !== 'Success') {
-      const smsVerifyUrl = `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${encodeURIComponent(sessionId)}/${encodeURIComponent(cleanOtp)}`;
-      const smsRes = await fetch(smsVerifyUrl, { method: 'GET' });
-      const smsData = (await smsRes.json()) as { Status?: string; Details?: string };
-      if (smsData.Status === 'Success' && smsData.Details === 'OTP Matched') {
-        data = smsData;
-      }
+    // If primary verify did not match or returned an error, try the alternative endpoint (voice <-> sms)
+    if (data.Status !== 'Success' || data.Details !== 'OTP Matched') {
+      const altUrl = isVoice
+        ? `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${encodeURIComponent(sessionId)}/${encodeURIComponent(cleanOtp)}`
+        : `https://2factor.in/API/V1/${apiKey}/VOICE/VERIFY/${encodeURIComponent(sessionId)}/${encodeURIComponent(cleanOtp)}`;
+      try {
+        const altRes = await fetch(altUrl, { method: 'GET' });
+        const altData = (await altRes.json()) as { Status?: string; Details?: string };
+        if (altData.Status === 'Success' && altData.Details === 'OTP Matched') {
+          data = altData;
+        }
+      } catch (e) {}
     }
 
     if (data.Status === 'Success' && data.Details === 'OTP Matched') {
