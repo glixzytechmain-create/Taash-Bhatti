@@ -82,6 +82,8 @@ import {
   Sliders,
   Maximize2,
   Gamepad2,
+  QrCode,
+  Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import InAppDeliveryMap from './InAppDeliveryMap';
@@ -106,7 +108,7 @@ function getSecondaryAuth() {
   }
   return getAuth(secondaryApp);
 }
-import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord } from '../types';
+import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord, BhattiTable } from '../types';
 import { MEALS_DATA, GYMS_DATA, INITIAL_DELIVERY_PARTNERS, DEFAULT_HERO_BANNERS } from '../data';
 import AdminDealsManager from './AdminDealsManager';
 import AdminLegalManager from './AdminLegalManager';
@@ -115,6 +117,7 @@ import KitchenEODSettlementModal from './KitchenEODSettlementModal';
 import KitchenWastageManager from './KitchenWastageManager';
 import { syncLowStockMenuWithFirestore, computeEODShiftReport } from '../lib/kitchenSettlement';
 import BhattiGameOnAdmin from './admin/BhattiGameOnAdmin';
+import { generateQRCodeDataUrl, generateQRCodeSvg, downloadFile } from '../lib/qrCodeGenerator';
 
 enum OperationType {
   CREATE = 'create',
@@ -1155,6 +1158,16 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [kitchenLng, setKitchenLng] = useState<number | undefined>(undefined);
   const [kitchenGeofenceRadius, setKitchenGeofenceRadius] = useState<number>(5);
   const [kitchenIsActive, setKitchenIsActive] = useState<boolean>(true);
+
+  // Kitchen Table & Floor Plan Management states (Admin)
+  const [kitchenTables, setKitchenTables] = useState<BhattiTable[]>([]);
+  const [kitchenHasDineIn, setKitchenHasDineIn] = useState<boolean>(true);
+  const [newAdminTableNumber, setNewAdminTableNumber] = useState<string>('');
+  const [newAdminTableCapacity, setNewAdminTableCapacity] = useState<number>(4);
+  const [newAdminTableSection, setNewAdminTableSection] = useState<string>('Main Dining Hall');
+  const [adminSelectedTableForQr, setAdminSelectedTableForQr] = useState<{ kitchenId: string; kitchenName: string; table: BhattiTable } | null>(null);
+  const [adminTableQrDataUrl, setAdminTableQrDataUrl] = useState<string>('');
+  const [adminTableQrSvg, setAdminTableQrSvg] = useState<string>('');
 
   // Enhanced KDS Multi-Branch Terminal States
   const [kdsUnlocked, setKdsUnlocked] = useState<boolean>(false);
@@ -2955,6 +2968,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setKitchenLng(undefined);
     setKitchenGeofenceRadius(5);
     setKitchenIsActive(true);
+    setKitchenTables([]);
+    setKitchenHasDineIn(true);
+    setNewAdminTableNumber('');
+    setNewAdminTableCapacity(4);
+    setNewAdminTableSection('Main Dining Hall');
     setShowKitchenModal(true);
   };
 
@@ -2967,6 +2985,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setKitchenLng(kitchen.lng);
     setKitchenGeofenceRadius(kitchen.geofenceRadius || 5);
     setKitchenIsActive(kitchen.isActive !== false);
+    setKitchenTables(kitchen.tables || []);
+    setKitchenHasDineIn(kitchen.hasDineIn !== false);
+    setNewAdminTableNumber('');
+    setNewAdminTableCapacity(4);
+    setNewAdminTableSection('Main Dining Hall');
     setShowKitchenModal(true);
   };
 
@@ -2976,6 +2999,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
 
     const kitchenId = editingKitchen?.id || `k_${Date.now()}`;
     const kitchenData: Kitchen = {
+      ...(editingKitchen || {}),
       id: kitchenId,
       name: kitchenName.trim(),
       address: kitchenAddress.trim(),
@@ -2984,15 +3008,145 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       isActive: kitchenIsActive,
       lat: kitchenLat,
       lng: kitchenLng,
+      tables: kitchenTables,
+      hasDineIn: kitchenHasDineIn,
     };
 
     try {
-      await setDoc(doc(db, 'kitchens', kitchenId), sanitizeForFirestore(kitchenData));
+      await setDoc(doc(db, 'kitchens', kitchenId), sanitizeForFirestore(kitchenData), { merge: true });
       setShowKitchenModal(false);
     } catch (err) {
       console.error("Error saving kitchen branch:", err);
     }
   };
+
+  const handleAdminAddTable = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newAdminTableNumber.trim()) return;
+    const newTable: BhattiTable = {
+      id: `tbl_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      tableNumber: newAdminTableNumber.trim(),
+      capacity: Number(newAdminTableCapacity) || 4,
+      isOccupied: false,
+      section: newAdminTableSection.trim() || 'Main Dining Hall',
+    };
+    const updated = [...kitchenTables, newTable];
+    setKitchenTables(updated);
+    setNewAdminTableNumber('');
+    if (editingKitchen) {
+      try {
+        await updateDoc(doc(db, 'kitchens', editingKitchen.id), {
+          tables: updated,
+          hasDineIn: true,
+        });
+      } catch (err) {
+        console.error("Error adding table to kitchen:", err);
+      }
+    }
+  };
+
+  const handleAdminDeleteTable = async (tableId: string) => {
+    if (!window.confirm("Remove this table from this kitchen branch?")) return;
+    const updated = kitchenTables.filter(t => t.id !== tableId);
+    setKitchenTables(updated);
+    if (editingKitchen) {
+      try {
+        await updateDoc(doc(db, 'kitchens', editingKitchen.id), {
+          tables: updated,
+        });
+      } catch (err) {
+        console.error("Error deleting table from kitchen:", err);
+      }
+    }
+  };
+
+  const handleAdminToggleTableOccupied = async (tableId: string, currentStatus: boolean) => {
+    const updated = kitchenTables.map(t => {
+      if (t.id === tableId) {
+        return {
+          ...t,
+          isOccupied: !currentStatus,
+          occupiedAt: !currentStatus ? new Date().toISOString() : undefined,
+          currentOrderId: !currentStatus ? t.currentOrderId : undefined,
+        };
+      }
+      return t;
+    });
+    setKitchenTables(updated);
+    if (editingKitchen) {
+      try {
+        await updateDoc(doc(db, 'kitchens', editingKitchen.id), {
+          tables: updated,
+        });
+      } catch (err) {
+        console.error("Error toggling table occupancy:", err);
+      }
+    }
+  };
+
+  const handleAdminSeedDefaultTables = async () => {
+    const defaults: BhattiTable[] = [
+      { id: `tbl_${Date.now()}_1`, tableNumber: 'Table 1', capacity: 2, isOccupied: false, section: 'Main Dining' },
+      { id: `tbl_${Date.now()}_2`, tableNumber: 'Table 2', capacity: 4, isOccupied: false, section: 'Main Dining' },
+      { id: `tbl_${Date.now()}_3`, tableNumber: 'Table 3', capacity: 4, isOccupied: false, section: 'Main Dining' },
+      { id: `tbl_${Date.now()}_4`, tableNumber: 'Table 4', capacity: 6, isOccupied: false, section: 'Family Patio' },
+      { id: `tbl_${Date.now()}_5`, tableNumber: 'Table 5', capacity: 8, isOccupied: false, section: 'Royal Lounge' },
+    ];
+    setKitchenTables(defaults);
+    setKitchenHasDineIn(true);
+    if (editingKitchen) {
+      try {
+        await updateDoc(doc(db, 'kitchens', editingKitchen.id), {
+          tables: defaults,
+          hasDineIn: true,
+        });
+      } catch (err) {
+        console.error("Error seeding default tables:", err);
+      }
+    }
+  };
+
+  const handleAdminToggleDineIn = async () => {
+    const nextVal = !kitchenHasDineIn;
+    setKitchenHasDineIn(nextVal);
+    if (editingKitchen) {
+      try {
+        await updateDoc(doc(db, 'kitchens', editingKitchen.id), {
+          hasDineIn: nextVal,
+        });
+      } catch (err) {
+        console.error("Error toggling dine-in for kitchen:", err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!adminSelectedTableForQr) {
+      setAdminTableQrDataUrl('');
+      setAdminTableQrSvg('');
+      return;
+    }
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://fitzaika.in';
+    const dineInUrl = `${origin}/?table=${encodeURIComponent(adminSelectedTableForQr.table.tableNumber)}&bhatti=${encodeURIComponent(adminSelectedTableForQr.kitchenId)}&bhattiName=${encodeURIComponent(adminSelectedTableForQr.kitchenName)}`;
+    
+    generateQRCodeDataUrl(dineInUrl, {
+      width: 512,
+      margin: 2,
+      color: {
+        dark: '#1C1917',
+        light: '#FFFFFF',
+      },
+    }).then(setAdminTableQrDataUrl).catch(console.error);
+
+    generateQRCodeSvg(dineInUrl, {
+      margin: 2,
+      color: {
+        dark: '#1C1917',
+        light: '#FFFFFF',
+      },
+    }).then(setAdminTableQrSvg).catch(console.error);
+  }, [adminSelectedTableForQr]);
+
 
   const handleDeleteKitchen = (kitchenId: string, name?: string) => {
     setDeleteConfirm({ type: 'kitchen', id: kitchenId, label: name || kitchenId });
@@ -7056,11 +7210,19 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                   {kitchen.isActive ? 'Deactivate' : 'Activate'}
                                 </button>
 
-                                <div className="flex gap-2">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleOpenEditKitchen(kitchen)}
+                                    className="px-2.5 py-1.5 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 border border-amber-400/30 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider shadow-sm"
+                                    title="Configure Dine-In Tables, seating & QRs for this Kitchen"
+                                  >
+                                    <UtensilsCrossed className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Table Settings ({(kitchen.tables || []).length})</span>
+                                  </button>
                                   <button
                                     onClick={() => handleOpenEditKitchen(kitchen)}
                                     className="p-1.5 bg-brand-green/5 hover:bg-brand-green/15 text-brand-green border border-brand-green/15 rounded-xl transition-all cursor-pointer"
-                                    title="Edit Kitchen"
+                                    title="Edit Kitchen Settings"
                                   >
                                     <Edit className="w-3.5 h-3.5" />
                                   </button>
@@ -10135,6 +10297,220 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                         </label>
                       </div>
 
+                      {/* ======================================================== */}
+                      {/* DINE-IN TABLE SETTINGS & FLOOR PLAN CONTROLS               */}
+                      {/* ======================================================== */}
+                      <div className="bg-[#121820] p-4 sm:p-5 border border-amber-500/30 rounded-2xl space-y-4 shadow-inner">
+                        {/* Section Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/15 pb-3">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[8px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/40 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                FLOOR PLAN & SEATING
+                              </span>
+                              <span className="text-[10px] font-mono text-gray-400">
+                                ({kitchenTables.length} Tables)
+                              </span>
+                            </div>
+                            <h4 className="text-xs font-black uppercase tracking-wider text-white mt-1 flex items-center gap-1.5">
+                              <UtensilsCrossed className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Dine-In Table Settings & QR Standees</span>
+                            </h4>
+                          </div>
+
+                          {/* Branch Dine-In Toggle Button */}
+                          <button
+                            type="button"
+                            onClick={handleAdminToggleDineIn}
+                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border ${
+                              kitchenHasDineIn
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                            }`}
+                            title="Toggle Dine-In table service for customers at this branch"
+                          >
+                            <span className={`w-2 h-2 rounded-full ${kitchenHasDineIn ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                            <span>{kitchenHasDineIn ? 'Dine-In Enabled' : 'Dine-In Disabled'}</span>
+                          </button>
+                        </div>
+
+                        {/* Add Table Controls */}
+                        <div className="bg-[#0D1217] p-3 rounded-xl border border-white/5 space-y-2.5">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 block">
+                            Add Dining Table to this Branch
+                          </span>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[9px] font-bold text-gray-400 block mb-1 uppercase">
+                                Table # / ID *
+                              </label>
+                              <input
+                                type="text"
+                                value={newAdminTableNumber}
+                                onChange={(e) => setNewAdminTableNumber(e.target.value)}
+                                placeholder="e.g. Table 1 or Patio 2"
+                                className="w-full bg-[#161D24] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-amber-400"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] font-bold text-gray-400 block mb-1 uppercase">
+                                Seating Seats
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={30}
+                                value={newAdminTableCapacity}
+                                onChange={(e) => setNewAdminTableCapacity(Number(e.target.value))}
+                                className="w-full bg-[#161D24] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] font-bold text-gray-400 block mb-1 uppercase">
+                                Section / Area
+                              </label>
+                              <select
+                                value={newAdminTableSection}
+                                onChange={(e) => setNewAdminTableSection(e.target.value)}
+                                className="w-full bg-[#161D24] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                              >
+                                <option value="Main Dining Hall">Main Dining Hall</option>
+                                <option value="Royal Handi Lounge">Royal Handi Lounge</option>
+                                <option value="Outdoor Patio">Outdoor Patio</option>
+                                <option value="Family Courtyard">Family Courtyard</option>
+                                <option value="Rooftop Terrace">Rooftop Terrace</option>
+                                <option value="VIP Cabin">VIP Cabin</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pt-1">
+                            {kitchenTables.length === 0 ? (
+                              <button
+                                type="button"
+                                onClick={handleAdminSeedDefaultTables}
+                                className="px-3 py-1.5 bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/30 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <span>⚡ Quick Seed 5 Tables</span>
+                              </button>
+                            ) : (
+                              <span className="text-[9px] text-gray-500 font-mono">
+                                {kitchenTables.filter(t => !t.isOccupied).length} Available • {kitchenTables.filter(t => t.isOccupied).length} Occupied
+                              </span>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleAdminAddTable()}
+                              disabled={!newAdminTableNumber.trim()}
+                              className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                                newAdminTableNumber.trim()
+                                  ? 'bg-amber-400 hover:bg-amber-300 text-stone-950 shadow-md active:scale-95'
+                                  : 'bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed'
+                              }`}
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add Table</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* List of Configured Tables */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                              Configured Tables ({kitchenTables.length})
+                            </span>
+                            <span className="text-[8px] text-gray-500">
+                              Click occupancy badge to toggle live seat availability
+                            </span>
+                          </div>
+
+                          {kitchenTables.length === 0 ? (
+                            <div className="p-4 rounded-xl border border-dashed border-white/10 text-center bg-brand-charcoal/20">
+                              <p className="text-xs text-gray-400">No tables configured for this branch yet.</p>
+                              <button
+                                type="button"
+                                onClick={handleAdminSeedDefaultTables}
+                                className="mt-2 text-xs text-amber-400 hover:text-amber-300 underline font-bold cursor-pointer"
+                              >
+                                Click here to quick seed 5 default tables (Tables 1-5)
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
+                              {kitchenTables.map((tbl) => (
+                                <div
+                                  key={tbl.id}
+                                  className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+                                    tbl.isOccupied
+                                      ? 'bg-rose-950/20 border-rose-500/40'
+                                      : 'bg-[#151B22] border-white/10 hover:border-amber-400/40'
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-black text-white truncate">
+                                        🍽️ {tbl.tableNumber}
+                                      </span>
+                                      <span className="text-[9px] font-mono text-gray-400 shrink-0">
+                                        ({tbl.capacity}p)
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] text-gray-400 truncate block">
+                                      {tbl.section || 'Main Dining'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {/* Occupancy toggle */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdminToggleTableOccupied(tbl.id, tbl.isOccupied)}
+                                      className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                        tbl.isOccupied
+                                          ? 'bg-rose-500 text-white'
+                                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                                      }`}
+                                      title="Toggle table occupied/available status"
+                                    >
+                                      {tbl.isOccupied ? 'Occupied' : 'Free'}
+                                    </button>
+
+                                    {/* View / Download QR Standee */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setAdminSelectedTableForQr({
+                                        kitchenId: editingKitchen?.id || 'k_main',
+                                        kitchenName: kitchenName || 'Taash Bhatti',
+                                        table: tbl,
+                                      })}
+                                      className="p-1.5 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 border border-amber-400/30 rounded-lg text-xs transition-all cursor-pointer"
+                                      title="View, Print & Download Table QR Standee"
+                                    >
+                                      <QrCode className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Delete Table */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdminDeleteTable(tbl.id)}
+                                      className="p-1.5 bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20 rounded-lg text-xs transition-all cursor-pointer"
+                                      title="Delete this table"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Action buttons */}
                       <div className="flex items-center justify-end gap-2.5 border-t border-brand-green/15 pt-4">
                         <button
@@ -10152,6 +10528,124 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                         </button>
                       </div>
                     </form>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* ADMIN TABLE QR & ACRYLIC STANDEE MODAL */}
+            <AnimatePresence>
+              {adminSelectedTableForQr && (
+                <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:fixed print:inset-0">
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.95, opacity: 0 }}
+                    className="w-full max-w-md bg-white text-slate-900 rounded-3xl p-6 space-y-5 shadow-2xl border border-amber-500/30 my-auto print:max-w-none print:border-none print:shadow-none print:rounded-none"
+                  >
+                    {/* Modal Header (Hidden in Print) */}
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3 print:hidden">
+                      <div className="flex items-center gap-2">
+                        <QrCode className="w-5 h-5 text-amber-600" />
+                        <span className="text-xs font-black uppercase tracking-wider text-slate-900">
+                          Table QR Standee • {adminSelectedTableForQr.kitchenName}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAdminSelectedTableForQr(null)}
+                        className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Printable Acrylic Standee Tent Card */}
+                    <div className="border-4 border-amber-900/40 rounded-3xl p-6 text-center space-y-4 bg-gradient-to-b from-amber-50/50 via-white to-amber-50/30 shadow-inner print:border-8 print:border-amber-950 print:p-8">
+                      {/* Crest */}
+                      <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-900 text-white flex items-center justify-center font-black text-2xl shadow-md border border-amber-400/40">
+                          ♠
+                        </div>
+                        <h2 className="text-lg font-black tracking-tight text-slate-950 mt-1 uppercase">
+                          TAASH BHATTI
+                        </h2>
+                        <span className="text-[8px] font-black uppercase tracking-widest text-amber-800">
+                          Authentic Clay-Oven Cuisine
+                        </span>
+                      </div>
+
+                      {/* Table Number Badge */}
+                      <div className="bg-amber-100/80 border-2 border-amber-300 rounded-2xl py-2 px-4 inline-block">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-amber-900 block leading-none">
+                          SEATED AT
+                        </span>
+                        <span className="text-2xl font-black text-slate-950 font-mono tracking-tight">
+                          {adminSelectedTableForQr.table.tableNumber}
+                        </span>
+                        <span className="text-[9px] text-amber-800 font-bold block mt-0.5">
+                          {adminSelectedTableForQr.kitchenName} • {adminSelectedTableForQr.table.section || 'Dining Hall'}
+                        </span>
+                      </div>
+
+                      {/* QR Code Container */}
+                      <div className="bg-white p-3 rounded-2xl border-2 border-slate-900/20 shadow-md inline-block max-w-[240px] mx-auto">
+                        {adminTableQrDataUrl ? (
+                          <img
+                            src={adminTableQrDataUrl}
+                            alt={`Table ${adminSelectedTableForQr.table.tableNumber} QR Code`}
+                            className="w-52 h-52 object-contain mx-auto"
+                          />
+                        ) : (
+                          <div className="w-52 h-52 flex items-center justify-center text-xs text-slate-400 font-bold">
+                            Generating High-Res QR...
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Steps for Diner */}
+                      <div className="space-y-1 text-slate-700">
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                          Scan to Browse & Order
+                        </h3>
+                        <p className="text-[10px] text-slate-600 font-medium max-w-xs mx-auto leading-relaxed">
+                          Open phone camera • No app download needed • Instant kitchen transmission to your table!
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Actions Bar (Hidden in Print) */}
+                    <div className="space-y-2 print:hidden pt-1">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => downloadFile(adminTableQrDataUrl, `TaashBhatti_QR_${adminSelectedTableForQr.table.tableNumber.replace(/\s+/g, '_')}.png`, false)}
+                          className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download PNG</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => downloadFile(adminTableQrSvg, `TaashBhatti_QR_${adminSelectedTableForQr.table.tableNumber.replace(/\s+/g, '_')}.svg`, true)}
+                          className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download SVG</span>
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="w-full py-3 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>Print Acrylic Tent Standee</span>
+                      </button>
+                    </div>
+
                   </motion.div>
                 </div>
               )}

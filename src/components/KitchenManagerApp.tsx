@@ -1222,6 +1222,21 @@ export default function KitchenManagerApp({
               <span>{activeKitchen?.isRaining ? '🌧️ Rain Mode: ON' : 'Rain Mode: OFF'}</span>
             </button>
 
+            {/* Table Settings Quick Button */}
+            <button
+              type="button"
+              onClick={() => setKdsSubSection('tables')}
+              className={`px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-md border ${
+                kdsSubSection === 'tables'
+                  ? 'bg-amber-400 text-stone-950 border-amber-300 shadow-amber-400/20'
+                  : 'bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 border-amber-400/30'
+              }`}
+              title="Manage Dine-In Tables, seating & QRs"
+            >
+              <UtensilsCrossed className="w-3.5 h-3.5" />
+              <span>Table Settings</span>
+            </button>
+
             {/* Chef Station Filter */}
             <div className="bg-[#0A0E13] p-1 rounded-xl border border-white/10 flex items-center gap-1">
               {[
@@ -1400,20 +1415,38 @@ export default function KitchenManagerApp({
               className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer relative ${
                 kdsSubSection === 'tables'
                   ? 'bg-amber-400 text-stone-950 shadow-lg shadow-amber-400/20 font-black'
-                  : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                  : 'bg-amber-400/10 text-amber-300 border border-amber-400/20 hover:bg-amber-400/20 hover:text-white'
               }`}
             >
               <UtensilsCrossed className="w-4 h-4" />
-              <span>Dine-In Tables & QRs ({(activeKitchen?.tables || []).length})</span>
-              {(activeKitchen?.tables || []).some(t => t.isOccupied) && (
+              <span>Table Settings ({(activeKitchen?.tables || []).length})</span>
+              {(activeKitchen?.tables || []).some(t => t.isOccupied) ? (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-md">
                   {(activeKitchen?.tables || []).filter(t => t.isOccupied).length} Seated
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-300">
+                  Open
                 </span>
               )}
             </button>
           </div>
 
           <div className="flex items-center gap-2 px-2">
+            <button
+              type="button"
+              onClick={() => setKdsSubSection('tables')}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer transition-all active:scale-95 border ${
+                kdsSubSection === 'tables'
+                  ? 'bg-amber-400 text-stone-950 border-amber-300 font-black'
+                  : 'bg-white/5 hover:bg-white/10 text-amber-300 border-amber-400/30'
+              }`}
+              title="Open Dine-In Table Settings, seating occupancy & QR Standees"
+            >
+              <UtensilsCrossed className="w-3.5 h-3.5 text-amber-400" />
+              <span>Table Settings</span>
+            </button>
+
             <button
               type="button"
               onClick={handleOpenEODSettlement}
@@ -2900,12 +2933,17 @@ export default function KitchenManagerApp({
             {/* Header with Dine-In Toggle & Add Table CTA */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
               <div>
-                <h3 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
-                  <UtensilsCrossed className="w-4 h-4 text-amber-400" />
-                  <span>{activeKitchen?.name} • Dining Room & Table QR Setup</span>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[9px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded uppercase tracking-wider">
+                    KITCHEN MANAGER • TABLE SETTINGS & FLOOR PLAN
+                  </span>
+                </div>
+                <h3 className="text-base font-black uppercase text-white tracking-wider flex items-center gap-2">
+                  <UtensilsCrossed className="w-5 h-5 text-amber-400" />
+                  <span>{activeKitchen?.name} • Dining Room & Table Settings</span>
                 </h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Manage table seating availability, instant guest table ordering, and permanent scannable acrylic tent QRs.
+                  Configure dining tables, manage live table occupancy, and print acrylic QR standees for instant guest seating.
                 </p>
               </div>
 
