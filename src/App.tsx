@@ -74,6 +74,8 @@ import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from '
 import { AppFeatureFlags } from './types';
 import BhattiGameOnPortal from './components/gameon/BhattiGameOnPortal';
 import { saveWonRewardToUserVault } from './lib/gameonService';
+import DineInPortal from './components/dinein/DineInPortal';
+import OrderInvoiceModal from './components/OrderInvoiceModal';
 
 enum OperationType {
   CREATE = 'create',
@@ -352,6 +354,10 @@ export default function App() {
     } catch (e) {}
     showToast("🍽️ Dine-in table session cleared.");
   };
+
+  // Fullscreen Dedicated Dine-In Portal State
+  const [isDineInFullscreen, setIsDineInFullscreen] = useState<boolean>(true);
+  const [tableInvoiceOrder, setTableInvoiceOrder] = useState<Order | null>(null);
 
   // Group Ordering Active State & Preloaded Meals (from Reorder)
   const [groupOrderPreloadMeals, setGroupOrderPreloadMeals] = useState<{ meal: Meal; quantity: number }[] | null>(null);
@@ -817,22 +823,21 @@ export default function App() {
   // 2. If user already has 1 address saved, do NOT show the map popup or prompt (use their address).
   // 3. Only if user has more than 1 saved address, show them the dialog to select their saved address where they want food delivered.
   // 4. Never trigger on page reloads/refreshes, only on fresh app launch.
-  // 5. If welcome back popup or onboarding flow is active or user has saved addresses, never show the map location picker window!
+  // 5. Automatic Map / Location Prompt Guard:
+  // - NEVER pop up for unauthenticated users
+  // - NEVER pop up for Dine-In table guests
+  // - Zero popups for users with a single saved address (auto-selected)
+  // - No map popup for users with multiple saved addresses (choose from list when tapped)
+  // - The map modal strictly opens ONLY when the user explicitly taps "Choose Location on Map"
   useEffect(() => {
     if (authChecking) return;
     if (currentGateway !== 'customer') return;
 
-    if (welcomeBackUser || onboardingFlowState?.isOpen) {
-      setShowCityLocationModal(false);
-      return;
-    }
+    // Strict Suppression: Never automatically open map modal
+    setShowCityLocationModal(false);
 
-    const sessionKey = fbUser ? `taash_arrival_prompt_${fbUser.uid}` : 'taash_arrival_prompt_guest';
-    const hasPromptedThisSession = sessionStorage.getItem(sessionKey) === 'true';
-
-    // If it's a page reload or already prompted during this browser session, skip automatic modals
-    if (hasPromptedThisSession || isPageReload()) {
-      sessionStorage.setItem(sessionKey, 'true');
+    // If dining in at a table or unauthenticated, completely exit
+    if (dineInSession || !fbUser) {
       return;
     }
 
@@ -841,23 +846,16 @@ export default function App() {
     const uniqueAddresses = Array.from(new Set([...savedList, ...primaryAddr]));
     const addressCount = uniqueAddresses.length;
 
-    // If user has any saved address, strictly do not show map modal!
-    if (addressCount > 0) {
-      sessionStorage.setItem(sessionKey, 'true');
-      setShowCityLocationModal(false);
-      return;
+    // If single saved address and not yet selected as active, auto-bind it with zero popups
+    if (addressCount === 1 && (!user.address || user.address.trim().length === 0)) {
+      const singleAddr = uniqueAddresses[0];
+      const nextUser = { ...user, address: singleAddr };
+      setUser(nextUser);
+      try {
+        localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(nextUser));
+      } catch (_) {}
     }
-
-    const timer = setTimeout(() => {
-      sessionStorage.setItem(sessionKey, 'true');
-      if (addressCount === 0 && !welcomeBackUser && !onboardingFlowState?.isOpen) {
-        // Zero saved addresses: Prompt with map popup to select delivery location
-        setShowCityLocationModal(true);
-      }
-    }, 1200);
-
-    return () => clearTimeout(timer);
-  }, [authChecking, currentGateway, fbUser?.uid, user?.savedAddresses, user?.address, welcomeBackUser, onboardingFlowState?.isOpen]);
+  }, [authChecking, currentGateway, fbUser?.uid, dineInSession, user?.savedAddresses, user?.address]);
 
   // Handler for user selecting an active delivery destination from multiple saved addresses
   const handleSelectDeliveryAddress = async (selectedAddressText: string) => {
@@ -2619,6 +2617,41 @@ export default function App() {
     );
   }
 
+  // DEDICATED FULLSCREEN DINE-IN PORTAL
+  // When table QR code is scanned or table session is active, opens a dedicated fullscreen portal step-by-step
+  if (dineInSession && isDineInFullscreen) {
+    return (
+      <>
+        <DineInPortal
+          dineInSession={dineInSession}
+          meals={meals}
+          allKitchens={kitchens}
+          currentUser={user}
+          fbUser={fbUser}
+          cart={cart}
+          onAddToCart={handleAddToCart}
+          onUpdateQuantity={handleUpdateQuantity}
+          onClearCart={() => setCart([])}
+          onPlaceOrder={handlePlaceOrder}
+          onLeaveTable={() => {
+            handleClearDineInSession();
+            setIsDineInFullscreen(true);
+          }}
+          onMinimizeToHome={() => setIsDineInFullscreen(false)}
+          allOrders={orders}
+          onOpenInvoice={(ord) => setTableInvoiceOrder(ord)}
+        />
+        {tableInvoiceOrder && (
+          <OrderInvoiceModal
+            order={tableInvoiceOrder}
+            isOpen={!!tableInvoiceOrder}
+            onClose={() => setTableInvoiceOrder(null)}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="relative min-h-screen bg-brand-cream/40 flex flex-col w-full pb-24 sm:pb-28">
       {/* GLOBAL DELIGHTFUL TAP & CLICK ANIMATION */}
@@ -2799,14 +2832,18 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setCartOpen(true)}
-              className="bg-amber-400 hover:bg-amber-300 text-stone-950 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-xs cursor-pointer transition-all"
+              onClick={() => setIsDineInFullscreen(true)}
+              className="bg-amber-400 hover:bg-amber-300 text-stone-950 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-xs cursor-pointer transition-all flex items-center gap-1"
             >
-              Order ({cart.length})
+              <span>🍽️ Table Portal</span>
+              {cart.length > 0 && <span>({cart.length})</span>}
             </button>
             <button
               type="button"
-              onClick={handleClearDineInSession}
+              onClick={() => {
+                handleClearDineInSession();
+                setIsDineInFullscreen(true);
+              }}
               className="text-[10px] text-emerald-200 hover:text-white underline cursor-pointer"
               title="Leave Dine-in session"
             >

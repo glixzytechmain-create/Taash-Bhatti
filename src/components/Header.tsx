@@ -147,7 +147,7 @@ export default function Header({
                 }`}
               >
                 <img
-                  src="https://cdn.postimage.me/2026/08/01/28172.png"
+                  src="/app-icon.png"
                   alt="TAASH BHATTI Logo"
                   className="w-full h-full object-contain rounded-lg group-hover:rotate-6 transition-transform"
                   id="logo-icon"
@@ -352,7 +352,7 @@ export default function Header({
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-white border border-brand-green/20 p-0.5 shadow-sm">
                       <img
-                        src="https://cdn.postimage.me/2026/08/01/28172.png"
+                        src="/app-icon.png"
                         alt="TAASH BHATTI"
                         className="w-full h-full object-contain rounded-lg"
                       />
