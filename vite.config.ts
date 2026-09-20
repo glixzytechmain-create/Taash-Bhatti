@@ -10,8 +10,9 @@ const mapsKey =
   'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE';
 
 export default defineConfig(() => {
+  const isNativeApp = process.env.CAPACITOR_BUILD === 'true' || process.env.ELECTRON_BUILD === 'true';
   return {
-    base: './',
+    base: isNativeApp ? './' : '/',
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GOOGLE_MAPS_PLATFORM_KEY': JSON.stringify(mapsKey),

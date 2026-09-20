@@ -476,8 +476,38 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+
+    // 1. Serve hashed production assets from /assets with 1-year immutable cache.
+    // fallthrough: false ensures any missing asset returns a 404 instead of proceeding to the SPA HTML fallback!
+    app.use('/assets', express.static(path.join(distPath, 'assets'), {
+      maxAge: '1y',
+      immutable: true,
+      fallthrough: false,
+    }));
+
+    // 2. Explicitly handle any missing /assets/* request with a 404 text response.
+    // This prevents outdated chunk URLs from ever being served index.html (which causes fatal MIME-type / SyntaxError crashes).
+    app.get('/assets/*', (_req, res) => {
+      res.status(404).type('text/plain').send('Asset not found');
+    });
+
+    // 3. Serve other root static files with no-cache for HTML files
+    app.use(express.static(distPath, {
+      maxAge: '1d',
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        }
+      }
+    }));
+
+    // 4. SPA fallback: serve index.html with strict no-cache headers
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

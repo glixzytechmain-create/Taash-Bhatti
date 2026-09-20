@@ -240,6 +240,7 @@ export interface Order {
   guestPhone?: string;
   dineInBhattiId?: string;
   dineInBhattiName?: string;
+  assignedKitchenId?: string;
   scheduledSlot?: string; // 'ASAP (20-30 mins)' or 'Today, 2:00 PM - 2:30 PM'
   takeawayPickupOtp?: string; // 4-digit OTP generated for Cloud Kitchen counter pickup
   total: number;
@@ -552,6 +553,7 @@ export interface Kitchen {
   id: string;
   name: string;
   address: string;
+  area?: string;
   city?: string;
   lat: number;
   lng: number;

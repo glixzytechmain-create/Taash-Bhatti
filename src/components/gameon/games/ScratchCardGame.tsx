@@ -33,6 +33,7 @@ export default function ScratchCardGame({ game, onFinishTurn, disabled }: Scratc
     const height = canvas.height;
 
     // Foil Gradient (Gold, Charcoal Titanium, or Royal Ember)
+    const grad = ctx.createLinearGradient(0, 0, width, height);
     const theme = game.scratchFoilTheme || 'gold';
     if (theme === 'charcoal') {
       grad.addColorStop(0, '#374151');
