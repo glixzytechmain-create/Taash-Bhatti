@@ -1,0 +1,16 @@
+# Taash Bhatti Restaurant Robots Configuration
+User-agent: *
+Allow: /
+Allow: /#menu
+Allow: /#deals
+Allow: /#catering
+Allow: /#bhattis
+Allow: /#faq
+
+# Operational Views (Private)
+Disallow: /admin
+Disallow: /kds
+Disallow: /delivery-partner
+
+# XML Sitemap Location
+Sitemap: https://taashbhatti.com/sitemap.xml

@@ -3,13 +3,78 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Taash Bhattiv1.5</title>
-    <meta name="description" content="indian version of kfc startup" />
-    <meta property="og:title" content="Taash Bhattiv1.5" />
-    <meta property="og:description" content="indian version of kfc startup" />
+    <title>Taash Bhatti | Authentic Woodfire &amp; Clay-Oven Restaurant, Dine-In &amp; Delivery</title>
+    <meta name="description" content="Experience authentic woodfire clay-oven dining with Taash Bhatti. Savor royal handi dum feasts, charcoal kebabs, and tandoori specialties with full dine-in table service, takeaway, and warm doorstep delivery across our restaurant locations." />
+    <meta name="keywords" content="Taash Bhatti, restaurant, authentic woodfire dining, clay oven tandoor, handi chicken, dum biryani, charcoal kebabs, family restaurant, table reservations, dine in, food delivery, takeaway, catering" />
+    <meta name="author" content="Taash Bhatti" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#121820" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Open Graph / Social Link Previews (WhatsApp, Instagram, Facebook) -->
+    <meta property="og:type" content="restaurant" />
+    <meta property="og:site_name" content="Taash Bhatti Restaurant" />
+    <meta property="og:title" content="Taash Bhatti | Authentic Woodfire &amp; Clay-Oven Restaurant" />
+    <meta property="og:description" content="Royal clay-oven feasts, charcoal kebabs, dum biryani, and full table service across our restaurant locations. Dine-in, takeaway, and warm doorstep delivery." />
+    <meta property="og:image" content="/app-icon.png" />
+    <meta property="og:locale" content="en_IN" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Taash Bhatti | Authentic Woodfire &amp; Clay-Oven Restaurant" />
+    <meta name="twitter:description" content="Experience authentic woodfire dining, royal handi dum feasts, and sizzling tandoori kebabs with table service and delivery." />
+    <meta name="twitter:image" content="/app-icon.png" />
+
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+    <!-- Foundational Restaurant Brand Schema (JSON-LD) -->
+    <script type="application/ld+json" id="taash-bhatti-brand-schema">
+    {
+      "@context": "https://schema.org",
+      "@type": "Restaurant",
+      "name": "Taash Bhatti",
+      "alternateName": "Taash Bhatti Authentic Woodfire Restaurant & Feasts",
+      "description": "Authentic woodfire clay-oven restaurant chain offering royal handi dum feasts, charcoal kebabs, tandoori specialties, full dine-in table service, takeaway, and warm doorstep delivery.",
+      "servesCuisine": ["North Indian", "Tandoori", "Mughlai", "Biryani", "Clay Oven Specialities"],
+      "priceRange": "₹₹",
+      "acceptsReservations": "True",
+      "hasMenu": {
+        "@type": "Menu",
+        "name": "Taash Bhatti Royal Menu",
+        "hasMenuSection": [
+          {
+            "@type": "MenuSection",
+            "name": "Woodfire Clay-Oven Specialties",
+            "description": "Handcrafted tandoori platters and charcoal smoked kebabs"
+          },
+          {
+            "@type": "MenuSection",
+            "name": "Handi Dum Feasts",
+            "description": "Traditional clay handi slow-cooked curries and biryanis"
+          }
+        ]
+      },
+      "potentialAction": [
+        {
+          "@type": "ReserveAction",
+          "result": {
+            "@type": "FoodEstablishmentReservation",
+            "name": "Table Dine-In Reservation"
+          }
+        },
+        {
+          "@type": "OrderAction",
+          "deliveryMethod": [
+            "http://purl.org/goodrelations/v1#DeliveryModePickUp",
+            "http://purl.org/goodrelations/v1#DeliveryModeOwnFleet"
+          ]
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>

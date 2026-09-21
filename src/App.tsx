@@ -76,6 +76,7 @@ import BhattiGameOnPortal from './components/gameon/BhattiGameOnPortal';
 import { saveWonRewardToUserVault } from './lib/gameonService';
 import DineInPortal from './components/dinein/DineInPortal';
 import OrderInvoiceModal from './components/OrderInvoiceModal';
+import DynamicSeoSchema from './components/DynamicSeoSchema';
 
 enum OperationType {
   CREATE = 'create',
@@ -2622,6 +2623,8 @@ export default function App() {
   if (dineInSession && isDineInFullscreen) {
     return (
       <>
+        {/* DYNAMIC MULTI-BRANCH GOOGLE RESTAURANT SCHEMA (JSON-LD) */}
+        <DynamicSeoSchema allKitchens={kitchens} />
         <DineInPortal
           dineInSession={dineInSession}
           meals={meals}
@@ -2654,6 +2657,9 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen bg-brand-cream/40 flex flex-col w-full pb-24 sm:pb-28">
+      {/* DYNAMIC MULTI-BRANCH GOOGLE RESTAURANT SCHEMA (JSON-LD) */}
+      <DynamicSeoSchema allKitchens={kitchens} />
+
       {/* GLOBAL DELIGHTFUL TAP & CLICK ANIMATION */}
       <TapFeedbackEffect />
 
