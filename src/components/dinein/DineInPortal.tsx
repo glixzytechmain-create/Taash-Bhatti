@@ -28,7 +28,10 @@ import {
   User,
   Phone
 } from 'lucide-react';
-import { Meal, Order, OrderItem, Kitchen } from '../../types';
+import { Meal, Order, OrderItem, Kitchen, SmartCoupon, CouponEvaluationContext } from '../../types';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
+import { evaluateSmartCoupon, normalizeSmartCoupon } from '../../lib/couponEngine';
 
 interface DineInPortalProps {
   dineInSession: {
@@ -81,6 +84,7 @@ export default function DineInPortal({
   const [paymentMethod, setPaymentMethod] = useState<'counter' | 'upi' | 'cash'>('counter');
   const [couponCode, setCouponCode] = useState<string>('');
   const [appliedDiscount, setAppliedDiscount] = useState<number>(0);
+  const [appliedCouponData, setAppliedCouponData] = useState<SmartCoupon | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
 
@@ -159,8 +163,8 @@ export default function DineInPortal({
 
   const finalTotal = Math.max(0, cartSubtotal - appliedDiscount);
 
-  // Apply Coupon
-  const handleApplyCoupon = () => {
+  // Apply Smart Coupon for Table Dine-In
+  const handleApplyCoupon = async () => {
     setCouponError(null);
     setCouponSuccess(null);
     const code = couponCode.trim().toUpperCase();
@@ -168,12 +172,63 @@ export default function DineInPortal({
       setCouponError('Please enter a coupon code.');
       return;
     }
-    if (code === 'BHATTI50' || code.startsWith('ARCADE') || code.startsWith('COIN') || code.startsWith('ROUL') || code.startsWith('SCRT')) {
-      const discount = Math.min(100, Math.round(cartSubtotal * 0.2));
-      setAppliedDiscount(discount);
-      setCouponSuccess(`🎉 Coupon applied! Saved ₹${discount} on table feast.`);
-    } else {
-      setCouponError('Invalid or expired coupon code for this table.');
+
+    if (cartSubtotal <= 0) {
+      setCouponError('Please add dishes to your feast before applying coupons.');
+      return;
+    }
+
+    try {
+      const couponRef = doc(db, 'coupons', code);
+      const couponSnap = await getDoc(couponRef);
+      if (!couponSnap.exists()) {
+        setCouponError('Invalid coupon code. This coupon does not exist or has ended.');
+        return;
+      }
+
+      const smart = normalizeSmartCoupon({ id: code, ...couponSnap.data() });
+
+      const evalContext: CouponEvaluationContext = {
+        subtotal: cartSubtotal,
+        cartItems: cart.map((it) => ({
+          mealId: it.meal.id,
+          mealName: it.meal.name,
+          category: (it.meal as any).category || (it.meal.goals ? it.meal.goals[0] : undefined),
+          price: it.meal.price,
+          quantity: it.quantity,
+          isVeg: it.meal.isVeg,
+          isDeal: Boolean(it.isDeal || it.dealId || it.meal.id.startsWith('deal-')),
+        })),
+        fulfillmentMode: 'dine_in',
+        kitchenId: dineInSession.bhattiId || currentBhatti?.id || undefined,
+        user: {
+          id: currentUser?.id || fbUser?.uid || undefined,
+          email: currentUser?.email || fbUser?.email || undefined,
+          phone: guestPhone.replace(/\D/g, '') || currentUser?.phone || undefined,
+        },
+      };
+
+      const result = evaluateSmartCoupon(smart, evalContext);
+      if (!result.isValid) {
+        setCouponError(result.helpfulHint || result.rejectionReason || 'This voucher is not applicable to this dine-in order.');
+        return;
+      }
+
+      setAppliedDiscount(result.discountAmount);
+      setAppliedCouponData(smart);
+      if (smart.discountType === 'percentage') {
+        const cap = smart.criteria?.maxDiscountCap ? ` up to ₹${smart.criteria.maxDiscountCap}` : '';
+        setCouponSuccess(`🎉 Code '${smart.code}' applied! Saved ₹${result.discountAmount} (-${smart.discountValue}%${cap}).`);
+      } else if (smart.discountType === 'fixed') {
+        setCouponSuccess(`🎉 Flat discount applied! Saved ₹${result.discountAmount}.`);
+      } else if (smart.discountType === 'free_perk') {
+        setCouponSuccess(`🎁 Table perk unlocked: ${smart.perkName || 'Complimentary Treat'}!`);
+      } else {
+        setCouponSuccess(`🎉 Coupon applied! Saved ₹${result.discountAmount}.`);
+      }
+    } catch (err) {
+      console.error('Error validating table coupon:', err);
+      setCouponError('Could not verify coupon. Please check connection and retry.');
     }
   };
 
@@ -223,6 +278,30 @@ export default function DineInPortal({
       };
 
       await onPlaceOrder(newOrder);
+
+      // Increment coupon stats if applied
+      if (appliedCouponData && (appliedCouponData.id || appliedCouponData.code)) {
+        const cId = appliedCouponData.id || appliedCouponData.code;
+        try {
+          const couponRef = doc(db, 'coupons', cId);
+          const snap = await getDoc(couponRef);
+          if (snap.exists()) {
+            const currentData = snap.data();
+            const currentCount = currentData.usageCount || 0;
+            const currentGlobalCount = currentData.globalUsageCount || currentCount || 0;
+            const currentSavings = currentData.totalSavings || 0;
+            await updateDoc(couponRef, {
+              usageCount: currentCount + 1,
+              globalUsageCount: currentGlobalCount + 1,
+              totalSavings: currentSavings + appliedDiscount,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        } catch (err) {
+          console.error("Error updating table coupon usage/savings:", err);
+        }
+      }
+
       onClearCart();
       setActiveView('status');
     } catch (err) {
@@ -605,11 +684,27 @@ export default function DineInPortal({
 
                 {/* Coupon Box */}
                 <div className="bg-[#10151D] border border-stone-800 rounded-2xl p-3.5 space-y-2">
-                  <label className="text-xs font-bold text-stone-300 block">Arcade Coupon / Discount Voucher</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-stone-300 block">Dine-In Voucher / Smart Coupon</label>
+                    {appliedCouponData && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppliedCouponData(null);
+                          setAppliedDiscount(0);
+                          setCouponSuccess(null);
+                          setCouponError(null);
+                        }}
+                        className="text-[10px] text-rose-400 font-bold hover:underline cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Enter Coupon Code (e.g. BHATTI50)"
+                      placeholder="Enter Promo Code (e.g. TABLE10)"
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value)}
                       className="flex-1 p-2 bg-[#0B0F14] border border-stone-800 rounded-xl text-xs text-white uppercase focus:outline-none focus:border-amber-500"
@@ -617,13 +712,30 @@ export default function DineInPortal({
                     <button
                       type="button"
                       onClick={handleApplyCoupon}
-                      className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs font-bold rounded-xl cursor-pointer"
+                      className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold rounded-xl cursor-pointer border border-amber-500/40 transition-all active:scale-95"
                     >
                       Apply
                     </button>
                   </div>
-                  {couponError && <p className="text-[11px] text-red-400">{couponError}</p>}
-                  {couponSuccess && <p className="text-[11px] text-emerald-400">{couponSuccess}</p>}
+                  {couponError && <p className="text-[11px] text-red-400 font-medium">{couponError}</p>}
+                  {couponSuccess && <p className="text-[11px] text-emerald-400 font-bold">{couponSuccess}</p>}
+                  {appliedCouponData && (
+                    <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs font-black text-amber-300 bg-black/40 px-2 py-0.5 rounded border border-amber-500/30">
+                          {appliedCouponData.code}
+                        </span>
+                        {appliedCouponData.badge && (
+                          <span className="text-[9px] font-extrabold uppercase bg-amber-400 text-black px-1.5 py-0.2 rounded">
+                            {appliedCouponData.badge}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-black text-emerald-400">
+                        -₹{appliedDiscount}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Payment Option */}

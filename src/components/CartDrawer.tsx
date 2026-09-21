@@ -34,11 +34,15 @@ import {
   User as UserIcon,
   CheckCircle2,
   AlertTriangle,
+  Tag,
+  Gift,
+  Clock,
 } from 'lucide-react';
 import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder } from '../lib/walletService';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, onSnapshot, query, where, getDocs, increment } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags } from '../types';
+import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupon, CouponEvaluationContext } from '../types';
+import { evaluateSmartCoupon, getEligibleCoupons, normalizeSmartCoupon } from '../lib/couponEngine';
 import { getStoredFeatureFlags, subscribeFeatureFlags } from '../lib/featureFlags';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { GOOGLE_MAPS_API_KEY, reverseGeocodeCoords, isGoogleMapsAuthFailed } from '../lib/googleMaps';
@@ -497,6 +501,49 @@ export default function CartDrawer({
   const [appliedCoupons, setAppliedCoupons] = useState<any[]>([]); // Array of applied coupons in stack
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+  // Available Smart Coupons from Firestore & User Completed Orders
+  const [allAvailableCoupons, setAllAvailableCoupons] = useState<SmartCoupon[]>([]);
+  const [userCompletedOrderCount, setUserCompletedOrderCount] = useState<number>(0);
+
+  // Real-time listener for active coupons in cart
+  useEffect(() => {
+    if (!isOpen) return;
+    const couponsCol = collection(db, 'coupons');
+    const unsub = onSnapshot(couponsCol, (snap) => {
+      const list: SmartCoupon[] = [];
+      snap.forEach((d) => {
+        const raw = { id: d.id, ...d.data() };
+        try {
+          list.push(normalizeSmartCoupon(raw));
+        } catch (_) {}
+      });
+      setAllAvailableCoupons(list);
+    }, (err) => {
+      console.warn("Could not load coupons in cart:", err);
+    });
+    return () => unsub();
+  }, [isOpen]);
+
+  // Load customer completed order count to verify sequence criteria (e.g. 1st order only, Nth order)
+  useEffect(() => {
+    const uid = user.id || auth.currentUser?.uid;
+    if (!uid || !isOpen) return;
+
+    const fetchOrdersCount = async () => {
+      try {
+        const q = query(
+          collection(db, 'orders'),
+          where('userId', '==', uid),
+          where('status', '==', 'delivered')
+        );
+        const snap = await getDocs(q);
+        setUserCompletedOrderCount(snap.size);
+      } catch (err) {
+        console.warn("Could not fetch user order count for coupon evaluation:", err);
+      }
+    };
+    fetchOrdersCount();
+  }, [user.id, auth.currentUser?.uid, isOpen]);
 
   // Preload coupon code if passed from Bhatti GameOn or User Vault
   useEffect(() => {
@@ -892,24 +939,20 @@ export default function CartDrawer({
   const gymDiscountVal = 0;
 
   // 4. COUPON CODE DISCOUNT (Only applicable to regular menu items, deals are coupon-exempt)
-  const totalCouponDiscountPct = useMemo(() => {
-    return appliedCoupons
-      .filter((c) => c.discountType === 'percentage')
-      .reduce((sum, c) => sum + (c.discountValue || 0), 0);
-  }, [appliedCoupons]);
-
-  const totalCouponFixedVal = useMemo(() => {
-    return appliedCoupons
-      .filter((c) => c.discountType === 'fixed')
-      .reduce((sum, c) => sum + (c.discountValue || 0), 0);
-  }, [appliedCoupons]);
-
   const couponDiscountVal = useMemo(() => {
     if (appliedCoupons.length === 0 || regularSubtotal === 0) return 0;
-    // Calculate coupon discount strictly on eligible regular menu items
-    const pctDiscount = Math.round(regularSubtotal * (totalCouponDiscountPct / 100));
-    return Math.min(regularSubtotal, pctDiscount + totalCouponFixedVal);
-  }, [regularSubtotal, totalCouponDiscountPct, totalCouponFixedVal, appliedCoupons]);
+    let sumDiscount = 0;
+    for (const c of appliedCoupons) {
+      if (c.discountType === 'percentage') {
+        const raw = Math.round(regularSubtotal * ((c.discountValue || 0) / 100));
+        const maxCap = c.criteria?.maxDiscountCap || c.maxDiscountCap;
+        sumDiscount += maxCap ? Math.min(raw, maxCap) : raw;
+      } else if (c.discountType === 'fixed') {
+        sumDiscount += (c.discountValue || 0);
+      }
+    }
+    return Math.min(regularSubtotal, sumDiscount);
+  }, [regularSubtotal, appliedCoupons]);
 
   // 5. TOTAL CALCULATION
   const isFreeDeliveryCoupon = useMemo(() => {
@@ -943,13 +986,63 @@ export default function CartDrawer({
 
   const finalTotal = emberCheckout.finalPayable;
 
-  // Handle Coupon Apply (Dynamic real-time lookups with stacking validation)
-  const handleApplyCoupon = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Compile Pure Evaluation Context for Smart Criteria Engine
+  const evalContext: CouponEvaluationContext = useMemo(() => {
+    return {
+      subtotal: regularSubtotal,
+      cartItems: cartItems.map((item) => ({
+        mealId: item.meal.id,
+        mealName: item.meal.name,
+        category: (item.meal as any).category || (item.meal.goals ? item.meal.goals[0] : undefined),
+        price: item.meal.price,
+        quantity: item.quantity,
+        isVeg: item.meal.isVeg,
+        isDeal: Boolean(item.isDeal || item.dealId || item.meal.id.startsWith('deal-') || item.meal.goals?.includes('gourmet_special' as any)),
+      })),
+      fulfillmentMode: (fulfillmentType as any) || 'delivery',
+      kitchenId: (fulfillmentType === 'dine_in' ? (selectedDineInKitchen?.id || dineInSession?.bhattiId) : selectedBhatti?.id) || undefined,
+      user: {
+        id: user?.id || auth.currentUser?.uid || undefined,
+        email: user?.email || auth.currentUser?.email || undefined,
+        phone: user?.phone || undefined,
+        completedOrderCount: userCompletedOrderCount,
+        lastOrderDate: (user as any)?.lastOrderDate || undefined,
+      },
+      appliedCoupons: appliedCoupons.map((c) => ({
+        code: c.code,
+        isStackable: c.isStackable ?? c.criteria?.isStackable,
+        stackableWith: c.stackableWith ?? c.criteria?.stackableWith,
+      })),
+    };
+  }, [
+    regularSubtotal,
+    cartItems,
+    fulfillmentType,
+    selectedDineInKitchen?.id,
+    dineInSession?.bhattiId,
+    selectedBhatti?.id,
+    user,
+    userCompletedOrderCount,
+    appliedCoupons,
+  ]);
+
+  // Compute Ready-to-apply and Almost-eligible Smart Coupons
+  const { eligible: eligibleCoupons, almostEligible: almostEligibleCoupons } = useMemo(() => {
+    if (!allAvailableCoupons || allAvailableCoupons.length === 0) {
+      return { eligible: [], almostEligible: [] };
+    }
+    const unapplied = allAvailableCoupons.filter(
+      (c) => !appliedCoupons.some((ac) => ac.code === c.code || ac.id === c.code)
+    );
+    return getEligibleCoupons(unapplied, evalContext);
+  }, [allAvailableCoupons, appliedCoupons, evalContext]);
+
+  // Core smart coupon application routine
+  const applyCouponByCode = async (rawCode: string) => {
     setCouponError(null);
     setCouponSuccess(null);
 
-    const codeClean = couponCode.trim().toUpperCase();
+    const codeClean = rawCode.trim().toUpperCase();
     if (!codeClean) return;
 
     // Check if cart has only deals
@@ -958,123 +1051,55 @@ export default function CartDrawer({
       return;
     }
 
-    // 1. Check for duplicates
+    // Check for duplicates
     if (appliedCoupons.some((c) => c.code === codeClean || c.id === codeClean)) {
       setCouponError("This coupon code is already applied to your order.");
       return;
     }
 
     try {
-      const couponRef = doc(db, 'coupons', codeClean);
-      const couponSnap = await getDoc(couponRef);
-
-      let couponData: any = null;
-
-      if (!couponSnap.exists()) {
-        setCouponError("Invalid coupon code. This coupon does not exist.");
-        return;
-      }
-      couponData = { id: codeClean, ...couponSnap.data() };
-
-      // 2. Validate General Rules
-      if (!couponData.isActive) {
-        setCouponError('This special offer is currently paused or inactive.');
-        return;
-      }
-
-      if (couponData.expiryDate && new Date(couponData.expiryDate) < new Date()) {
-        setCouponError('This coupon has expired.');
-        return;
-      }
-
-      // Minimum order value validation against eligible regular menu items
-      if (regularSubtotal < (couponData.minOrderValue || 0)) {
-        setCouponError(`Minimum regular menu subtotal required: ₹${couponData.minOrderValue} (Deals & combos are exempt).`);
-        return;
-      }
-
-      if (couponData.usageCap && (couponData.usageCount || 0) >= couponData.usageCap) {
-        setCouponError('This coupon cap has been fully claimed.');
-        return;
-      }
-
-      if (couponData.firstNUsersOnly && (couponData.usageCount || 0) >= couponData.firstNUsersOnly) {
-        setCouponError(`First ${couponData.firstNUsersOnly} users limit reached for this campaign.`);
-        return;
-      }
-
-      if (couponData.scope === 'account_based' || couponData.targetUserId) {
-        const currentUserId = user?.id || (auth.currentUser?.uid) || '';
-        const targetUserId = couponData.targetUserId || '';
-        const userEmail = user?.email?.trim().toLowerCase() || (auth.currentUser?.email?.toLowerCase()) || '';
-        const targetEmail = couponData.targetUserEmail?.trim().toLowerCase() || '';
-
-        const matchesId = Boolean(targetUserId && currentUserId && targetUserId === currentUserId);
-        const matchesEmail = Boolean(targetEmail && userEmail && targetEmail === userEmail);
-
-        if (!matchesId && !matchesEmail) {
-          setCouponError('🔒 This exclusive arcade reward coupon is locked to a specific account.');
+      let targetCoupon = allAvailableCoupons.find((c) => c.code === codeClean || c.id === codeClean);
+      if (!targetCoupon) {
+        const couponRef = doc(db, 'coupons', codeClean);
+        const couponSnap = await getDoc(couponRef);
+        if (!couponSnap.exists()) {
+          setCouponError("Invalid coupon code. This coupon does not exist or has expired.");
           return;
         }
+        targetCoupon = normalizeSmartCoupon({ id: codeClean, ...couponSnap.data() });
       }
 
-      if (couponData.scope === 'gym_only') {
-        // Obsolete gym scope
+      // Execute comprehensive smart validation
+      const evalResult = evaluateSmartCoupon(targetCoupon, evalContext);
+
+      if (!evalResult.isValid) {
+        setCouponError(evalResult.helpfulHint || evalResult.rejectionReason || "Coupon cannot be applied to this cart.");
+        return;
       }
 
-      // 3. Stacking Validations
-      if (appliedCoupons.length > 0) {
-        // A. Is the new coupon stackable?
-        if (couponData.isStackable === false || !couponData.isStackable) {
-          setCouponError(`Coupon '${codeClean}' is not stackable with other coupons.`);
-          return;
-        }
-
-        // B. Are all already-applied coupons stackable?
-        const hasNonStackableApplied = appliedCoupons.some((c) => c.isStackable === false || !c.isStackable);
-        if (hasNonStackableApplied) {
-          setCouponError('Your currently applied coupon does not allow stacking. Clear it first.');
-          return;
-        }
-
-        // C. Does the new coupon restrict which coupon codes it can stack with?
-        if (couponData.stackableWith && couponData.stackableWith.length > 0) {
-          const restricted = appliedCoupons.some((c) => !couponData.stackableWith.includes(c.code));
-          if (restricted) {
-            setCouponError(`Coupon '${codeClean}' can only stack with: ${couponData.stackableWith.join(', ')}`);
-            return;
-          }
-        }
-
-        // D. Do any of the existing coupons restrict stacking with this new coupon?
-        for (const existing of appliedCoupons) {
-          if (existing.stackableWith && existing.stackableWith.length > 0) {
-            if (!existing.stackableWith.includes(codeClean)) {
-              setCouponError(`Coupon '${codeClean}' cannot stack with '${existing.code}', which has narrow stacking limits.`);
-              return;
-            }
-          }
-        }
-      }
-
-      // Applied successfully to stack
-      setAppliedCoupons((prev) => [...prev, couponData]);
+      // Add to applied stack
+      setAppliedCoupons((prev) => [...prev, targetCoupon!]);
       setCouponCode('');
 
-      if (couponData.discountType === 'percentage') {
-        setCouponSuccess(`🏷️ Code '${couponData.code}' stacked! (-${couponData.discountValue}%)`);
-      } else if (couponData.discountType === 'fixed') {
-        setCouponSuccess(`🏷️ Flat discount stacked! (-₹${couponData.discountValue})`);
-      } else if (couponData.discountType === 'free_delivery') {
-        setCouponSuccess(`🚚 Free insulated delivery stacked!`);
-      } else if (couponData.discountType === 'free_perk') {
-        setCouponSuccess(`🎁 Premium perk stacked: ${couponData.perkName}!`);
+      if (targetCoupon.discountType === 'percentage') {
+        const capText = targetCoupon.criteria?.maxDiscountCap ? ` up to ₹${targetCoupon.criteria.maxDiscountCap}` : '';
+        setCouponSuccess(`🎉 Code '${targetCoupon.code}' applied! (-${targetCoupon.discountValue}%${capText})`);
+      } else if (targetCoupon.discountType === 'fixed') {
+        setCouponSuccess(`🎉 Flat discount applied! (-₹${targetCoupon.discountValue})`);
+      } else if (targetCoupon.discountType === 'free_delivery') {
+        setCouponSuccess(`🚚 Free delivery unlocked with '${targetCoupon.code}'!`);
+      } else if (targetCoupon.discountType === 'free_perk') {
+        setCouponSuccess(`🎁 Complimentary reward unlocked: ${targetCoupon.perkName || 'Chef Special'}!`);
       }
-
     } catch (err) {
-      console.error("Error applying coupon:", err);
+      console.error("Error applying smart coupon:", err);
       setCouponError("Could not check coupon. Please retry.");
     }
+  };
+
+  const handleApplyCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await applyCouponByCode(couponCode);
   };
 
   // Place order trigger
@@ -1264,27 +1289,33 @@ export default function CartDrawer({
 
     // Increment coupon usage count dynamically and accumulate totalSavings in Firestore
     for (const coupon of appliedCoupons) {
-      if (coupon.id) {
+      if (coupon.id || coupon.code) {
+        const cId = coupon.id || coupon.code;
         try {
           // Calculate savings contribution for this specific coupon
           let savingsContrib = 0;
           if (coupon.discountType === 'percentage') {
-            savingsContrib = Math.round((subtotal - gymDiscountVal) * (coupon.discountValue / 100));
+            const raw = Math.round(regularSubtotal * ((coupon.discountValue || 0) / 100));
+            const maxCap = coupon.criteria?.maxDiscountCap || coupon.maxDiscountCap;
+            savingsContrib = maxCap ? Math.min(raw, maxCap) : raw;
           } else if (coupon.discountType === 'fixed') {
-            savingsContrib = Math.min(subtotal - gymDiscountVal, coupon.discountValue);
+            savingsContrib = Math.min(regularSubtotal, coupon.discountValue || 0);
           } else if (coupon.discountType === 'free_delivery') {
             savingsContrib = 30; // Delivery fee saved
           }
 
-          const couponRef = doc(db, 'coupons', coupon.id);
+          const couponRef = doc(db, 'coupons', cId);
           const snap = await getDoc(couponRef);
           if (snap.exists()) {
             const currentData = snap.data();
             const currentCount = currentData.usageCount || 0;
+            const currentGlobalCount = currentData.globalUsageCount || currentCount || 0;
             const currentSavings = currentData.totalSavings || 0;
             await updateDoc(couponRef, {
               usageCount: currentCount + 1,
-              totalSavings: currentSavings + savingsContrib
+              globalUsageCount: currentGlobalCount + 1,
+              totalSavings: currentSavings + savingsContrib,
+              updatedAt: new Date().toISOString()
             });
           }
         } catch (err) {
@@ -2432,8 +2463,8 @@ export default function CartDrawer({
               {/* COUPON INPUT */}
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black uppercase text-brand-charcoal/50 tracking-wide">
-                    2. Apply Coupon
+                  <span className="text-[10px] font-black uppercase text-brand-charcoal/50 tracking-wide flex items-center gap-1">
+                    <Tag className="w-3 h-3 text-brand-green" /> 2. Special Offers & Coupons
                   </span>
                   {appliedCoupons.length > 0 && (
                     <button
@@ -2443,46 +2474,150 @@ export default function CartDrawer({
                         setCouponSuccess("All coupons cleared.");
                         setCouponError(null);
                       }}
-                      className="text-[9px] font-bold text-rose-600 hover:underline"
+                      className="text-[9px] font-bold text-rose-600 hover:underline cursor-pointer"
                     >
                       Clear Stack
                     </button>
                   )}
                 </div>
+
+                {/* Notice for Deals & Combos only in cart */}
+                {regularSubtotal === 0 && dealsSubtotal > 0 && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-800 flex items-center gap-2">
+                    <span className="text-sm">💡</span>
+                    <span>Exclusive Combo deals are already pre-discounted. Add regular menu dishes to use coupons!</span>
+                  </div>
+                )}
+
+                {/* ELIGIBLE SMART OFFERS (READY TO APPLY WITH 1-TAP) */}
+                {eligibleCoupons.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5 text-emerald-600" /> Offers Unlocked For Your Cart ({eligibleCoupons.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                      {eligibleCoupons.map(({ coupon, result }) => (
+                        <div
+                          key={coupon.id || coupon.code}
+                          className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/50 border border-emerald-500/30 flex items-center justify-between gap-2 shadow-xs transition-all hover:border-emerald-500"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-black text-xs text-emerald-800 tracking-wider bg-white px-2 py-0.5 rounded-lg border border-dashed border-emerald-500/50">
+                                {coupon.code}
+                              </span>
+                              {coupon.badge && (
+                                <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-600 text-white tracking-wide">
+                                  {coupon.badge}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-brand-charcoal/80 font-medium truncate mt-0.5">
+                              {coupon.description || coupon.title || `Save on your order`}
+                            </p>
+                            {result.discountAmount > 0 && (
+                              <span className="text-[9px] font-bold text-emerald-600 block">
+                                ✨ Saves ₹{result.discountAmount} on regular dishes
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => applyCouponByCode(coupon.code)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-xs shrink-0 cursor-pointer active:scale-95"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ALMOST ELIGIBLE OFFERS (PROGRESS BAR TEASERS) */}
+                {almostEligibleCoupons.length > 0 && (
+                  <div className="space-y-1.5">
+                    {almostEligibleCoupons.slice(0, 2).map(({ coupon, result }) => {
+                      const minVal = coupon.criteria.minOrderValue || 0;
+                      const progressPct = minVal > 0 ? Math.min(95, Math.round((regularSubtotal / minVal) * 100)) : 70;
+                      return (
+                        <div
+                          key={coupon.id || coupon.code}
+                          className="p-2.5 rounded-xl bg-brand-cream/40 border border-brand-green/20 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="font-mono font-black text-brand-charcoal bg-white/80 px-1.5 py-0.5 rounded border border-brand-green/20">
+                              {coupon.code}
+                            </span>
+                            <span className="font-bold text-brand-green text-[9px]">
+                              {result.helpfulHint || `Add ₹${result.missingAmount || 0} to unlock`}
+                            </span>
+                          </div>
+                          <div className="w-full bg-brand-green/10 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-brand-green h-full rounded-full transition-all duration-500"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* MANUAL PROMO CODE INPUT */}
                 <form onSubmit={handleApplyCoupon} className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="e.g. FIRSTGOAL"
+                    placeholder="Enter Promo Code (e.g. TAASH50)"
                     value={couponCode}
                     onChange={(e) => setCouponCode(e.target.value)}
-                    className="flex-1 bg-brand-cream/15 border border-brand-green/10 rounded-xl px-3 py-2 text-xs font-semibold uppercase placeholder-brand-charcoal/40 focus:outline-none"
+                    className="flex-1 bg-brand-cream/20 border border-brand-green/15 rounded-xl px-3 py-2 text-xs font-semibold uppercase placeholder-brand-charcoal/40 focus:outline-none focus:border-brand-green/40 transition-colors"
                   />
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-brand-green text-white font-bold text-xs rounded-xl"
+                    className="px-4 py-2 bg-brand-green hover:bg-brand-green/90 text-white font-bold text-xs rounded-xl transition-all cursor-pointer active:scale-95 shadow-xs"
                   >
                     Apply
                   </button>
                 </form>
-                {couponError && <p className="text-[9px] text-red-600 font-bold px-1">{couponError}</p>}
-                {couponSuccess && <p className="text-[9px] text-brand-green font-bold px-1">{couponSuccess}</p>}
 
-                {/* Stacking list visualization */}
+                {couponError && (
+                  <div className="p-2 rounded-xl bg-red-50 border border-red-200 flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-red-700 font-medium leading-tight">{couponError}</p>
+                  </div>
+                )}
+
+                {couponSuccess && (
+                  <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-emerald-700 font-bold leading-tight">{couponSuccess}</p>
+                  </div>
+                )}
+
+                {/* STACKING LIST VISUALIZATION */}
                 {appliedCoupons.length > 0 && (
-                  <div className="space-y-1.5 pt-1.5 border-t border-brand-green/5 mt-1">
-                    <span className="text-[9px] font-black uppercase text-brand-charcoal/40 block">Currently Stacked Coupons</span>
+                  <div className="space-y-1.5 pt-1 border-t border-brand-green/10">
+                    <span className="text-[9px] font-black uppercase text-brand-charcoal/50 block tracking-wider">
+                      Currently Applied Coupons ({appliedCoupons.length})
+                    </span>
                     <div className="flex flex-wrap gap-1.5">
                       {appliedCoupons.map((coupon) => (
-                        <div key={coupon.id} className="flex items-center gap-1.5 bg-brand-green/10 text-brand-green border border-brand-green/20 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold">
+                        <div
+                          key={coupon.id || coupon.code}
+                          className="flex items-center gap-1.5 bg-brand-green/10 text-brand-green border border-brand-green/30 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold shadow-xs"
+                        >
+                          <Tag className="w-2.5 h-2.5" />
                           <span>{coupon.code}</span>
                           <button
                             type="button"
                             onClick={() => {
-                              setAppliedCoupons(prev => prev.filter(c => c.id !== coupon.id));
+                              setAppliedCoupons((prev) => prev.filter((c) => (c.id || c.code) !== (coupon.id || coupon.code)));
                               setCouponSuccess(`Coupon ${coupon.code} removed.`);
                               setCouponError(null);
                             }}
-                            className="hover:text-rose-600 transition-colors cursor-pointer text-brand-charcoal/40 text-[10px] font-black"
+                            className="hover:text-rose-600 transition-colors cursor-pointer text-brand-charcoal/50 text-[10px] font-black ml-0.5"
                             title="Remove Coupon"
                           >
                             ✕

@@ -227,6 +227,131 @@ export interface DealOffer {
   createdBy?: string;
 }
 
+// ==========================================
+// SMART CRITERIA-BASED COUPON SYSTEM
+// ==========================================
+
+export type CouponDiscountType = 'percentage' | 'fixed' | 'free_delivery' | 'free_perk';
+export type DayOfWeek = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface SmartCouponCriteria {
+  // 1. Order Sequence & Customer History
+  sequenceRule?: 'any' | 'first_order_only' | 'exact_nth_order' | 'after_min_orders';
+  exactNthOrder?: number;              // e.g. 1 for 1st order, 3 for 3rd order
+  minCompletedOrders?: number;         // e.g. 5 (must have completed at least 5 orders)
+  maxRedemptionsPerUser?: number;      // e.g. 1 or 2 uses per diner
+  userCooldownDays?: number;           // Cooldown in days between redemptions by the same user
+
+  // 2. Schedule, Date & Time Windows
+  startDate?: string;                  // ISO Date (YYYY-MM-DD)
+  endDate?: string;                    // ISO Date (YYYY-MM-DD)
+  allowedDaysOfWeek?: DayOfWeek[];     // ['fri', 'sat', 'sun']
+  mealSlotWindow?: {
+    startTime: string;                 // '12:00' (24-hour HH:mm)
+    endTime: string;                   // '15:30'
+  };
+
+  // 3. Cart Composition & Dish Rules
+  minOrderValue: number;               // Minimum regular subtotal (₹)
+  maxDiscountCap?: number;             // Maximum discount cap in ₹ for % coupons
+  requiredCategories?: string[];       // e.g. ['handi', 'tandoor']
+  requiredMealIds?: string[];          // e.g. ['biryani-mutton-handi']
+  dietaryRequirement?: 'any' | 'veg_only' | 'non_veg_only';
+  minCartItems?: number;               // Minimum dish count
+
+  // 4. Fulfillment Channel & Location Rules
+  allowedChannels?: ('delivery' | 'takeaway' | 'dine_in')[];
+  allowedKitchenIds?: string[];        // Valid only at specific branch/kitchen
+
+  // 5. Stacking & User Targeting
+  isStackable?: boolean;
+  stackableWith?: string[];            // Codes allowed to stack
+  targetUserId?: string;
+  targetUserEmail?: string;
+  targetUserPhone?: string;
+  isDormantUserOnly?: boolean;         // Users inactive > 30 days
+  dormantDaysThreshold?: number;       // default 30
+}
+
+export interface SmartCoupon {
+  id: string;                          // clean uppercase code (e.g. 'TAASH50')
+  code: string;
+  title: string;                       // e.g. 'Royal Weekend Handi Feast'
+  description: string;                 // e.g. 'Flat ₹150 OFF on orders above ₹599'
+  badge?: string;                      // 'FIRST ORDER', 'WEEKEND EXCLUSIVE', 'DINE-IN ONLY'
+  discountType: CouponDiscountType;
+  discountValue: number;               // % or ₹ amount
+  perkName?: string;                   // For free_perk (e.g. 'Complimentary Firni Handi')
+  isActive: boolean;
+  criteria: SmartCouponCriteria;
+
+  // Global Platform Metrics
+  globalUsageCap?: number;             // Total redemptions allowed across platform
+  globalUsageCount?: number;
+  totalSavings?: number;               // Historical aggregate ₹ discounts given
+  firstNUsersOnly?: number;            // Cap on distinct first N users
+  scope?: 'all' | 'account_based' | 'gym_only';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+export interface CouponEvaluationContext {
+  subtotal: number;                    // Regular menu subtotal (excluding deals)
+  cartItems: {
+    mealId: string;
+    mealName?: string;
+    category?: string;
+    price: number;
+    quantity: number;
+    isVeg?: boolean;
+    isDeal?: boolean;
+  }[];
+  fulfillmentMode: 'delivery' | 'takeaway' | 'dine_in';
+  kitchenId?: string;
+  user?: {
+    id?: string;
+    email?: string;
+    phone?: string;
+    completedOrderCount?: number;
+    lastOrderDate?: string;
+    userCouponUsageCount?: number;     // How many times this user redeemed this specific code
+    lastRedemptionDate?: string;       // When user last redeemed this specific code
+  } | null;
+  appliedCoupons?: { code: string; isStackable?: boolean; stackableWith?: string[] }[];
+  currentTimestamp?: Date;             // Defaults to new Date()
+}
+
+export interface CouponEvaluationResult {
+  isValid: boolean;
+  code: string;
+  discountAmount: number;
+  rejectionReason?: string;
+  rejectionCode?: 
+    | 'CODE_NOT_FOUND'
+    | 'INACTIVE'
+    | 'EXPIRED'
+    | 'GLOBAL_CAP_REACHED'
+    | 'CHANNEL_MISMATCH'
+    | 'LOCATION_MISMATCH'
+    | 'TIME_WINDOW_MISMATCH'
+    | 'DAY_OF_WEEK_MISMATCH'
+    | 'SEQUENCE_NOT_MET'
+    | 'MAX_REDEMPTIONS_REACHED'
+    | 'COOLDOWN_ACTIVE'
+    | 'MIN_ORDER_VALUE_NOT_MET'
+    | 'CATEGORY_MISSING'
+    | 'DIETARY_MISMATCH'
+    | 'MIN_ITEMS_NOT_MET'
+    | 'STACKING_FORBIDDEN'
+    | 'ACCOUNT_LOCKED'
+    | 'DORMANT_CRITERIA_NOT_MET'
+    | 'DEALS_ONLY_CART';
+  helpfulHint?: string;                // Actionable guidance for the customer
+  missingAmount?: number;              // e.g. "Add ₹45 more to unlock"
+  requiredCategoryName?: string;       // e.g. "Woodfire Handi"
+}
+
 export interface Order {
   id: string;
   items: OrderItem[];

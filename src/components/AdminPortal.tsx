@@ -91,7 +91,7 @@ import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 import { ImageUploader } from './ImageUploader';
 import { DeveloperMenuModal } from './DeveloperMenuModal';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from '../lib/featureFlags';
-import { AppFeatureFlags } from '../types';
+import { AppFeatureFlags, SmartCoupon, SmartCouponCriteria, DayOfWeek } from '../types';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { GOOGLE_MAPS_API_KEY } from '../lib/googleMaps';
 import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, arrayUnion, arrayRemove, query, where, getDocs, addDoc } from 'firebase/firestore';
@@ -1098,10 +1098,15 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [showCouponModal, setShowCouponModal] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<any | null>(null);
   const [couponCode, setCouponCodeState] = useState('');
+  const [couponTitle, setCouponTitle] = useState('');
+  const [couponDescription, setCouponDescription] = useState('');
+  const [couponBadge, setCouponBadge] = useState('🔥 SPECIAL PROMO');
   const [couponDiscountType, setCouponDiscountType] = useState<'percentage' | 'fixed' | 'free_delivery' | 'free_perk'>('percentage');
   const [couponDiscountValue, setCouponDiscountValue] = useState(15);
+  const [couponMaxDiscountCap, setCouponMaxDiscountCap] = useState<number | ''>('');
   const [couponPerkName, setCouponPerkName] = useState('');
   const [couponIsActive, setCouponIsActive] = useState(true);
+  const [couponStartDate, setCouponStartDate] = useState('');
   const [couponExpiryDate, setCouponExpiryDate] = useState('');
   const [couponMinOrderValue, setCouponMinOrderValue] = useState(0);
   const [couponUsageCap, setCouponUsageCap] = useState(100);
@@ -1112,6 +1117,26 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [couponTargetGymId, setCouponTargetGymId] = useState('');
   const [couponIsStackable, setCouponIsStackable] = useState(false);
   const [couponStackableWith, setCouponStackableWith] = useState<string[]>([]);
+
+  // Smart Criteria Modular States
+  const [couponSequenceRule, setCouponSequenceRule] = useState<'any' | 'first_order_only' | 'exact_nth_order' | 'after_min_orders'>('any');
+  const [couponExactNthOrder, setCouponExactNthOrder] = useState<number>(1);
+  const [couponMinCompletedOrders, setCouponMinCompletedOrders] = useState<number>(3);
+  const [couponMaxRedemptionsPerUser, setCouponMaxRedemptionsPerUser] = useState<number>(1);
+  const [couponUserCooldownDays, setCouponUserCooldownDays] = useState<number | ''>('');
+  const [couponAllowedDaysOfWeek, setCouponAllowedDaysOfWeek] = useState<DayOfWeek[]>([]);
+  const [couponMealSlotStart, setCouponMealSlotStart] = useState<string>('');
+  const [couponMealSlotEnd, setCouponMealSlotEnd] = useState<string>('');
+  const [couponRequiredCategories, setCouponRequiredCategories] = useState<string[]>([]);
+  const [couponDietary, setCouponDietary] = useState<'any' | 'veg_only' | 'non_veg_only'>('any');
+  const [couponMinCartItems, setCouponMinCartItems] = useState<number | ''>('');
+  const [couponAllowedChannels, setCouponAllowedChannels] = useState<('delivery' | 'takeaway' | 'dine_in')[]>(['delivery', 'takeaway', 'dine_in']);
+  const [couponAllowedKitchenIds, setCouponAllowedKitchenIds] = useState<string[]>([]);
+  const [couponIsDormantUserOnly, setCouponIsDormantUserOnly] = useState(false);
+  const [couponDormantDaysThreshold, setCouponDormantDaysThreshold] = useState(30);
+
+  // Active builder tab inside modal
+  const [couponModalTab, setCouponModalTab] = useState<'basic' | 'sequence' | 'schedule' | 'cart' | 'channels'>('basic');
 
   // Meal Filter and Pagination States
   const [searchTerm, setSearchTerm] = useState('');
@@ -2755,14 +2780,19 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     }
   };
 
-  // Coupon action handlers
+  // Coupon action handlers (Smart Criteria Architecture)
   const handleOpenAddCoupon = () => {
     setEditingCoupon(null);
     setCouponCodeState('');
+    setCouponTitle('');
+    setCouponDescription('');
+    setCouponBadge('🔥 SPECIAL PROMO');
     setCouponDiscountType('percentage');
     setCouponDiscountValue(15);
+    setCouponMaxDiscountCap('');
     setCouponPerkName('');
     setCouponIsActive(true);
+    setCouponStartDate('');
     setCouponExpiryDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
     setCouponMinOrderValue(0);
     setCouponUsageCap(100);
@@ -2773,27 +2803,142 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setCouponTargetGymId('');
     setCouponIsStackable(false);
     setCouponStackableWith([]);
+
+    // Smart criteria reset
+    setCouponSequenceRule('any');
+    setCouponExactNthOrder(1);
+    setCouponMinCompletedOrders(3);
+    setCouponMaxRedemptionsPerUser(1);
+    setCouponUserCooldownDays('');
+    setCouponAllowedDaysOfWeek([]);
+    setCouponMealSlotStart('');
+    setCouponMealSlotEnd('');
+    setCouponRequiredCategories([]);
+    setCouponDietary('any');
+    setCouponMinCartItems('');
+    setCouponAllowedChannels(['delivery', 'takeaway', 'dine_in']);
+    setCouponAllowedKitchenIds([]);
+    setCouponIsDormantUserOnly(false);
+    setCouponDormantDaysThreshold(30);
+    setCouponModalTab('basic');
+
     setShowCouponModal(true);
   };
 
   const handleOpenEditCoupon = (coupon: any) => {
+    const crit = coupon.criteria || {};
     setEditingCoupon(coupon);
     setCouponCodeState(coupon.code || coupon.id);
+    setCouponTitle(coupon.title || '');
+    setCouponDescription(coupon.description || '');
+    setCouponBadge(coupon.badge || '🔥 SPECIAL PROMO');
     setCouponDiscountType(coupon.discountType || 'percentage');
     setCouponDiscountValue(coupon.discountValue || 0);
+    setCouponMaxDiscountCap(crit.maxDiscountCap !== undefined ? crit.maxDiscountCap : (coupon.maxDiscountCap || ''));
     setCouponPerkName(coupon.perkName || '');
     setCouponIsActive(coupon.isActive !== false);
-    setCouponExpiryDate(coupon.expiryDate || '');
-    setCouponMinOrderValue(coupon.minOrderValue || 0);
-    setCouponUsageCap(coupon.usageCap || 100);
-    setCouponUsageCount(coupon.usageCount || 0);
+    setCouponStartDate(crit.startDate || coupon.startDate || '');
+    setCouponExpiryDate(crit.endDate || coupon.expiryDate || '');
+    setCouponMinOrderValue(crit.minOrderValue !== undefined ? crit.minOrderValue : (coupon.minOrderValue || 0));
+    setCouponUsageCap(coupon.globalUsageCap || coupon.usageCap || 100);
+    setCouponUsageCount(coupon.globalUsageCount || coupon.usageCount || 0);
     setCouponFirstNUsersOnly(coupon.firstNUsersOnly || 0);
     setCouponScope(coupon.scope || 'all');
-    setCouponTargetUserEmail(coupon.targetUserEmail || '');
+    setCouponTargetUserEmail(crit.targetUserEmail || coupon.targetUserEmail || '');
     setCouponTargetGymId(coupon.targetGymId || '');
-    setCouponIsStackable(coupon.isStackable === true);
-    setCouponStackableWith(coupon.stackableWith || []);
+    setCouponIsStackable(crit.isStackable ?? (coupon.isStackable === true));
+    setCouponStackableWith(crit.stackableWith || coupon.stackableWith || []);
+
+    // Criteria states
+    setCouponSequenceRule(crit.sequenceRule || (coupon.firstOrderOnly ? 'first_order_only' : 'any'));
+    setCouponExactNthOrder(crit.exactNthOrder || 1);
+    setCouponMinCompletedOrders(crit.minCompletedOrders || 3);
+    setCouponMaxRedemptionsPerUser(crit.maxRedemptionsPerUser ?? 1);
+    setCouponUserCooldownDays(crit.userCooldownDays || '');
+    setCouponAllowedDaysOfWeek(crit.allowedDaysOfWeek || []);
+    setCouponMealSlotStart(crit.mealSlotWindow?.startTime || '');
+    setCouponMealSlotEnd(crit.mealSlotWindow?.endTime || '');
+    setCouponRequiredCategories(crit.requiredCategories || []);
+    setCouponDietary(crit.dietaryRequirement || 'any');
+    setCouponMinCartItems(crit.minCartItems || '');
+    setCouponAllowedChannels(crit.allowedChannels || ['delivery', 'takeaway', 'dine_in']);
+    setCouponAllowedKitchenIds(crit.allowedKitchenIds || []);
+    setCouponIsDormantUserOnly(crit.isDormantUserOnly ?? false);
+    setCouponDormantDaysThreshold(crit.dormantDaysThreshold || 30);
+    setCouponModalTab('basic');
+
     setShowCouponModal(true);
+  };
+
+  const handleCloneCoupon = (coupon: any) => {
+    handleOpenEditCoupon(coupon);
+    setEditingCoupon(null); // Put into create mode
+    const baseCode = (coupon.code || coupon.id || 'COUPON').replace('_COPY', '');
+    setCouponCodeState(`${baseCode}_COPY`);
+    setCouponTitle(`${coupon.title || baseCode} (Copy)`);
+  };
+
+  const applyCouponPreset = (preset: 'first_order' | 'tandoori_tuesday' | 'table_dinein' | 'late_night' | 'handi_weekend') => {
+    if (preset === 'first_order') {
+      setCouponCodeState('WELCOME100');
+      setCouponTitle('Welcome to Taash Bhatti');
+      setCouponDescription('Get 25% OFF up to ₹150 on your very first woodfire feast');
+      setCouponBadge('1ST ORDER SPECIAL');
+      setCouponDiscountType('percentage');
+      setCouponDiscountValue(25);
+      setCouponMaxDiscountCap(150);
+      setCouponMinOrderValue(299);
+      setCouponSequenceRule('first_order_only');
+      setCouponMaxRedemptionsPerUser(1);
+      setCouponAllowedChannels(['delivery', 'takeaway', 'dine_in']);
+    } else if (preset === 'tandoori_tuesday') {
+      setCouponCodeState('TANDOORI20');
+      setCouponTitle('Tandoori Tuesday Bonanza');
+      setCouponDescription('Flat 20% OFF on all Tandoor and Bhatti starters every Tuesday');
+      setCouponBadge('TUESDAY EXCLUSIVE');
+      setCouponDiscountType('percentage');
+      setCouponDiscountValue(20);
+      setCouponMaxDiscountCap(100);
+      setCouponMinOrderValue(349);
+      setCouponAllowedDaysOfWeek(['tue']);
+      setCouponRequiredCategories(['tandoor', 'bhatti_starters']);
+      setCouponAllowedChannels(['delivery', 'takeaway', 'dine_in']);
+    } else if (preset === 'table_dinein') {
+      setCouponCodeState('TABLEFEAST');
+      setCouponTitle('Royal Table Dining Treat');
+      setCouponDescription('Flat ₹120 OFF on Dine-In table orders above ₹599');
+      setCouponBadge('DINE-IN ONLY');
+      setCouponDiscountType('fixed');
+      setCouponDiscountValue(120);
+      setCouponMaxDiscountCap('');
+      setCouponMinOrderValue(599);
+      setCouponAllowedChannels(['dine_in']);
+      setCouponMaxRedemptionsPerUser(2);
+    } else if (preset === 'late_night') {
+      setCouponCodeState('MIDNIGHT50');
+      setCouponTitle('Midnight Handi Binge');
+      setCouponDescription('Flat ₹50 OFF on late-night cravings between 11 PM and 3 AM');
+      setCouponBadge('LATE NIGHT');
+      setCouponDiscountType('fixed');
+      setCouponDiscountValue(50);
+      setCouponMaxDiscountCap('');
+      setCouponMinOrderValue(399);
+      setCouponMealSlotStart('23:00');
+      setCouponMealSlotEnd('03:00');
+      setCouponAllowedChannels(['delivery', 'takeaway']);
+    } else if (preset === 'handi_weekend') {
+      setCouponCodeState('HANDIWEEKEND');
+      setCouponTitle('Weekend Claypot Extravaganza');
+      setCouponDescription('30% OFF up to ₹250 on Handi specialties Friday through Sunday');
+      setCouponBadge('WEEKEND FEAST');
+      setCouponDiscountType('percentage');
+      setCouponDiscountValue(30);
+      setCouponMaxDiscountCap(250);
+      setCouponMinOrderValue(699);
+      setCouponAllowedDaysOfWeek(['fri', 'sat', 'sun']);
+      setCouponRequiredCategories(['handi']);
+      setCouponAllowedChannels(['delivery', 'dine_in']);
+    }
   };
 
   const handleSaveCoupon = async (e: React.FormEvent) => {
@@ -2801,16 +2946,55 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     if (!couponCode.trim()) return;
 
     const cleanCode = couponCode.trim().toUpperCase();
+
+    // Compile merged criteria
+    const criteria: SmartCouponCriteria = {
+      sequenceRule: couponSequenceRule,
+      exactNthOrder: couponSequenceRule === 'exact_nth_order' ? Number(couponExactNthOrder) : undefined,
+      minCompletedOrders: couponSequenceRule === 'after_min_orders' ? Number(couponMinCompletedOrders) : undefined,
+      maxRedemptionsPerUser: Number(couponMaxRedemptionsPerUser) || 1,
+      userCooldownDays: couponUserCooldownDays ? Number(couponUserCooldownDays) : undefined,
+
+      startDate: couponStartDate || undefined,
+      endDate: couponExpiryDate || undefined,
+      allowedDaysOfWeek: couponAllowedDaysOfWeek.length > 0 ? couponAllowedDaysOfWeek : undefined,
+      mealSlotWindow: (couponMealSlotStart && couponMealSlotEnd) ? {
+        startTime: couponMealSlotStart,
+        endTime: couponMealSlotEnd,
+      } : undefined,
+
+      minOrderValue: Number(couponMinOrderValue) || 0,
+      maxDiscountCap: couponMaxDiscountCap ? Number(couponMaxDiscountCap) : undefined,
+      requiredCategories: couponRequiredCategories.length > 0 ? couponRequiredCategories : undefined,
+      dietaryRequirement: couponDietary !== 'any' ? couponDietary : undefined,
+      minCartItems: couponMinCartItems ? Number(couponMinCartItems) : undefined,
+
+      allowedChannels: couponAllowedChannels.length > 0 ? couponAllowedChannels : ['delivery', 'takeaway', 'dine_in'],
+      allowedKitchenIds: couponAllowedKitchenIds.length > 0 ? couponAllowedKitchenIds : undefined,
+
+      isStackable: couponIsStackable,
+      stackableWith: couponIsStackable && couponStackableWith.length > 0 ? couponStackableWith : undefined,
+      targetUserEmail: couponScope === 'account_based' ? couponTargetUserEmail.trim().toLowerCase() : undefined,
+      isDormantUserOnly: couponIsDormantUserOnly,
+      dormantDaysThreshold: couponIsDormantUserOnly ? Number(couponDormantDaysThreshold) || 30 : undefined,
+    };
+
     const couponData = {
       code: cleanCode,
+      title: couponTitle.trim() || `Special Offer ${cleanCode}`,
+      description: couponDescription.trim() || '',
+      badge: couponBadge.trim() || '🔥 SPECIAL PROMO',
       discountType: couponDiscountType,
       discountValue: Number(couponDiscountValue) || 0,
       perkName: couponDiscountType === 'free_perk' ? couponPerkName.trim() : '',
       isActive: couponIsActive,
       expiryDate: couponExpiryDate || '',
       minOrderValue: Number(couponMinOrderValue) || 0,
+      maxDiscountCap: couponMaxDiscountCap ? Number(couponMaxDiscountCap) : null,
       usageCap: Number(couponUsageCap) || 100,
+      globalUsageCap: Number(couponUsageCap) || 100,
       usageCount: Number(couponUsageCount) || 0,
+      globalUsageCount: Number(couponUsageCount) || 0,
       totalSavings: Number(editingCoupon?.totalSavings) || 0,
       firstNUsersOnly: Number(couponFirstNUsersOnly) || 0,
       scope: couponScope,
@@ -2818,13 +3002,16 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       targetGymId: couponScope === 'gym_only' ? couponTargetGymId : '',
       isStackable: couponIsStackable,
       stackableWith: couponStackableWith,
+      criteria,
+      updatedAt: new Date().toISOString(),
+      ...(editingCoupon ? {} : { createdAt: new Date().toISOString() })
     };
 
     try {
       await setDoc(doc(db, 'coupons', cleanCode), sanitizeForFirestore(couponData));
       setShowCouponModal(false);
     } catch (err) {
-      console.error("Error saving coupon:", err);
+      console.error("Error saving smart coupon:", err);
       handleFirestoreError(err, OperationType.WRITE, `coupons/${cleanCode}`);
     }
   };
@@ -6225,27 +6412,76 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                       </div>
                                     </div>
 
-                                    {/* Scope Indicator */}
-                                    <div className="border-t border-brand-green/5 pt-2.5 mt-2.5">
-                                      <span className="block text-[8px] text-gray-500 uppercase font-black mb-1">REDEEM RULES</span>
-                                      <div className="flex items-center gap-1.5">
+                                    {/* Smart Criteria Badges & Rules */}
+                                    <div className="border-t border-brand-green/5 pt-2.5 mt-2.5 space-y-1.5">
+                                      <span className="block text-[8px] text-gray-500 uppercase font-black">CRITERIA & CHANNELS</span>
+                                      <div className="flex flex-wrap gap-1">
+                                        {/* Channels */}
+                                        {coupon.criteria?.allowedChannels && coupon.criteria.allowedChannels.length > 0 && (
+                                          <span className="text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            {coupon.criteria.allowedChannels.map((c: string) => c.replace('_', ' ').toUpperCase()).join(' • ')}
+                                          </span>
+                                        )}
+
+                                        {/* Sequence */}
+                                        {coupon.criteria?.sequenceRule === 'first_order_only' && (
+                                          <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            1ST ORDER ONLY
+                                          </span>
+                                        )}
+                                        {coupon.criteria?.sequenceRule === 'exact_nth_order' && (
+                                          <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            ORDER #{coupon.criteria.exactNthOrder} ONLY
+                                          </span>
+                                        )}
+                                        {coupon.criteria?.sequenceRule === 'after_min_orders' && (
+                                          <span className="text-[8px] bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            ≥{coupon.criteria.minCompletedOrders} ORDERS LOYALTY
+                                          </span>
+                                        )}
+
+                                        {/* Days of week */}
+                                        {coupon.criteria?.allowedDaysOfWeek && coupon.criteria.allowedDaysOfWeek.length > 0 && (
+                                          <span className="text-[8px] bg-pink-500/10 text-pink-400 border border-pink-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            {coupon.criteria.allowedDaysOfWeek.map((d: string) => d.toUpperCase()).join('/')}
+                                          </span>
+                                        )}
+
+                                        {/* Meal Slot */}
+                                        {coupon.criteria?.mealSlotWindow?.startTime && (
+                                          <span className="text-[8px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            {coupon.criteria.mealSlotWindow.startTime}–{coupon.criteria.mealSlotWindow.endTime}
+                                          </span>
+                                        )}
+
+                                        {/* Required Category */}
+                                        {coupon.criteria?.requiredCategories && coupon.criteria.requiredCategories.length > 0 && (
+                                          <span className="text-[8px] bg-orange-500/10 text-orange-400 border border-orange-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            {coupon.criteria.requiredCategories.join(', ').toUpperCase()}
+                                          </span>
+                                        )}
+
+                                        {/* Max Cap */}
+                                        {(coupon.criteria?.maxDiscountCap || coupon.maxDiscountCap) && (
+                                          <span className="text-[8px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded font-mono font-bold">
+                                            MAX ₹{coupon.criteria?.maxDiscountCap || coupon.maxDiscountCap}
+                                          </span>
+                                        )}
+
+                                        {/* Max Uses */}
+                                        {coupon.criteria?.maxRedemptionsPerUser && (
+                                          <span className="text-[8px] bg-stone-500/10 text-stone-300 border border-stone-500/20 px-1.5 py-0.5 rounded font-mono">
+                                            {coupon.criteria.maxRedemptionsPerUser} use/diner
+                                          </span>
+                                        )}
+
                                         {coupon.scope === 'account_based' && (
-                                          <span className="text-[9px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/15 font-mono">
+                                          <span className="text-[8px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/15 font-mono">
                                             Locked: {coupon.targetUserEmail}
                                           </span>
                                         )}
-                                        {coupon.scope === 'gym_only' && (
-                                          <span className="text-[9px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded border border-purple-500/15">
-                                            Gym Only: {connectedGym ? connectedGym.name : 'Unknown Terminal'}
-                                          </span>
-                                        )}
-                                        {coupon.scope !== 'account_based' && coupon.scope !== 'gym_only' && (
-                                          <span className="text-[9px] bg-brand-green/5 text-gray-300 px-2 py-0.5 rounded border border-brand-green/10">
-                                            Publicly Usable (All Accounts)
-                                          </span>
-                                        )}
                                         {coupon.firstNUsersOnly > 0 && (
-                                          <span className="text-[9px] bg-orange-500/10 text-brand-orange px-2 py-0.5 rounded border border-orange-500/15">
+                                          <span className="text-[8px] bg-orange-500/10 text-brand-orange px-1.5 py-0.5 rounded border border-orange-500/15">
                                             First {coupon.firstNUsersOnly} Users Only
                                           </span>
                                         )}
@@ -6257,7 +6493,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                       <div className="flex items-center justify-between text-[9px] font-mono">
                                         <span className="text-gray-500">USAGE CAP LOGS</span>
                                         <span className="text-white font-bold">
-                                          {coupon.usageCount || 0} / {coupon.usageCap || '∞'} claimed
+                                          {coupon.usageCount || coupon.globalUsageCount || 0} / {coupon.usageCap || coupon.globalUsageCap || '∞'} claimed
                                         </span>
                                       </div>
                                       {coupon.usageCap ? (
@@ -6284,6 +6520,14 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                   >
                                     <span className={`w-1.5 h-1.5 rounded-full ${coupon.isActive !== false ? 'bg-emerald-400' : 'bg-red-400 animate-pulse'}`} />
                                     {coupon.isActive !== false ? 'ACTIVE' : 'PAUSED'}
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleCloneCoupon(coupon)}
+                                    className="p-1.5 bg-brand-charcoal border border-brand-green/20 hover:bg-brand-green/10 text-brand-green rounded-xl transition-all cursor-pointer"
+                                    title="Duplicate / Clone Coupon"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
                                   </button>
 
                                   <button
@@ -11755,7 +11999,7 @@ Free express delivery directly to trainer desks"
                       <div>
                         <span className="text-[9px] font-black tracking-widest text-brand-green uppercase block">OPERATIONS WORKBENCH</span>
                         <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                          {editingCoupon ? 'Modify Promotion Specs' : 'Deploy New Campaign Coupon'}
+                          {editingCoupon ? 'Modify Smart Promotion Specs' : 'Deploy Smart Criteria Coupon'}
                         </h3>
                       </div>
                       <button
@@ -11767,266 +12011,663 @@ Free express delivery directly to trainer desks"
                       </button>
                     </div>
 
-                    <form onSubmit={handleSaveCoupon} className="space-y-4">
-                      {/* Section A: Core Code */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Coupon Promo Code</label>
-                          <input
-                            type="text"
-                            required
-                            disabled={!!editingCoupon}
-                            placeholder="e.g. GYMPOWER50"
-                            value={couponCode}
-                            onChange={(e) => setCouponCodeState(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                            className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white uppercase placeholder-gray-600 focus:outline-none focus:border-brand-green/40 font-mono disabled:opacity-50"
-                          />
-                          <span className="text-[8px] text-gray-500 mt-1 block">Unique capitalized system key.</span>
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Campaign Status</label>
-                          <div className="flex items-center gap-2 mt-2">
-                            <input
-                              type="checkbox"
-                              id="couponIsActiveForm"
-                              checked={couponIsActive}
-                              onChange={(e) => setCouponIsActive(e.target.checked)}
-                              className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green cursor-pointer"
-                            />
-                            <label htmlFor="couponIsActiveForm" className="text-xs font-bold text-white cursor-pointer selection:bg-transparent">
-                              Active & Usable
-                            </label>
-                          </div>
-                        </div>
+                    {/* Quick Smart Presets */}
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black tracking-wider uppercase text-gray-400 block">⚡ Quick Smart Presets</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => applyCouponPreset('first_order')}
+                          className="px-2.5 py-1 bg-brand-charcoal hover:bg-emerald-950 border border-brand-green/20 hover:border-emerald-500/50 rounded-lg text-[10px] font-bold text-emerald-300 transition-all cursor-pointer"
+                        >
+                          🎉 1st Order Welcome
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyCouponPreset('tandoori_tuesday')}
+                          className="px-2.5 py-1 bg-brand-charcoal hover:bg-amber-950 border border-brand-green/20 hover:border-amber-500/50 rounded-lg text-[10px] font-bold text-amber-300 transition-all cursor-pointer"
+                        >
+                          🍗 Tandoori Tuesday
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyCouponPreset('table_dinein')}
+                          className="px-2.5 py-1 bg-brand-charcoal hover:bg-blue-950 border border-brand-green/20 hover:border-blue-500/50 rounded-lg text-[10px] font-bold text-blue-300 transition-all cursor-pointer"
+                        >
+                          🍽️ Table Dine-In
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyCouponPreset('late_night')}
+                          className="px-2.5 py-1 bg-brand-charcoal hover:bg-purple-950 border border-brand-green/20 hover:border-purple-500/50 rounded-lg text-[10px] font-bold text-purple-300 transition-all cursor-pointer"
+                        >
+                          🌙 Midnight Binge
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyCouponPreset('handi_weekend')}
+                          className="px-2.5 py-1 bg-brand-charcoal hover:bg-orange-950 border border-brand-green/20 hover:border-orange-500/50 rounded-lg text-[10px] font-bold text-orange-300 transition-all cursor-pointer"
+                        >
+                          🏺 Handi Weekend
+                        </button>
                       </div>
+                    </div>
 
-                      {/* Section B: Reward Specification */}
-                      <div className="bg-brand-charcoal/20 border border-brand-green/5 p-4 rounded-2xl space-y-4">
-                        <span className="text-[8px] font-black uppercase tracking-widest text-brand-green block">REWARD CONFIGURATION</span>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Reward Type</label>
-                            <select
-                              value={couponDiscountType}
-                              onChange={(e) => setCouponDiscountType(e.target.value as any)}
-                              className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/40 cursor-pointer"
-                            >
-                              <option value="percentage">Percentage Discount (%)</option>
-                              <option value="fixed">Flat Amount Discount (₹)</option>
-                              <option value="free_delivery">Free Delivery</option>
-                              <option value="free_perk">Complimentary Gift / Perk</option>
-                            </select>
-                          </div>
+                    {/* Criteria Tab Switcher */}
+                    <div className="flex items-center gap-1 border-b border-brand-green/15 pb-2 overflow-x-auto scrollbar-none text-[10px] font-bold uppercase tracking-wider">
+                      <button
+                        type="button"
+                        onClick={() => setCouponModalTab('basic')}
+                        className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                          couponModalTab === 'basic'
+                            ? 'bg-brand-green text-brand-charcoal font-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        🏷️ Reward & Value
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCouponModalTab('sequence')}
+                        className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                          couponModalTab === 'sequence'
+                            ? 'bg-brand-green text-brand-charcoal font-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        🎯 Order Sequence
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCouponModalTab('schedule')}
+                        className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                          couponModalTab === 'schedule'
+                            ? 'bg-brand-green text-brand-charcoal font-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        ⏰ Schedule & Days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCouponModalTab('cart')}
+                        className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                          couponModalTab === 'cart'
+                            ? 'bg-brand-green text-brand-charcoal font-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        🍲 Dishes & Diet
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCouponModalTab('channels')}
+                        className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                          couponModalTab === 'channels'
+                            ? 'bg-brand-green text-brand-charcoal font-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        🛵 Channels & Limits
+                      </button>
+                    </div>
 
-                          {couponDiscountType === 'percentage' || couponDiscountType === 'fixed' ? (
+                    <form onSubmit={handleSaveCoupon} className="space-y-4">
+                      {/* TAB 1: BASIC & REWARD */}
+                      {couponModalTab === 'basic' && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">
-                                {couponDiscountType === 'percentage' ? 'Percentage Off (%)' : 'Amount Off (₹)'}
-                              </label>
-                              <input
-                                type="number"
-                                required
-                                min="1"
-                                max={couponDiscountType === 'percentage' ? "100" : "10000"}
-                                placeholder={couponDiscountType === 'percentage' ? "15" : "150"}
-                                value={couponDiscountValue}
-                                onChange={(e) => setCouponDiscountValue(Number(e.target.value))}
-                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40 font-mono"
-                              />
-                            </div>
-                          ) : couponDiscountType === 'free_perk' ? (
-                            <div>
-                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Perk Gift Name</label>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Promo Code</label>
                               <input
                                 type="text"
                                 required
-                                placeholder="e.g. Free High-Protein Shake"
-                                value={couponPerkName}
-                                onChange={(e) => setCouponPerkName(e.target.value)}
+                                disabled={!!editingCoupon}
+                                placeholder="e.g. BHATTI50"
+                                value={couponCode}
+                                onChange={(e) => setCouponCodeState(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white uppercase placeholder-gray-600 focus:outline-none focus:border-brand-green/40 font-mono disabled:opacity-50"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Display Badge</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 1ST ORDER SPECIAL"
+                                value={couponBadge}
+                                onChange={(e) => setCouponBadge(e.target.value)}
                                 className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40"
                               />
                             </div>
-                          ) : (
-                            <div className="flex items-center justify-center text-[10px] font-mono text-gray-500 pt-5">
-                              No additional value parameter needed.
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Campaign Title</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Royal Weekend Feast"
+                                value={couponTitle}
+                                onChange={(e) => setCouponTitle(e.target.value)}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40"
+                              />
                             </div>
-                          )}
-                        </div>
-                      </div>
 
-                      {/* Section C: Target Rules & Scope Restrictions */}
-                      <div className="bg-brand-charcoal/20 border border-brand-green/5 p-4 rounded-2xl space-y-4">
-                        <span className="text-[8px] font-black uppercase tracking-widest text-brand-green block">REDEEM SCOPE & RESTRICTIONS</span>
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Campaign Status</label>
+                              <div className="flex items-center gap-2 mt-2">
+                                <input
+                                  type="checkbox"
+                                  id="couponIsActiveForm"
+                                  checked={couponIsActive}
+                                  onChange={(e) => setCouponIsActive(e.target.checked)}
+                                  className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green cursor-pointer"
+                                />
+                                <label htmlFor="couponIsActiveForm" className="text-xs font-bold text-white cursor-pointer select-none">
+                                  Active & Redeemable
+                                </label>
+                              </div>
+                            </div>
+                          </div>
 
-                        <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Target Scope</label>
+                            <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Customer Description</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Flat ₹150 OFF on orders above ₹599"
+                              value={couponDescription}
+                              onChange={(e) => setCouponDescription(e.target.value)}
+                              className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40"
+                            />
+                          </div>
+
+                          {/* Reward Configuration */}
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-3">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-brand-green block">REWARD CONFIGURATION</span>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Reward Type</label>
+                                <select
+                                  value={couponDiscountType}
+                                  onChange={(e) => setCouponDiscountType(e.target.value as any)}
+                                  className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/40 cursor-pointer"
+                                >
+                                  <option value="percentage">Percentage Discount (%)</option>
+                                  <option value="fixed">Flat Amount (₹)</option>
+                                  <option value="free_delivery">Free Insulated Delivery</option>
+                                  <option value="free_perk">Complimentary Gift / Dish</option>
+                                </select>
+                              </div>
+
+                              {couponDiscountType === 'percentage' ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Discount (%)</label>
+                                    <input
+                                      type="number"
+                                      required
+                                      min="1"
+                                      max="100"
+                                      value={couponDiscountValue}
+                                      onChange={(e) => setCouponDiscountValue(Number(e.target.value))}
+                                      className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Max Cap (₹)</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      placeholder="No Cap"
+                                      value={couponMaxDiscountCap}
+                                      onChange={(e) => setCouponMaxDiscountCap(e.target.value ? Number(e.target.value) : '')}
+                                      className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                                    />
+                                  </div>
+                                </div>
+                              ) : couponDiscountType === 'fixed' ? (
+                                <div>
+                                  <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Flat Amount Off (₹)</label>
+                                  <input
+                                    type="number"
+                                    required
+                                    min="1"
+                                    value={couponDiscountValue}
+                                    onChange={(e) => setCouponDiscountValue(Number(e.target.value))}
+                                    className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                                  />
+                                </div>
+                              ) : couponDiscountType === 'free_perk' ? (
+                                <div>
+                                  <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Complimentary Item Name</label>
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="e.g. Free Firni Handi"
+                                    value={couponPerkName}
+                                    onChange={(e) => setCouponPerkName(e.target.value)}
+                                    className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/40"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex items-center text-[10px] text-gray-400 pt-5">
+                                  Standard delivery fee (₹30-35) will be fully waived.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* TAB 2: ORDER SEQUENCE & CUSTOMER LIFECYCLE */}
+                      {couponModalTab === 'sequence' && (
+                        <div className="space-y-4">
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-3">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-brand-green block">CUSTOMER ORDER SEQUENCE RULE</span>
+                            
+                            <div className="space-y-2">
+                              <label className="flex items-center gap-2 text-xs text-white cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="seqRule"
+                                  checked={couponSequenceRule === 'any'}
+                                  onChange={() => setCouponSequenceRule('any')}
+                                  className="w-3.5 h-3.5 text-brand-green"
+                                />
+                                <span>Any Order (No sequence restriction)</span>
+                              </label>
+
+                              <label className="flex items-center gap-2 text-xs text-white cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="seqRule"
+                                  checked={couponSequenceRule === 'first_order_only'}
+                                  onChange={() => setCouponSequenceRule('first_order_only')}
+                                  className="w-3.5 h-3.5 text-brand-green"
+                                />
+                                <span className="font-bold text-emerald-400">First Order Only (Strictly 1st-time diners)</span>
+                              </label>
+
+                              <label className="flex items-center gap-2 text-xs text-white cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="seqRule"
+                                  checked={couponSequenceRule === 'exact_nth_order'}
+                                  onChange={() => setCouponSequenceRule('exact_nth_order')}
+                                  className="w-3.5 h-3.5 text-brand-green"
+                                />
+                                <span>Strictly on Exact N-th Order</span>
+                              </label>
+                              {couponSequenceRule === 'exact_nth_order' && (
+                                <div className="ml-6 flex items-center gap-2">
+                                  <span className="text-xs text-gray-400">Valid only on order number:</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={couponExactNthOrder}
+                                    onChange={(e) => setCouponExactNthOrder(Number(e.target.value))}
+                                    className="w-20 bg-brand-charcoal border border-brand-green/20 rounded-lg px-2 py-1 text-xs text-white font-mono"
+                                  />
+                                </div>
+                              )}
+
+                              <label className="flex items-center gap-2 text-xs text-white cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="seqRule"
+                                  checked={couponSequenceRule === 'after_min_orders'}
+                                  onChange={() => setCouponSequenceRule('after_min_orders')}
+                                  className="w-3.5 h-3.5 text-brand-green"
+                                />
+                                <span>Loyalty Milestone (After completing X orders)</span>
+                              </label>
+                              {couponSequenceRule === 'after_min_orders' && (
+                                <div className="ml-6 flex items-center gap-2">
+                                  <span className="text-xs text-gray-400">Requires completed orders ≥</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={couponMinCompletedOrders}
+                                    onChange={(e) => setCouponMinCompletedOrders(Number(e.target.value))}
+                                    className="w-20 bg-brand-charcoal border border-brand-green/20 rounded-lg px-2 py-1 text-xs text-white font-mono"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Per-User Limits */}
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Max Uses Per Diner</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={couponMaxRedemptionsPerUser}
+                                onChange={(e) => setCouponMaxRedemptionsPerUser(Number(e.target.value))}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                              <span className="text-[8px] text-gray-500 mt-0.5 block">e.g. 1 redemption per account.</span>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Cooldown Days</label>
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="None"
+                                value={couponUserCooldownDays}
+                                onChange={(e) => setCouponUserCooldownDays(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                              <span className="text-[8px] text-gray-500 mt-0.5 block">e.g. usable once every 7 days.</span>
+                            </div>
+                          </div>
+
+                          {/* Dormant Diner Win-Back */}
+                          <div className="bg-brand-charcoal/20 border border-brand-green/10 p-3 rounded-2xl flex items-center justify-between">
+                            <div>
+                              <span className="text-xs font-bold text-white block">Dormant Diner Win-Back</span>
+                              <span className="text-[9px] text-gray-400 block">Restricts coupon to accounts inactive for &gt; 30 days.</span>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={couponIsDormantUserOnly}
+                              onChange={(e) => setCouponIsDormantUserOnly(e.target.checked)}
+                              className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* TAB 3: SCHEDULE & TIMING */}
+                      {couponModalTab === 'schedule' && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Start Date</label>
+                              <input
+                                type="date"
+                                value={couponStartDate}
+                                onChange={(e) => setCouponStartDate(e.target.value)}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40 cursor-pointer"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">End / Expiry Date</label>
+                              <input
+                                type="date"
+                                value={couponExpiryDate}
+                                onChange={(e) => setCouponExpiryDate(e.target.value)}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40 cursor-pointer"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Days of the Week */}
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-2">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-brand-green block">ALLOWED DAYS OF WEEK</span>
+                            <span className="text-[9px] text-gray-400 block">Select active days (Leave all unchecked for everyday validity):</span>
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as DayOfWeek[]).map((day) => {
+                                const isSelected = couponAllowedDaysOfWeek.includes(day);
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setCouponAllowedDaysOfWeek(prev => prev.filter(d => d !== day));
+                                      } else {
+                                        setCouponAllowedDaysOfWeek(prev => [...prev, day]);
+                                      }
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold uppercase transition-all cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-brand-green text-brand-charcoal shadow-sm'
+                                        : 'bg-brand-charcoal text-gray-400 hover:text-white border border-brand-green/10'
+                                    }`}
+                                  >
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Meal Slot / Time Window */}
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-2">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-brand-green block">MEAL TIME WINDOW (OPTIONAL)</span>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-[9px] text-gray-400 block mb-1 uppercase">Start Time (24h)</label>
+                                <input
+                                  type="time"
+                                  value={couponMealSlotStart}
+                                  onChange={(e) => setCouponMealSlotStart(e.target.value)}
+                                  className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-gray-400 block mb-1 uppercase">End Time (24h)</label>
+                                <input
+                                  type="time"
+                                  value={couponMealSlotEnd}
+                                  onChange={(e) => setCouponMealSlotEnd(e.target.value)}
+                                  className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                                />
+                              </div>
+                            </div>
+                            <span className="text-[8px] text-gray-500 block">e.g. 23:00 to 03:00 for late-night munchies. Leave blank for all day.</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* TAB 4: DISHES & DIETARY */}
+                      {couponModalTab === 'cart' && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Min Order Value (₹)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="0 (No Minimum)"
+                                value={couponMinOrderValue || ''}
+                                onChange={(e) => setCouponMinOrderValue(Number(e.target.value))}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Min Dish Count</label>
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="No requirement"
+                                value={couponMinCartItems}
+                                onChange={(e) => setCouponMinCartItems(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Required Categories */}
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-2">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-brand-green block">REQUIRED CATEGORIES (MUST CONTAIN AT LEAST ONE)</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { id: 'handi', label: 'Claypot Handi Specialties' },
+                                { id: 'tandoor', label: 'Tandoor & Starters' },
+                                { id: 'platter', label: 'Royal Gourmet Platters' },
+                                { id: 'breads', label: 'Woodfire Breads / Rotis' },
+                                { id: 'desserts', label: 'Desserts & Phirni' },
+                                { id: 'beverages', label: 'Beverages & Thandai' },
+                              ].map((cat) => {
+                                const isChecked = couponRequiredCategories.includes(cat.id);
+                                return (
+                                  <label key={cat.id} className="flex items-center gap-2 p-2 rounded-xl bg-brand-charcoal/40 hover:bg-brand-charcoal cursor-pointer text-xs text-white">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setCouponRequiredCategories(prev => [...prev, cat.id]);
+                                        } else {
+                                          setCouponRequiredCategories(prev => prev.filter(c => c !== cat.id));
+                                        }
+                                      }}
+                                      className="w-3.5 h-3.5 text-brand-green rounded"
+                                    />
+                                    <span>{cat.label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Dietary Restriction */}
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Dietary Condition</label>
+                            <select
+                              value={couponDietary}
+                              onChange={(e) => setCouponDietary(e.target.value as any)}
+                              className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/40 cursor-pointer"
+                            >
+                              <option value="any">Any Diet (Veg & Non-Veg)</option>
+                              <option value="veg_only">🌱 100% Pure Vegetarian Cart Only</option>
+                              <option value="non_veg_only">🍗 Must include Non-Veg</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* TAB 5: CHANNELS, STACKING & SCOPE */}
+                      {couponModalTab === 'channels' && (
+                        <div className="space-y-4">
+                          {/* Channels */}
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-2">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-brand-green block">ALLOWED FULFILLMENT CHANNELS</span>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { id: 'delivery', label: '🚚 Home Delivery' },
+                                { id: 'takeaway', label: '🛍️ Takeaway Pickup' },
+                                { id: 'dine_in', label: '🍽️ Table Dine-In' },
+                              ].map((ch) => {
+                                const isChecked = couponAllowedChannels.includes(ch.id as any);
+                                return (
+                                  <label key={ch.id} className="flex items-center gap-2 p-2 rounded-xl bg-brand-charcoal/40 hover:bg-brand-charcoal cursor-pointer text-xs text-white">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setCouponAllowedChannels(prev => [...prev, ch.id as any]);
+                                        } else {
+                                          if (couponAllowedChannels.length > 1) {
+                                            setCouponAllowedChannels(prev => prev.filter(c => c !== ch.id));
+                                          }
+                                        }
+                                      }}
+                                      className="w-3.5 h-3.5 text-brand-green rounded"
+                                    />
+                                    <span className="text-[11px] font-bold">{ch.label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Global Caps */}
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Global Usage Cap (Claims)</label>
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="100"
+                                value={couponUsageCap || ''}
+                                onChange={(e) => setCouponUsageCap(Number(e.target.value))}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">First N Users Only</label>
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="0 (Disabled)"
+                                value={couponFirstNUsersOnly || ''}
+                                onChange={(e) => setCouponFirstNUsersOnly(Number(e.target.value))}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Stacking */}
+                          <div className="bg-brand-charcoal/20 border border-brand-green/10 p-3 rounded-2xl space-y-2">
+                            <label className="flex items-center gap-2 text-xs text-white font-bold cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={couponIsStackable}
+                                onChange={(e) => setCouponIsStackable(e.target.checked)}
+                                className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded"
+                              />
+                              <span>Allow Stacking (Can merge with other coupons)</span>
+                            </label>
+                          </div>
+
+                          {/* Account Locking */}
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Target Audience Scope</label>
                             <select
                               value={couponScope}
                               onChange={(e) => setCouponScope(e.target.value as any)}
                               className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/40 cursor-pointer"
                             >
-                              <option value="all">Public (All Accounts)</option>
-                              <option value="account_based">Account Locked (Single Email)</option>
-                              <option value="gym_only">Gym Lock (Terminal Exclusive)</option>
+                              <option value="all">Public (All Customers)</option>
+                              <option value="account_based">Locked to Specific Customer Email</option>
                             </select>
-                          </div>
-
-                          {couponScope === 'account_based' ? (
-                            <div>
-                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Recipient Email</label>
+                            {couponScope === 'account_based' && (
                               <input
                                 type="email"
                                 required
                                 placeholder="customer@example.com"
                                 value={couponTargetUserEmail}
                                 onChange={(e) => setCouponTargetUserEmail(e.target.value)}
-                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40 font-mono"
+                                className="w-full mt-2 bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-gray-600 focus:outline-none focus:border-brand-green/40"
                               />
-                            </div>
-                          ) : couponScope === 'gym_only' ? (
-                            <div>
-                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Target Partner Gym</label>
-                              <select
-                                value={couponTargetGymId}
-                                required
-                                onChange={(e) => setCouponTargetGymId(e.target.value)}
-                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/40 cursor-pointer"
-                              >
-                                <option value="">Select a Terminal Gym...</option>
-                                {allGyms.map((gym: any, gymIdx: number) => (
-                                  <option key={`gym-opt-${gym.id || gymIdx}-${gymIdx}`} value={gym.id}>
-                                    {gym.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center text-[10px] font-mono text-gray-500 pt-5">
-                              Open to all terminal members.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Section D: Gate Rules & Expiry Gating */}
-                      <div className="bg-brand-charcoal/20 border border-brand-green/5 p-4 rounded-2xl grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Min Order Value (₹)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="0 (No Minimum)"
-                            value={couponMinOrderValue || ''}
-                            onChange={(e) => setCouponMinOrderValue(Number(e.target.value))}
-                            className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40 font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Campaign Expiry Date</label>
-                          <input
-                            type="date"
-                            value={couponExpiryDate}
-                            onChange={(e) => setCouponExpiryDate(e.target.value)}
-                            className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/40 font-mono cursor-pointer"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Usage Cap (Claims)</label>
-                          <input
-                            type="number"
-                            min="1"
-                            placeholder="100 (Usage Cap)"
-                            value={couponUsageCap || ''}
-                            onChange={(e) => setCouponUsageCap(Number(e.target.value))}
-                            className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40 font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">First N Users Only</label>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="0 (Disabled)"
-                            value={couponFirstNUsersOnly || ''}
-                            onChange={(e) => setCouponFirstNUsersOnly(Number(e.target.value))}
-                            className="w-full bg-[#1e2730] border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40 font-mono"
-                          />
-                          <span className="text-[8px] text-gray-500 mt-1 block">e.g. First 50 claims only.</span>
-                        </div>
-                      </div>
-
-                      {/* Section E: Stacking Configuration */}
-                      <div className="bg-[#12181E] border border-brand-green/10 p-4 rounded-2xl space-y-3">
-                        <span className="text-[8px] font-black uppercase tracking-widest text-brand-green block">STACKING & MERGE CAPABILITIES</span>
-                        
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="couponIsStackableForm"
-                            checked={couponIsStackable}
-                            onChange={(e) => setCouponIsStackable(e.target.checked)}
-                            className="w-4 h-4 text-brand-green bg-[#12181E] border-gray-600 rounded-sm focus:ring-brand-green cursor-pointer"
-                          />
-                          <label htmlFor="couponIsStackableForm" className="text-xs font-bold text-white cursor-pointer select-none">
-                            Allow Stacking (Can merge with other coupons)
-                          </label>
-                        </div>
-
-                        {couponIsStackable && (
-                          <div className="space-y-2 pt-2 border-t border-brand-green/10">
-                            <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Stackable With Specific Coupons Only</label>
-                            {coupons.filter(c => c.code !== couponCode).length === 0 ? (
-                              <p className="text-[10px] text-gray-500 italic">No other coupons exist yet. This coupon will stack with any future stackable coupon.</p>
-                            ) : (
-                              <div className="grid grid-cols-2 gap-2 max-h-28 overflow-y-auto pr-1">
-                                {coupons.filter(c => c.code !== couponCode).map((c) => {
-                                  const isChecked = couponStackableWith.includes(c.code);
-                                  return (
-                                    <label key={c.code} className="flex items-center gap-2 p-1.5 rounded bg-brand-charcoal hover:bg-brand-green/5 cursor-pointer text-xs">
-                                      <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            setCouponStackableWith(prev => [...prev, c.code]);
-                                          } else {
-                                            setCouponStackableWith(prev => prev.filter(code => code !== c.code));
-                                          }
-                                        }}
-                                        className="w-3.5 h-3.5 text-brand-green bg-[#12181E] rounded cursor-pointer"
-                                      />
-                                      <span className="font-mono text-white text-[11px]">{c.code}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
                             )}
-                            <span className="text-[8px] text-gray-500 block">Select specific coupons this can stack with. Leave empty to allow stacking with ANY stackable coupon.</span>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
-                      {/* Sticky Form Action buttons */}
-                      <div className="flex items-center justify-end gap-2.5 border-t border-brand-green/15 pt-4">
-                        <button
-                          type="button"
-                          onClick={() => setShowCouponModal(false)}
-                          className="px-4 py-2 text-xs font-black text-gray-400 hover:text-white uppercase transition-all cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          className="px-5 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase rounded-xl transition-all shadow-md cursor-pointer"
-                        >
-                          {editingCoupon ? 'Save Coupon Specs' : 'Publish Coupon Campaign'}
-                        </button>
+                      {/* Sticky Form Action Buttons */}
+                      <div className="flex items-center justify-between border-t border-brand-green/15 pt-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            Tab: <strong className="text-white uppercase">{couponModalTab}</strong>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowCouponModal(false)}
+                            className="px-4 py-2 text-xs font-black text-gray-400 hover:text-white uppercase transition-all cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase rounded-xl transition-all shadow-md cursor-pointer"
+                          >
+                            {editingCoupon ? 'Save Smart Promotion Specs' : 'Publish Smart Coupon'}
+                          </button>
+                        </div>
                       </div>
                     </form>
                   </motion.div>
