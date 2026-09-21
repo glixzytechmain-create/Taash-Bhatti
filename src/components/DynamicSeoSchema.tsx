@@ -89,14 +89,35 @@ export const DynamicSeoSchema: React.FC<DynamicSeoSchemaProps> = ({ allKitchens 
       '@context': 'https://schema.org',
       '@graph': [
         {
-          '@type': 'Restaurant',
+          '@type': 'WebSite',
+          '@id': 'https://taashbhatti.com/#website',
+          'url': 'https://taashbhatti.com/',
+          'name': 'Taash Bhatti',
+          'alternateName': ['TaashBhatti', 'taashbhatti', 'Taash Bhatti Restaurant', 'TaashBhatti Restaurant'],
+          'description': 'Official website of Taash Bhatti authentic woodfire & clay-oven restaurant.',
+          'publisher': {
+            '@id': 'https://taashbhatti.com/#brand'
+          }
+        },
+        {
+          '@type': ['Restaurant', 'FoodEstablishment', 'Organization'],
           '@id': 'https://taashbhatti.com/#brand',
           'name': 'Taash Bhatti',
-          'alternateName': 'Taash Bhatti Authentic Woodfire Restaurant & Feasts',
+          'alternateName': ['TaashBhatti', 'taashbhatti', 'Taash Bhatti Restaurant', 'TaashBhatti Restaurant'],
           'url': 'https://taashbhatti.com',
           'logo': 'https://taashbhatti.com/app-icon.png',
           'image': 'https://taashbhatti.com/app-icon.png',
-          'description': 'Authentic woodfire clay-oven restaurant chain offering royal handi dum feasts, charcoal kebabs, tandoori specialties, full dine-in table service, takeaway, and warm doorstep delivery across all restaurant locations.',
+          'slogan': 'Authentic Woodfire & Clay-Oven Restaurant, Dine-In & Delivery',
+          'description': 'Taash Bhatti (also known as TaashBhatti) is an authentic woodfire and clay-oven dining restaurant brand specializing in slow-cooked clay handi dum feasts, charcoal tandoori platters, artisanal kebabs, and regional Mughlai delicacies. Taash Bhatti offers full-fledged table dine-in seating, counter takeaway, and insulated warm doorstep food delivery.',
+          'knowsAbout': [
+            'Authentic Woodfire Cooking',
+            'Clay-Oven Tandoori Specialties',
+            'Handi Dum Cooking',
+            'Charcoal Kebabs',
+            'Mughlai Dining',
+            'Restaurant Table Dine-In Hospitality',
+            'Doorstep Food Delivery'
+          ],
           'servesCuisine': ['North Indian', 'Tandoori', 'Mughlai', 'Biryani', 'Clay Oven Specialities'],
           'priceRange': '₹₹',
           'acceptsReservations': 'True',

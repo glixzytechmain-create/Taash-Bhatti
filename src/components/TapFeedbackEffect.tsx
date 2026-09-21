@@ -36,7 +36,15 @@ export default function TapFeedbackEffect() {
   const ripplesRef = useRef<Ripple[]>([]);
   const animFrameIdRef = useRef<number | null>(null);
 
+  // Check if screen is mobile (< 768px)
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
   useEffect(() => {
+    // Completely disable on mobile screens
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return;
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -254,11 +262,15 @@ export default function TapFeedbackEffect() {
     };
   }, []);
 
+  if (isMobile) {
+    return null;
+  }
+
   return (
     <canvas
       ref={canvasRef}
       id="taash-tap-fx-canvas"
-      className="fixed inset-0 pointer-events-none z-[99999]"
+      className="hidden md:block fixed inset-0 pointer-events-none z-[99999]"
       aria-hidden="true"
     />
   );
