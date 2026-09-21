@@ -45,6 +45,12 @@ import { MandatoryPhoneVerificationModal } from './components/MandatoryPhoneVeri
 import OnboardingWizard from './components/OnboardingWizard';
 import AdminPortal from './components/AdminPortal';
 import AdminLoginPortal from './components/AdminLoginPortal';
+import { 
+  getAdminSessionToken, 
+  clearAdminSession, 
+  verifyAdminSessionToken, 
+  initializeCybersecurityShield 
+} from './lib/security';
 import CartQuantityButton from './components/CartQuantityButton';
 import DeliveryPartnerApp from './components/DeliveryPartnerApp';
 import CustomerSupportPortal from './components/CustomerSupportPortal';
@@ -189,7 +195,7 @@ export default function App() {
   });
   const [adminEmailAttempt, setAdminEmailAttempt] = useState<string | null>(null);
   const [adminPasscodeVerified, setAdminPasscodeVerified] = useState<boolean>(() => {
-    return localStorage.getItem('fitzaika_admin_verified') === 'true';
+    return Boolean(getAdminSessionToken());
   });
 
   // Identity Verification Animation Modal state
@@ -364,6 +370,23 @@ export default function App() {
   const [groupOrderPreloadMeals, setGroupOrderPreloadMeals] = useState<{ meal: Meal; quantity: number }[] | null>(null);
   const [activeGroupRoom, setActiveGroupRoom] = useState<GroupOrderRoom | null>(null);
   const [placedGroupOrder, setPlacedGroupOrder] = useState<Order | null>(null);
+
+  // Master Cybersecurity & Session Integrity Protection
+  useEffect(() => {
+    initializeCybersecurityShield();
+
+    const token = getAdminSessionToken();
+    if (token) {
+      verifyAdminSessionToken(token).then((valid) => {
+        if (!valid) {
+          setAdminPasscodeVerified(false);
+          clearAdminSession();
+        }
+      });
+    } else {
+      setAdminPasscodeVerified(false);
+    }
+  }, []);
 
   // Monitor active group order room from localStorage & Firestore for the floating bubble
   useEffect(() => {
@@ -1082,16 +1105,18 @@ export default function App() {
                 localStorage.setItem('fitzaika_gateway', 'partner');
               } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
                 setAdminEmailAttempt(emailClean);
-                setAdminPasscodeVerified(true);
-                localStorage.setItem('fitzaika_admin_verified', 'true');
+                setAdminPasscodeVerified(false);
+                setCurrentGateway('admin');
+                localStorage.setItem('fitzaika_gateway', 'admin');
               }
             }
           }
         } catch (e) {
           if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
             setAdminEmailAttempt(emailClean);
-            setAdminPasscodeVerified(true);
-            localStorage.setItem('fitzaika_admin_verified', 'true');
+            setAdminPasscodeVerified(false);
+            setCurrentGateway('admin');
+            localStorage.setItem('fitzaika_gateway', 'admin');
           }
         }
       }
@@ -1734,8 +1759,7 @@ export default function App() {
               targetGateway = 'partner';
             } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
               setAdminEmailAttempt(emailClean);
-              setAdminPasscodeVerified(true);
-              localStorage.setItem('fitzaika_admin_verified', 'true');
+              setAdminPasscodeVerified(false);
               targetGateway = 'admin';
             }
           }
@@ -1743,8 +1767,7 @@ export default function App() {
       } catch (e) {
         if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
           setAdminEmailAttempt(emailClean);
-          setAdminPasscodeVerified(true);
-          localStorage.setItem('fitzaika_admin_verified', 'true');
+          setAdminPasscodeVerified(false);
           targetGateway = 'admin';
         }
       }
@@ -2160,6 +2183,8 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
+      await clearAdminSession();
+      setAdminPasscodeVerified(false);
       localStorage.removeItem('fitzaika_auth_session');
       localStorage.removeItem('fitzaika_cached_fb_user');
       localStorage.removeItem('fitzaika_cached_user_profile');
@@ -2508,14 +2533,13 @@ export default function App() {
         onVerify={() => {
           setAdminPasscodeVerified(true);
           setCurrentGateway('admin');
-          localStorage.setItem('fitzaika_admin_verified', 'true');
           localStorage.setItem('fitzaika_gateway', 'admin');
         }}
         onCancel={async () => {
           setAdminEmailAttempt(null);
           setAdminPasscodeVerified(false);
+          await clearAdminSession();
           setCurrentGateway('customer');
-          localStorage.removeItem('fitzaika_admin_verified');
           localStorage.setItem('fitzaika_gateway', 'customer');
           if (auth.currentUser) {
             await signOut(auth);
@@ -2579,14 +2603,13 @@ export default function App() {
           onVerify={() => {
             setAdminPasscodeVerified(true);
             setCurrentGateway('admin');
-            localStorage.setItem('fitzaika_admin_verified', 'true');
             localStorage.setItem('fitzaika_gateway', 'admin');
           }}
           onCancel={async () => {
             setAdminEmailAttempt(null);
             setAdminPasscodeVerified(false);
+            await clearAdminSession();
             setCurrentGateway('customer');
-            localStorage.removeItem('fitzaika_admin_verified');
             localStorage.setItem('fitzaika_gateway', 'customer');
             if (auth.currentUser) {
               await signOut(auth);
@@ -2600,14 +2623,18 @@ export default function App() {
         onExit={async () => {
           setAdminEmailAttempt(null);
           setAdminPasscodeVerified(false);
+          await clearAdminSession();
           setCurrentGateway('customer');
-          localStorage.removeItem('fitzaika_admin_verified');
           localStorage.setItem('fitzaika_gateway', 'customer');
           if (auth.currentUser) {
             await signOut(auth);
           }
         }}
-        onSwitchGateway={(gw) => {
+        onSwitchGateway={async (gw) => {
+          if (gw !== 'admin') {
+            await clearAdminSession();
+            setAdminPasscodeVerified(false);
+          }
           setCurrentGateway(gw);
           localStorage.setItem('fitzaika_gateway', gw);
         }}

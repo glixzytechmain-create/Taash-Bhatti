@@ -7,7 +7,7 @@ const mapsKey =
   process.env.GOOGLE_MAPS_PLATFORM_KEY ||
   process.env.VITE_GOOGLE_MAPS_API_KEY ||
   process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
-  'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE';
+  '';
 
 export default defineConfig(() => {
   const isNativeApp = process.env.CAPACITOR_BUILD === 'true' || process.env.ELECTRON_BUILD === 'true';

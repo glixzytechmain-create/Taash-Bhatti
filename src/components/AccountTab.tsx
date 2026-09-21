@@ -58,6 +58,7 @@ import LegalAgeConsentModal, { hasAcceptedLegalAgeConsent } from './LegalAgeCons
 import InAppDeliveryMap from './InAppDeliveryMap';
 import RainEffect from './RainEffect';
 import { ImageUploader } from './ImageUploader';
+import { clearAdminSession } from '../lib/security';
 import OrderInvoiceModal from './OrderInvoiceModal';
 import DeliveredOrderRatingModal from './DeliveredOrderRatingModal';
 import PhoneAuthComponent from './PhoneAuthComponent';
@@ -1111,6 +1112,7 @@ export default function AccountTab({
         localStorage.removeItem('fitzaika_cached_user_profile');
         localStorage.removeItem('fitzaika_onboarding_done');
         localStorage.removeItem('fitzaika_admin_verified');
+        clearAdminSession();
         localStorage.removeItem('fitzaika_active_dp_session');
         localStorage.removeItem('tb_active_group_room_id');
         localStorage.removeItem('tb_group_room_pin');

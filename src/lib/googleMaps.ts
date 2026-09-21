@@ -10,7 +10,7 @@ export function getGoogleMapsApiKey(): string {
     (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY) ||
     (typeof process !== 'undefined' && (process.env?.GOOGLE_MAPS_PLATFORM_KEY || process.env?.VITE_GOOGLE_MAPS_API_KEY || process.env?.VITE_GOOGLE_MAPS_PLATFORM_KEY)) ||
     (typeof window !== 'undefined' && ((window as any).GOOGLE_MAPS_PLATFORM_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY)) ||
-    'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE'
+    ''
   );
 }
 
