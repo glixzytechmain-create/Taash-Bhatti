@@ -92,6 +92,7 @@ import { ImageUploader } from './ImageUploader';
 import { DeveloperMenuModal } from './DeveloperMenuModal';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from '../lib/featureFlags';
 import { AppFeatureFlags, SmartCoupon, SmartCouponCriteria, DayOfWeek } from '../types';
+import { generateDefaultTerms } from '../lib/couponEngine';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { GOOGLE_MAPS_API_KEY } from '../lib/googleMaps';
 import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, arrayUnion, arrayRemove, query, where, getDocs, addDoc } from 'firebase/firestore';
@@ -1134,6 +1135,12 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [couponAllowedKitchenIds, setCouponAllowedKitchenIds] = useState<string[]>([]);
   const [couponIsDormantUserOnly, setCouponIsDormantUserOnly] = useState(false);
   const [couponDormantDaysThreshold, setCouponDormantDaysThreshold] = useState(30);
+
+  // Visibility, Early Bird & T&C States
+  const [couponIsPublic, setCouponIsPublic] = useState<boolean>(true);
+  const [couponFirstXRedeems, setCouponFirstXRedeems] = useState<number | ''>('');
+  const [couponTermsText, setCouponTermsText] = useState<string>('');
+  const [expandedTcCouponId, setExpandedTcCouponId] = useState<string | null>(null);
 
   // Active builder tab inside modal
   const [couponModalTab, setCouponModalTab] = useState<'basic' | 'sequence' | 'schedule' | 'cart' | 'channels'>('basic');
@@ -2820,6 +2827,9 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setCouponAllowedKitchenIds([]);
     setCouponIsDormantUserOnly(false);
     setCouponDormantDaysThreshold(30);
+    setCouponIsPublic(true);
+    setCouponFirstXRedeems('');
+    setCouponTermsText('• Valid on regular menu dishes only\n• Deals & combo packs are pre-discounted and coupon-exempt\n• One coupon per order');
     setCouponModalTab('basic');
 
     setShowCouponModal(true);
@@ -2861,10 +2871,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setCouponRequiredCategories(crit.requiredCategories || []);
     setCouponDietary(crit.dietaryRequirement || 'any');
     setCouponMinCartItems(crit.minCartItems || '');
-    setCouponAllowedChannels(crit.allowedChannels || ['delivery', 'takeaway', 'dine_in']);
+    setCouponAllowedChannels(crit.allowedChannels || coupon.allowedChannels || ['delivery', 'takeaway', 'dine_in']);
     setCouponAllowedKitchenIds(crit.allowedKitchenIds || []);
     setCouponIsDormantUserOnly(crit.isDormantUserOnly ?? false);
     setCouponDormantDaysThreshold(crit.dormantDaysThreshold || 30);
+    setCouponIsPublic(coupon.isPublic !== false);
+    setCouponFirstXRedeems(coupon.firstXRedeems || coupon.firstNUsersOnly || crit.firstXRedeems || '');
+    setCouponTermsText(coupon.termsText || (coupon.termsAndConditions ? coupon.termsAndConditions.map((t: string) => `• ${t}`).join('\n') : ''));
     setCouponModalTab('basic');
 
     setShowCouponModal(true);
@@ -2977,7 +2990,12 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       targetUserEmail: couponScope === 'account_based' ? couponTargetUserEmail.trim().toLowerCase() : undefined,
       isDormantUserOnly: couponIsDormantUserOnly,
       dormantDaysThreshold: couponIsDormantUserOnly ? Number(couponDormantDaysThreshold) || 30 : undefined,
+      firstXRedeems: couponFirstXRedeems ? Number(couponFirstXRedeems) : undefined,
     };
+
+    const compiledTerms = couponTermsText.trim()
+      ? couponTermsText.split('\n').map((l: string) => l.trim().replace(/^[-•*]\s*/, '')).filter(Boolean)
+      : generateDefaultTerms({ firstXRedeems: couponFirstXRedeems }, criteria);
 
     const couponData = {
       code: cleanCode,
@@ -2988,6 +3006,10 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       discountValue: Number(couponDiscountValue) || 0,
       perkName: couponDiscountType === 'free_perk' ? couponPerkName.trim() : '',
       isActive: couponIsActive,
+      isPublic: couponIsPublic,
+      termsText: couponTermsText.trim() || compiledTerms.map(t => `• ${t}`).join('\n'),
+      termsAndConditions: compiledTerms,
+      firstXRedeems: couponFirstXRedeems ? Number(couponFirstXRedeems) : null,
       expiryDate: couponExpiryDate || '',
       minOrderValue: Number(couponMinOrderValue) || 0,
       maxDiscountCap: couponMaxDiscountCap ? Number(couponMaxDiscountCap) : null,
@@ -2996,13 +3018,15 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       usageCount: Number(couponUsageCount) || 0,
       globalUsageCount: Number(couponUsageCount) || 0,
       totalSavings: Number(editingCoupon?.totalSavings) || 0,
-      firstNUsersOnly: Number(couponFirstNUsersOnly) || 0,
+      firstNUsersOnly: couponFirstXRedeems ? Number(couponFirstXRedeems) : Number(couponFirstNUsersOnly) || 0,
       scope: couponScope,
       targetUserEmail: couponScope === 'account_based' ? couponTargetUserEmail.trim().toLowerCase() : '',
       targetGymId: couponScope === 'gym_only' ? couponTargetGymId : '',
       isStackable: couponIsStackable,
       stackableWith: couponStackableWith,
       criteria,
+      channelBreakdown: editingCoupon?.channelBreakdown || { delivery: 0, takeaway: 0, dine_in: 0 },
+      recentRedemptions: editingCoupon?.recentRedemptions || [],
       updatedAt: new Date().toISOString(),
       ...(editingCoupon ? {} : { createdAt: new Date().toISOString() })
     };
@@ -6361,12 +6385,12 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                 </div>
 
                                 <div className="space-y-4">
-                                  {/* Code Box */}
-                                  <div className="flex items-center gap-3">
+                                  {/* Code Box & Badges */}
+                                  <div className="flex flex-wrap items-center gap-2">
                                     <div className="bg-brand-charcoal px-3 py-1.5 rounded-xl border border-brand-green/15 text-xs font-mono font-black text-white tracking-wider select-all">
                                       {coupon.code || coupon.id}
                                     </div>
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex flex-wrap items-center gap-1.5">
                                       <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider ${
                                         coupon.isActive !== false && !isExpired
                                           ? 'bg-brand-green/15 text-brand-green border-brand-green/20'
@@ -6374,6 +6398,62 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                       }`}>
                                         {coupon.isActive === false ? 'PAUSED' : isExpired ? 'EXPIRED' : 'ACTIVE'}
                                       </span>
+
+                                      {/* Visibility badge */}
+                                      {coupon.isPublic !== false ? (
+                                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase">
+                                          🌐 PUBLIC
+                                        </span>
+                                      ) : (
+                                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 uppercase">
+                                          🔒 HIDDEN
+                                        </span>
+                                      )}
+
+                                      {/* Fulfillment Mode Badge */}
+                                      {(() => {
+                                        const ch = coupon.criteria?.allowedChannels || coupon.allowedChannels || ['delivery', 'takeaway', 'dine_in'];
+                                        if (ch.length === 3) {
+                                          return (
+                                            <span className="text-[8px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono font-black">
+                                              ⭐ ALL MODES
+                                            </span>
+                                          );
+                                        }
+                                        if (ch.length === 1 && ch[0] === 'delivery') {
+                                          return (
+                                            <span className="text-[8px] bg-blue-500/15 text-blue-300 border border-blue-500/30 px-1.5 py-0.5 rounded font-mono font-black">
+                                              🚚 DELIVERY
+                                            </span>
+                                          );
+                                        }
+                                        if (ch.length === 1 && ch[0] === 'takeaway') {
+                                          return (
+                                            <span className="text-[8px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono font-black">
+                                              🛍️ TAKEAWAY
+                                            </span>
+                                          );
+                                        }
+                                        if (ch.length === 1 && ch[0] === 'dine_in') {
+                                          return (
+                                            <span className="text-[8px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono font-black">
+                                              🍽️ DINE-IN
+                                            </span>
+                                          );
+                                        }
+                                        return (
+                                          <span className="text-[8px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded font-mono font-black">
+                                            {ch.map((c: string) => c.toUpperCase()).join(' + ')}
+                                          </span>
+                                        );
+                                      })()}
+
+                                      {/* Early bird first X badge */}
+                                      {(coupon.firstXRedeems || coupon.firstNUsersOnly) && (
+                                        <span className="text-[8px] bg-yellow-500/15 text-yellow-300 border border-yellow-500/30 px-1.5 py-0.5 rounded font-mono font-black">
+                                          ⚡ 1ST {coupon.firstXRedeems || coupon.firstNUsersOnly} CLAIMS
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
@@ -6491,7 +6571,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                     {/* Usage Statistics Meter */}
                                     <div className="space-y-1 pt-2">
                                       <div className="flex items-center justify-between text-[9px] font-mono">
-                                        <span className="text-gray-500">USAGE CAP LOGS</span>
+                                        <span className="text-gray-500">USAGE REDEMPTIONS</span>
                                         <span className="text-white font-bold">
                                           {coupon.usageCount || coupon.globalUsageCount || 0} / {coupon.usageCap || coupon.globalUsageCap || '∞'} claimed
                                         </span>
@@ -6505,6 +6585,46 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                         </div>
                                       ) : null}
                                     </div>
+
+                                    {/* Data Collection & Analytics Block */}
+                                    <div className="p-2.5 rounded-2xl bg-black/30 border border-white/5 space-y-1.5 mt-2">
+                                      <div className="flex items-center justify-between text-[10px]">
+                                        <span className="text-gray-400 font-mono">Diner Savings Generated:</span>
+                                        <span className="font-mono font-black text-emerald-400">
+                                          ₹{(coupon.totalSavings || 0).toLocaleString('en-IN')}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-gray-400 font-mono">
+                                        <span>Channel Redemptions:</span>
+                                        <span className="text-gray-300 font-bold">
+                                          🚚 {coupon.channelBreakdown?.delivery || 0} • 🛍️ {coupon.channelBreakdown?.takeaway || 0} • 🍽️ {coupon.channelBreakdown?.dine_in || 0}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Expandable Terms & Conditions view */}
+                                    {coupon.termsAndConditions && coupon.termsAndConditions.length > 0 && (
+                                      <div className="pt-2 border-t border-brand-green/5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setExpandedTcCouponId(expandedTcCouponId === (coupon.id || coupon.code) ? null : (coupon.id || coupon.code))}
+                                          className="text-[9px] font-bold text-brand-green hover:underline cursor-pointer flex items-center gap-1"
+                                        >
+                                          <BookOpen className="w-2.5 h-2.5" />
+                                          {expandedTcCouponId === (coupon.id || coupon.code) ? 'Hide Terms & Conditions' : 'View Customer T&C'}
+                                        </button>
+                                        {expandedTcCouponId === (coupon.id || coupon.code) && (
+                                          <div className="mt-1.5 p-2.5 rounded-xl bg-black/40 border border-white/5 text-[9px] text-gray-300 space-y-1">
+                                            {coupon.termsAndConditions.map((term: string, tIdx: number) => (
+                                              <p key={tIdx} className="leading-tight flex items-start gap-1.5">
+                                                <span className="text-brand-green font-bold shrink-0">•</span>
+                                                <span>{term}</span>
+                                              </p>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
@@ -12256,6 +12376,228 @@ Free express delivery directly to trainer desks"
                                 </div>
                               )}
                             </div>
+                          </div>
+
+                          {/* 1. FULFILLMENT MODE CRITERIA */}
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] font-black uppercase tracking-wider text-brand-green block">
+                                  FULFILLMENT MODE CRITERIA
+                                </span>
+                                <span className="text-[10px] text-gray-400">
+                                  Control which ordering modes this coupon can be redeemed on
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-brand-green/10 text-brand-green border border-brand-green/20">
+                                {couponAllowedChannels.length === 3 ? '⭐ All 3 Modes' : `${couponAllowedChannels.length} Mode${couponAllowedChannels.length > 1 ? 's' : ''}`}
+                              </span>
+                            </div>
+
+                            {/* Quick 1-Tap Mode Presets */}
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setCouponAllowedChannels(['delivery', 'takeaway', 'dine_in'])}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  couponAllowedChannels.length === 3
+                                    ? 'bg-brand-green text-brand-charcoal shadow-xs font-black'
+                                    : 'bg-brand-charcoal/80 text-gray-300 hover:bg-brand-charcoal border border-white/5'
+                                }`}
+                              >
+                                ⭐ All Modes (Everywhere)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCouponAllowedChannels(['delivery'])}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  couponAllowedChannels.length === 1 && couponAllowedChannels[0] === 'delivery'
+                                    ? 'bg-brand-green text-brand-charcoal shadow-xs font-black'
+                                    : 'bg-brand-charcoal/80 text-gray-300 hover:bg-brand-charcoal border border-white/5'
+                                }`}
+                              >
+                                🚚 Delivery Only
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCouponAllowedChannels(['takeaway'])}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  couponAllowedChannels.length === 1 && couponAllowedChannels[0] === 'takeaway'
+                                    ? 'bg-brand-green text-brand-charcoal shadow-xs font-black'
+                                    : 'bg-brand-charcoal/80 text-gray-300 hover:bg-brand-charcoal border border-white/5'
+                                }`}
+                              >
+                                🛍️ Takeaway Only
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCouponAllowedChannels(['dine_in'])}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  couponAllowedChannels.length === 1 && couponAllowedChannels[0] === 'dine_in'
+                                    ? 'bg-brand-green text-brand-charcoal shadow-xs font-black'
+                                    : 'bg-brand-charcoal/80 text-gray-300 hover:bg-brand-charcoal border border-white/5'
+                                }`}
+                              >
+                                🍽️ Table Dine-In Only
+                              </button>
+                            </div>
+
+                            {/* Mode Checkboxes */}
+                            <div className="grid grid-cols-3 gap-2 pt-1">
+                              {[
+                                { id: 'delivery', label: '🚚 Home Delivery' },
+                                { id: 'takeaway', label: '🛍️ Takeaway (Self-Pickup)' },
+                                { id: 'dine_in', label: '🍽️ Table Dine-In' },
+                              ].map((ch) => {
+                                const isChecked = couponAllowedChannels.includes(ch.id as any);
+                                return (
+                                  <label
+                                    key={ch.id}
+                                    className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer text-xs transition-all ${
+                                      isChecked
+                                        ? 'bg-brand-green/10 border-brand-green/40 text-brand-green font-bold'
+                                        : 'bg-brand-charcoal/40 border-white/5 text-gray-400 hover:border-white/20'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setCouponAllowedChannels(prev => [...prev, ch.id as any]);
+                                        } else {
+                                          if (couponAllowedChannels.length > 1) {
+                                            setCouponAllowedChannels(prev => prev.filter(c => c !== ch.id));
+                                          }
+                                        }
+                                      }}
+                                      className="w-4 h-4 text-brand-green rounded cursor-pointer"
+                                    />
+                                    <span>{ch.label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* 2. PUBLIC VS HIDDEN COUPON VISIBILITY */}
+                          <div className="bg-brand-charcoal/30 border border-brand-green/10 p-4 rounded-2xl space-y-3">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-brand-green block">
+                              VISIBILITY & PUBLIC DISCOVERY
+                            </span>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div
+                                onClick={() => setCouponIsPublic(true)}
+                                className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                                  couponIsPublic
+                                    ? 'bg-emerald-950/40 border-emerald-500/80 text-white ring-1 ring-emerald-500/50'
+                                    : 'bg-brand-charcoal/40 border-white/5 text-gray-400 hover:border-white/20'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-base">🌐</span>
+                                  <span className="text-xs font-extrabold text-emerald-400">Public Coupon (Default)</span>
+                                </div>
+                                <p className="text-[10px] text-gray-300 leading-snug">
+                                  Automatically appears in customer cart drawer & table portal when eligible. Searchable in coupons section with full T&C.
+                                </p>
+                              </div>
+
+                              <div
+                                onClick={() => setCouponIsPublic(false)}
+                                className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                                  !couponIsPublic
+                                    ? 'bg-purple-950/40 border-purple-500/80 text-white ring-1 ring-purple-500/50'
+                                    : 'bg-brand-charcoal/40 border-white/5 text-gray-400 hover:border-white/20'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-base">🔒</span>
+                                  <span className="text-xs font-extrabold text-purple-400">Hidden / Secret Promo</span>
+                                </div>
+                                <p className="text-[10px] text-gray-300 leading-snug">
+                                  Hidden from all public lists and discovery search. Diners must type the exact promo code to redeem.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 3. EARLY BIRD CAP & USAGE CAP */}
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">
+                                First X Redeems (Early Bird Cap)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="e.g. 50 (Optional)"
+                                value={couponFirstXRedeems}
+                                onChange={(e) => setCouponFirstXRedeems(e.target.value ? Number(e.target.value) : '')}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                              <span className="text-[9px] text-gray-400 block mt-1">
+                                Optional: Limit offer strictly to the first X claimants platform-wide.
+                              </span>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">
+                                Global Platform Cap
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="100"
+                                value={couponUsageCap || ''}
+                                onChange={(e) => setCouponUsageCap(Number(e.target.value))}
+                                className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-brand-green/40"
+                              />
+                              <span className="text-[9px] text-gray-400 block mt-1">
+                                Total platform lifetime redemptions limit.
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 4. TERMS & CONDITIONS BUILDER */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-bold text-gray-400 uppercase">
+                                Terms & Conditions (T&C)
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const sample = generateDefaultTerms(
+                                    { firstXRedeems: couponFirstXRedeems },
+                                    {
+                                      minOrderValue: Number(couponMinOrderValue) || 0,
+                                      allowedChannels: couponAllowedChannels,
+                                      maxDiscountCap: couponMaxDiscountCap ? Number(couponMaxDiscountCap) : undefined,
+                                      sequenceRule: couponSequenceRule,
+                                      exactNthOrder: Number(couponExactNthOrder) || 1,
+                                      endDate: couponExpiryDate,
+                                      allowedDaysOfWeek: couponAllowedDaysOfWeek,
+                                      isStackable: couponIsStackable,
+                                    }
+                                  );
+                                  setCouponTermsText(sample.map(t => `• ${t}`).join('\n'));
+                                }}
+                                className="text-[10px] font-bold text-brand-green hover:underline cursor-pointer flex items-center gap-1"
+                              >
+                                ✨ Auto-Generate T&C from Rules
+                              </button>
+                            </div>
+                            <textarea
+                              rows={4}
+                              placeholder="• Valid on regular menu dishes&#10;• Combos are coupon-exempt&#10;• One coupon per order"
+                              value={couponTermsText}
+                              onChange={(e) => setCouponTermsText(e.target.value)}
+                              className="w-full bg-brand-charcoal border border-brand-green/15 rounded-xl p-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/40 leading-relaxed"
+                            />
+                            <span className="text-[9px] text-gray-400 block">
+                              Customers can tap "View T&C" in the Cart Drawer & Dine-In Table Portal to view these terms.
+                            </span>
                           </div>
                         </div>
                       )}

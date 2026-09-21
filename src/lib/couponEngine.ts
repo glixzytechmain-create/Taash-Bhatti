@@ -30,6 +30,98 @@ function getOrdinal(n: number): string {
 }
 
 /**
+ * Automatically compiles human-readable bulleted terms & conditions for any smart coupon
+ */
+export function generateDefaultTerms(raw: any, criteria: SmartCouponCriteria): string[] {
+  if (Array.isArray(raw.termsAndConditions) && raw.termsAndConditions.length > 0) {
+    return raw.termsAndConditions;
+  }
+  if (typeof raw.termsText === 'string' && raw.termsText.trim()) {
+    return raw.termsText.split('\n').map((s: string) => s.trim().replace(/^[-•*]\s*/, '')).filter(Boolean);
+  }
+
+  const terms: string[] = [];
+
+  // Minimum Order Value (MOV)
+  if (criteria.minOrderValue && criteria.minOrderValue > 0) {
+    terms.push(`Minimum order value: ₹${criteria.minOrderValue} (applicable on regular dishes).`);
+  }
+
+  // Fulfillment Channels
+  if (criteria.allowedChannels && criteria.allowedChannels.length > 0) {
+    if (criteria.allowedChannels.length === 1) {
+      const names: Record<string, string> = {
+        delivery: 'Home Delivery orders only',
+        takeaway: 'Takeaway (Self-Pickup) orders only',
+        dine_in: 'Table Dine-In orders only',
+      };
+      terms.push(`Valid exclusively for ${names[criteria.allowedChannels[0]] || criteria.allowedChannels[0]}.`);
+    } else if (criteria.allowedChannels.length === 3) {
+      terms.push('Valid across all fulfillment modes: Home Delivery, Takeaway, and Table Dine-In.');
+    } else {
+      const names = criteria.allowedChannels.map(c => c === 'dine_in' ? 'Table Dine-In' : c === 'delivery' ? 'Home Delivery' : 'Takeaway').join(' & ');
+      terms.push(`Valid for ${names} orders.`);
+    }
+  }
+
+  // Max Discount Cap
+  if (criteria.maxDiscountCap && criteria.maxDiscountCap > 0) {
+    terms.push(`Maximum discount is capped at ₹${criteria.maxDiscountCap} per order.`);
+  }
+
+  // First X Redeems Early Bird
+  const firstX = raw.firstXRedeems || raw.firstNUsersOnly || criteria.firstXRedeems;
+  if (firstX && firstX > 0) {
+    terms.push(`⚡ Early Bird Offer: Strictly limited to the first ${firstX} claims platform-wide.`);
+  }
+
+  // Order Sequence
+  if (criteria.sequenceRule === 'first_order_only') {
+    terms.push('Applicable strictly on your 1st completed order with Taash Bhatti.');
+  } else if (criteria.sequenceRule === 'exact_nth_order' && criteria.exactNthOrder) {
+    terms.push(`Milestone loyalty reward valid strictly on your ${getOrdinal(criteria.exactNthOrder)} order.`);
+  } else if (criteria.sequenceRule === 'after_min_orders' && criteria.minCompletedOrders) {
+    terms.push(`Unlocked for loyal diners after completing ${criteria.minCompletedOrders} prior orders.`);
+  }
+
+  // Days of Week
+  if (criteria.allowedDaysOfWeek && criteria.allowedDaysOfWeek.length > 0) {
+    const dayLabels = criteria.allowedDaysOfWeek.map(d => DAY_NAMES[d] || d).join(', ');
+    terms.push(`Valid only on ${dayLabels}.`);
+  }
+
+  // Meal Slot
+  if (criteria.mealSlotWindow?.startTime && criteria.mealSlotWindow?.endTime) {
+    terms.push(`Active between ${criteria.mealSlotWindow.startTime} and ${criteria.mealSlotWindow.endTime}.`);
+  }
+
+  // Dietary
+  if (criteria.dietaryRequirement === 'veg_only') {
+    terms.push('Valid exclusively for pure vegetarian orders.');
+  } else if (criteria.dietaryRequirement === 'non_veg_only') {
+    terms.push('Must include at least one non-vegetarian dish.');
+  }
+
+  // End Date
+  if (criteria.endDate) {
+    const d = new Date(criteria.endDate);
+    if (!isNaN(d.getTime())) {
+      terms.push(`Valid till ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}.`);
+    }
+  }
+
+  // Combo Exemption & Stacking
+  terms.push('Pre-discounted Deals & Combos are coupon-exempt.');
+  if (criteria.isStackable) {
+    terms.push('Stackable with eligible companion coupons.');
+  } else {
+    terms.push('Cannot be clubbed with other promotional coupons.');
+  }
+
+  return terms;
+}
+
+/**
  * Normalizes any coupon (new SmartCoupon or legacy schema) into a standard SmartCoupon structure
  */
 export function normalizeSmartCoupon(raw: any): SmartCoupon {
@@ -61,7 +153,7 @@ export function normalizeSmartCoupon(raw: any): SmartCoupon {
     minCartItems: raw.criteria?.minCartItems || raw.minCartItems,
 
     // Channels
-    allowedChannels: raw.criteria?.allowedChannels || raw.allowedChannels,
+    allowedChannels: raw.criteria?.allowedChannels || raw.allowedChannels || ['delivery', 'takeaway', 'dine_in'],
     allowedKitchenIds: raw.criteria?.allowedKitchenIds || raw.allowedKitchenIds,
 
     // Stacking & Audience
@@ -72,7 +164,10 @@ export function normalizeSmartCoupon(raw: any): SmartCoupon {
     targetUserPhone: raw.criteria?.targetUserPhone || raw.targetUserPhone,
     isDormantUserOnly: raw.criteria?.isDormantUserOnly ?? raw.isDormantUserOnly ?? false,
     dormantDaysThreshold: raw.criteria?.dormantDaysThreshold || raw.dormantDaysThreshold || 30,
+    firstXRedeems: raw.criteria?.firstXRedeems ?? raw.firstXRedeems ?? raw.firstNUsersOnly,
   };
+
+  const terms = generateDefaultTerms(raw, criteria);
 
   return {
     id: code,
@@ -84,12 +179,18 @@ export function normalizeSmartCoupon(raw: any): SmartCoupon {
     discountValue: Number(raw.discountValue || 0),
     perkName: raw.perkName,
     isActive: raw.isActive !== false,
+    isPublic: raw.isPublic !== false, // Default true: public & discoverable
+    termsText: raw.termsText || terms.join('\n'),
+    termsAndConditions: terms,
+    firstXRedeems: raw.firstXRedeems ? Number(raw.firstXRedeems) : (raw.firstNUsersOnly ? Number(raw.firstNUsersOnly) : undefined),
     criteria,
     globalUsageCap: raw.globalUsageCap ? Number(raw.globalUsageCap) : (raw.usageCap ? Number(raw.usageCap) : undefined),
     globalUsageCount: Number(raw.globalUsageCount ?? raw.usageCount ?? 0),
     totalSavings: Number(raw.totalSavings || 0),
     firstNUsersOnly: raw.firstNUsersOnly ? Number(raw.firstNUsersOnly) : undefined,
     scope: raw.scope || 'all',
+    channelBreakdown: raw.channelBreakdown || { delivery: 0, takeaway: 0, dine_in: 0 },
+    recentRedemptions: raw.recentRedemptions || [],
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
     createdBy: raw.createdBy,
@@ -176,15 +277,16 @@ export function evaluateSmartCoupon(
     };
   }
 
-  // 6. First N Users Only
-  if (coupon.firstNUsersOnly && (coupon.globalUsageCount || 0) >= coupon.firstNUsersOnly) {
+  // 6. First X Redeems / Early Bird Limit
+  const earlyBirdLimit = coupon.firstXRedeems || coupon.firstNUsersOnly || criteria.firstXRedeems;
+  if (earlyBirdLimit && earlyBirdLimit > 0 && (coupon.globalUsageCount || 0) >= earlyBirdLimit) {
     return {
       isValid: false,
       code: coupon.code,
       discountAmount: 0,
       rejectionCode: 'GLOBAL_CAP_REACHED',
-      rejectionReason: `First ${coupon.firstNUsersOnly} users limit reached for this campaign.`,
-      helpfulHint: 'The early bird limit for this offer has been reached.'
+      rejectionReason: `First ${earlyBirdLimit} claims limit reached for this promotion.`,
+      helpfulHint: `⚡ Early Bird Limit Reached: All first ${earlyBirdLimit} vouchers have already been claimed.`
     };
   }
 
@@ -558,6 +660,7 @@ export function evaluateSmartCoupon(
 
 /**
  * Filter an array of coupons to find all that are valid or almost valid for a given cart context
+ * NOTE: Hidden coupons are excluded from automated public discovery.
  */
 export function getEligibleCoupons(
   coupons: any[],
@@ -573,6 +676,8 @@ export function getEligibleCoupons(
     try {
       const coupon = normalizeSmartCoupon(raw);
       if (!coupon.isActive) continue;
+      // Hidden coupons are secret and must not be surfaced in auto discovery
+      if (coupon.isPublic === false) continue;
 
       const result = evaluateSmartCoupon(coupon, context);
       if (result.isValid) {
@@ -592,4 +697,48 @@ export function getEligibleCoupons(
   almostEligible.sort((a, b) => (a.result.missingAmount || 999) - (b.result.missingAmount || 999));
 
   return { eligible, almostEligible };
+}
+
+/**
+ * Search and filter active public coupons for the in-app discovery explorer
+ */
+export function searchPublicCoupons(
+  coupons: any[],
+  query: string,
+  context: CouponEvaluationContext
+): { coupon: SmartCoupon; result: CouponEvaluationResult }[] {
+  const q = query.trim().toLowerCase();
+  const results: { coupon: SmartCoupon; result: CouponEvaluationResult }[] = [];
+
+  for (const raw of coupons) {
+    try {
+      const coupon = normalizeSmartCoupon(raw);
+      if (!coupon.isActive) continue;
+      if (coupon.isPublic === false) continue; // Only public coupons
+
+      if (q) {
+        const matchesCode = coupon.code.toLowerCase().includes(q);
+        const matchesTitle = coupon.title.toLowerCase().includes(q);
+        const matchesDesc = coupon.description.toLowerCase().includes(q);
+        const matchesBadge = (coupon.badge || '').toLowerCase().includes(q);
+        if (!matchesCode && !matchesTitle && !matchesDesc && !matchesBadge) {
+          continue;
+        }
+      }
+
+      const result = evaluateSmartCoupon(coupon, context);
+      results.push({ coupon, result });
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Sort: valid first (highest discount first), then invalid
+  results.sort((a, b) => {
+    if (a.result.isValid && !b.result.isValid) return -1;
+    if (!a.result.isValid && b.result.isValid) return 1;
+    return b.result.discountAmount - a.result.discountAmount;
+  });
+
+  return results;
 }

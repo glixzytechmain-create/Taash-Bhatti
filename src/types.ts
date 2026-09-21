@@ -271,6 +271,18 @@ export interface SmartCouponCriteria {
   targetUserPhone?: string;
   isDormantUserOnly?: boolean;         // Users inactive > 30 days
   dormantDaysThreshold?: number;       // default 30
+  firstXRedeems?: number;              // Optional early-bird limit (e.g. valid for first 50 claims)
+}
+
+export interface SmartCouponRedemptionRecord {
+  orderId: string;
+  userId?: string;
+  userName?: string;
+  userPhone?: string;
+  fulfillmentMode: 'delivery' | 'takeaway' | 'dine_in';
+  subtotal: number;
+  discountAmount: number;
+  timestamp: string;
 }
 
 export interface SmartCoupon {
@@ -283,14 +295,24 @@ export interface SmartCoupon {
   discountValue: number;               // % or ₹ amount
   perkName?: string;                   // For free_perk (e.g. 'Complimentary Firni Handi')
   isActive: boolean;
+  isPublic?: boolean;                  // Default true: visible in public list & search. false: hidden/secret code only
+  termsText?: string;                  // Raw terms & conditions text
+  termsAndConditions?: string[];       // Bullet-point terms & conditions
+  firstXRedeems?: number;              // Optional early-bird limit (e.g. valid for first 50 claims)
   criteria: SmartCouponCriteria;
 
-  // Global Platform Metrics
+  // Global Platform Metrics & Data Collection
   globalUsageCap?: number;             // Total redemptions allowed across platform
   globalUsageCount?: number;
   totalSavings?: number;               // Historical aggregate ₹ discounts given
   firstNUsersOnly?: number;            // Cap on distinct first N users
   scope?: 'all' | 'account_based' | 'gym_only';
+  channelBreakdown?: {
+    delivery: number;
+    takeaway: number;
+    dine_in: number;
+  };
+  recentRedemptions?: SmartCouponRedemptionRecord[];
   createdAt?: string;
   updatedAt?: string;
   createdBy?: string;

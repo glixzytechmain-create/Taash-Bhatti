@@ -37,12 +37,16 @@ import {
   Tag,
   Gift,
   Clock,
+  Info,
+  FileText,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder } from '../lib/walletService';
 import { doc, getDoc, updateDoc, collection, onSnapshot, query, where, getDocs, increment } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupon, CouponEvaluationContext } from '../types';
-import { evaluateSmartCoupon, getEligibleCoupons, normalizeSmartCoupon } from '../lib/couponEngine';
+import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupon, CouponEvaluationContext, SmartCouponRedemptionRecord } from '../types';
+import { evaluateSmartCoupon, getEligibleCoupons, normalizeSmartCoupon, searchPublicCoupons, generateDefaultTerms } from '../lib/couponEngine';
 import { getStoredFeatureFlags, subscribeFeatureFlags } from '../lib/featureFlags';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { GOOGLE_MAPS_API_KEY, reverseGeocodeCoords, isGoogleMapsAuthFailed } from '../lib/googleMaps';
@@ -504,6 +508,9 @@ export default function CartDrawer({
   // Available Smart Coupons from Firestore & User Completed Orders
   const [allAvailableCoupons, setAllAvailableCoupons] = useState<SmartCoupon[]>([]);
   const [userCompletedOrderCount, setUserCompletedOrderCount] = useState<number>(0);
+  const [showBrowseOffers, setShowBrowseOffers] = useState(false);
+  const [publicOfferSearch, setPublicOfferSearch] = useState('');
+  const [viewingTcCoupon, setViewingTcCoupon] = useState<SmartCoupon | null>(null);
 
   // Real-time listener for active coupons in cart
   useEffect(() => {
@@ -1037,6 +1044,51 @@ export default function CartDrawer({
     return getEligibleCoupons(unapplied, evalContext);
   }, [allAvailableCoupons, appliedCoupons, evalContext]);
 
+  // Search & filter active public coupons for customer exploration
+  const publicOffersList = useMemo(() => {
+    return searchPublicCoupons(allAvailableCoupons, publicOfferSearch, evalContext);
+  }, [allAvailableCoupons, publicOfferSearch, evalContext]);
+
+  // Helper to render responsive fulfillment mode badge
+  const renderModeBadge = (coupon: SmartCoupon) => {
+    const modes = coupon.criteria?.allowedChannels;
+    if (!modes || modes.length === 0 || (modes.includes('delivery') && modes.includes('takeaway') && modes.includes('dine_in'))) {
+      return (
+        <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 border border-amber-500/30 shrink-0">
+          ⭐ All Modes
+        </span>
+      );
+    }
+    if (modes.length === 1) {
+      if (modes[0] === 'delivery') {
+        return (
+          <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 border border-blue-500/30 shrink-0">
+            🚚 Delivery
+          </span>
+        );
+      }
+      if (modes[0] === 'takeaway') {
+        return (
+          <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-700 border border-purple-500/30 shrink-0">
+            🛍️ Takeaway
+          </span>
+        );
+      }
+      if (modes[0] === 'dine_in') {
+        return (
+          <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-700 border border-orange-500/30 shrink-0">
+            🍽️ Dine-In
+          </span>
+        );
+      }
+    }
+    return (
+      <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-stone-500/15 text-stone-700 border border-stone-500/30 shrink-0">
+        {modes.map(m => m === 'delivery' ? '🚚' : m === 'takeaway' ? '🛍️' : '🍽️').join(' ')}
+      </span>
+    );
+  };
+
   // Core smart coupon application routine
   const applyCouponByCode = async (rawCode: string) => {
     setCouponError(null);
@@ -1311,10 +1363,32 @@ export default function CartDrawer({
             const currentCount = currentData.usageCount || 0;
             const currentGlobalCount = currentData.globalUsageCount || currentCount || 0;
             const currentSavings = currentData.totalSavings || 0;
+            const currentBreakdown = currentData.channelBreakdown || { delivery: 0, takeaway: 0, dine_in: 0 };
+            const channelKey: 'delivery' | 'takeaway' | 'dine_in' =
+              fulfillmentType === 'takeaway' ? 'takeaway' : fulfillmentType === 'dine_in' ? 'dine_in' : 'delivery';
+            currentBreakdown[channelKey] = (currentBreakdown[channelKey] || 0) + 1;
+
+            const redemptionRecord: SmartCouponRedemptionRecord = {
+              orderId: orderId,
+              userId: auth.currentUser?.uid || user.id || 'guest',
+              userName: finalCustomerName || user.name || 'Customer',
+              userPhone: finalCustomerPhone || user.phone || '',
+              fulfillmentMode: channelKey,
+              subtotal: regularSubtotal,
+              discountAmount: savingsContrib,
+              timestamp: new Date().toISOString()
+            };
+
+            const recentRedemptions = Array.isArray(currentData.recentRedemptions)
+              ? [redemptionRecord, ...currentData.recentRedemptions].slice(0, 50)
+              : [redemptionRecord];
+
             await updateDoc(couponRef, {
               usageCount: currentCount + 1,
               globalUsageCount: currentGlobalCount + 1,
               totalSavings: currentSavings + savingsContrib,
+              channelBreakdown: currentBreakdown,
+              recentRedemptions: recentRedemptions,
               updatedAt: new Date().toISOString()
             });
           }
@@ -2466,19 +2540,34 @@ export default function CartDrawer({
                   <span className="text-[10px] font-black uppercase text-brand-charcoal/50 tracking-wide flex items-center gap-1">
                     <Tag className="w-3 h-3 text-brand-green" /> 2. Special Offers & Coupons
                   </span>
-                  {appliedCoupons.length > 0 && (
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setAppliedCoupons([]);
-                        setCouponSuccess("All coupons cleared.");
-                        setCouponError(null);
-                      }}
-                      className="text-[9px] font-bold text-rose-600 hover:underline cursor-pointer"
+                      onClick={() => setShowBrowseOffers((prev) => !prev)}
+                      className="text-[9px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300/80 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                     >
-                      Clear Stack
+                      <Search className="w-2.5 h-2.5" />
+                      {showBrowseOffers ? 'Hide Public Offers' : 'Browse All Offers'}
+                      {allAvailableCoupons.filter((c) => c.isPublic !== false && c.isActive).length > 0 && (
+                        <span className="bg-emerald-600 text-white rounded-full px-1 text-[8px] font-black">
+                          {allAvailableCoupons.filter((c) => c.isPublic !== false && c.isActive).length}
+                        </span>
+                      )}
                     </button>
-                  )}
+                    {appliedCoupons.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppliedCoupons([]);
+                          setCouponSuccess("All coupons cleared.");
+                          setCouponError(null);
+                        }}
+                        className="text-[9px] font-bold text-rose-600 hover:underline cursor-pointer"
+                      >
+                        Clear Stack
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Notice for Deals & Combos only in cart */}
@@ -2502,7 +2591,7 @@ export default function CartDrawer({
                           className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/50 border border-emerald-500/30 flex items-center justify-between gap-2 shadow-xs transition-all hover:border-emerald-500"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-mono font-black text-xs text-emerald-800 tracking-wider bg-white px-2 py-0.5 rounded-lg border border-dashed border-emerald-500/50">
                                 {coupon.code}
                               </span>
@@ -2511,15 +2600,30 @@ export default function CartDrawer({
                                   {coupon.badge}
                                 </span>
                               )}
+                              {renderModeBadge(coupon)}
+                              {coupon.firstXRedeems && (
+                                <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 border border-amber-500/30">
+                                  ⚡ 1st {coupon.firstXRedeems} Claims
+                                </span>
+                              )}
                             </div>
                             <p className="text-[10px] text-brand-charcoal/80 font-medium truncate mt-0.5">
                               {coupon.description || coupon.title || `Save on your order`}
                             </p>
-                            {result.discountAmount > 0 && (
-                              <span className="text-[9px] font-bold text-emerald-600 block">
-                                ✨ Saves ₹{result.discountAmount} on regular dishes
-                              </span>
-                            )}
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {result.discountAmount > 0 && (
+                                <span className="text-[9px] font-bold text-emerald-600 block">
+                                  ✨ Saves ₹{result.discountAmount} on dishes
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setViewingTcCoupon(coupon)}
+                                className="text-[9px] font-bold text-brand-charcoal/50 hover:text-emerald-700 underline cursor-pointer"
+                              >
+                                View T&C
+                              </button>
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -2546,9 +2650,19 @@ export default function CartDrawer({
                           className="p-2.5 rounded-xl bg-brand-cream/40 border border-brand-green/20 space-y-1.5"
                         >
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="font-mono font-black text-brand-charcoal bg-white/80 px-1.5 py-0.5 rounded border border-brand-green/20">
-                              {coupon.code}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-black text-brand-charcoal bg-white/80 px-1.5 py-0.5 rounded border border-brand-green/20">
+                                {coupon.code}
+                              </span>
+                              {renderModeBadge(coupon)}
+                              <button
+                                type="button"
+                                onClick={() => setViewingTcCoupon(coupon)}
+                                className="text-[9px] font-bold text-brand-charcoal/50 hover:text-emerald-700 underline cursor-pointer"
+                              >
+                                T&C
+                              </button>
+                            </div>
                             <span className="font-bold text-brand-green text-[9px]">
                               {result.helpfulHint || `Add ₹${result.missingAmount || 0} to unlock`}
                             </span>
@@ -2565,11 +2679,138 @@ export default function CartDrawer({
                   </div>
                 )}
 
+                {/* PUBLIC OFFERS SEARCH & EXPLORER */}
+                {showBrowseOffers && (
+                  <div className="p-3 rounded-2xl bg-brand-cream/35 border border-brand-green/20 space-y-2.5 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-brand-charcoal/70 tracking-wider flex items-center gap-1">
+                        <Search className="w-3 h-3 text-brand-green" /> Search Available Public Coupons
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowBrowseOffers(false)}
+                        className="text-[10px] font-bold text-brand-charcoal/40 hover:text-brand-charcoal cursor-pointer"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-brand-charcoal/40" />
+                      <input
+                        type="text"
+                        placeholder="Search by code, title, or reward..."
+                        value={publicOfferSearch}
+                        onChange={(e) => setPublicOfferSearch(e.target.value)}
+                        className="w-full bg-white border border-brand-green/20 rounded-xl pl-8 pr-8 py-2 text-xs font-medium placeholder-brand-charcoal/40 focus:outline-none focus:border-brand-green transition-colors"
+                      />
+                      {publicOfferSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setPublicOfferSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-charcoal/40 hover:text-brand-charcoal text-xs cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Results List */}
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {publicOffersList.length === 0 ? (
+                        <p className="text-center py-4 text-xs text-brand-charcoal/50 font-medium">
+                          No public offers found matching "{publicOfferSearch}".
+                        </p>
+                      ) : (
+                        publicOffersList.map(({ coupon, result }) => {
+                          const isApplied = appliedCoupons.some(
+                            (c) => (c.code || c.id) === coupon.code
+                          );
+
+                          return (
+                            <div
+                              key={coupon.id || coupon.code}
+                              className={`p-2.5 rounded-xl border transition-all ${
+                                result.isValid
+                                  ? 'bg-emerald-50/70 border-emerald-400/40 hover:border-emerald-500'
+                                  : 'bg-white/80 border-stone-200'
+                              } flex flex-col gap-1.5`}
+                            >
+                              <div className="flex items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono font-black text-xs text-brand-charcoal bg-white px-2 py-0.5 rounded-md border border-stone-300">
+                                    {coupon.code}
+                                  </span>
+                                  {coupon.badge && (
+                                    <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-600 text-white">
+                                      {coupon.badge}
+                                    </span>
+                                  )}
+                                  {renderModeBadge(coupon)}
+                                  {coupon.firstXRedeems && (
+                                    <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 border border-amber-500/30">
+                                      ⚡ 1st {coupon.firstXRedeems} Claims
+                                    </span>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingTcCoupon(coupon)}
+                                  className="text-[9px] font-bold text-brand-charcoal/60 hover:text-emerald-700 underline cursor-pointer shrink-0"
+                                >
+                                  View T&C
+                                </button>
+                              </div>
+
+                              <p className="text-[10px] text-brand-charcoal/80 font-medium leading-tight">
+                                {coupon.description || coupon.title}
+                              </p>
+
+                              <div className="flex items-center justify-between pt-1 border-t border-stone-100">
+                                {result.isValid ? (
+                                  <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-1">
+                                    <Sparkles className="w-2.5 h-2.5" />
+                                    {result.discountAmount > 0 ? `Saves ₹${result.discountAmount}` : 'Valid for your order'}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-semibold text-amber-800 line-clamp-1">
+                                    {result.helpfulHint || result.rejectionReason}
+                                  </span>
+                                )}
+
+                                {isApplied ? (
+                                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+                                    Applied ✓
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => applyCouponByCode(coupon.code)}
+                                    disabled={!result.isValid}
+                                    className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer ${
+                                      result.isValid
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+                                        : 'bg-stone-200 text-stone-500 cursor-not-allowed'
+                                    }`}
+                                  >
+                                    Apply
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* MANUAL PROMO CODE INPUT */}
                 <form onSubmit={handleApplyCoupon} className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Enter Promo Code (e.g. TAASH50)"
+                    placeholder="Enter Promo Code (e.g. TAASH50 or Secret Code)"
                     value={couponCode}
                     onChange={(e) => setCouponCode(e.target.value)}
                     className="flex-1 bg-brand-cream/20 border border-brand-green/15 rounded-xl px-3 py-2 text-xs font-semibold uppercase placeholder-brand-charcoal/40 focus:outline-none focus:border-brand-green/40 transition-colors"
@@ -2610,6 +2851,14 @@ export default function CartDrawer({
                         >
                           <Tag className="w-2.5 h-2.5" />
                           <span>{coupon.code}</span>
+                          <button
+                            type="button"
+                            onClick={() => setViewingTcCoupon(coupon)}
+                            className="text-[9px] text-brand-charcoal/60 hover:text-brand-charcoal underline ml-0.5 cursor-pointer"
+                            title="View Terms & Conditions"
+                          >
+                            T&C
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -2928,6 +3177,147 @@ export default function CartDrawer({
                 </>
               )}
             </button>
+          </div>
+        )}
+
+        {/* TERMS & CONDITIONS MODAL FOR COUPONS */}
+        {viewingTcCoupon && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-brand-charcoal/10 flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-brand-charcoal to-brand-brown p-4 text-white flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-black text-sm tracking-widest bg-white/20 text-white px-2 py-0.5 rounded-lg border border-white/20">
+                      {viewingTcCoupon.code}
+                    </span>
+                    {viewingTcCoupon.badge && (
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-brand-orange text-white tracking-wide">
+                        {viewingTcCoupon.badge}
+                      </span>
+                    )}
+                    {viewingTcCoupon.isPublic === false && (
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-purple-500 text-white tracking-wide">
+                        🔒 Secret Promo
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-display font-black text-base text-white leading-tight">
+                    {viewingTcCoupon.title || `${viewingTcCoupon.code} Special Offer`}
+                  </h3>
+                  {viewingTcCoupon.description && (
+                    <p className="text-xs text-brand-cream/80">{viewingTcCoupon.description}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingTcCoupon(null)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-2"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Quick Criteria Badges */}
+              <div className="p-3 bg-brand-cream/30 border-b border-brand-green/10 flex flex-wrap gap-2 text-[10px]">
+                {/* Mode */}
+                <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-brand-green/15 font-bold text-brand-charcoal">
+                  <Compass className="w-3 h-3 text-brand-green" />
+                  <span>
+                    {viewingTcCoupon.criteria?.allowedChannels && viewingTcCoupon.criteria.allowedChannels.length > 0 && viewingTcCoupon.criteria.allowedChannels.length < 3
+                      ? viewingTcCoupon.criteria.allowedChannels.map(m => m === 'delivery' ? 'Delivery Only' : m === 'takeaway' ? 'Takeaway Only' : 'Dine-In Only').join(', ')
+                      : 'All Modes (Delivery, Takeaway & Dine-In)'}
+                  </span>
+                </div>
+
+                {/* Early Bird */}
+                {viewingTcCoupon.firstXRedeems && (
+                  <div className="flex items-center gap-1 bg-amber-500/10 text-amber-900 border border-amber-500/30 px-2 py-1 rounded-lg font-bold">
+                    <Sparkles className="w-3 h-3 text-amber-600" />
+                    <span>Early Bird: First {viewingTcCoupon.firstXRedeems} Claims Only ({viewingTcCoupon.globalUsageCount || 0} claimed)</span>
+                  </div>
+                )}
+
+                {/* Min Order Value */}
+                {viewingTcCoupon.criteria?.minOrderValue && viewingTcCoupon.criteria.minOrderValue > 0 && (
+                  <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-brand-green/15 font-bold text-brand-charcoal">
+                    <Tag className="w-3 h-3 text-brand-green" />
+                    <span>Min Order: ₹{viewingTcCoupon.criteria.minOrderValue}</span>
+                  </div>
+                )}
+
+                {/* Max Discount Cap */}
+                {viewingTcCoupon.criteria?.maxDiscountCap && viewingTcCoupon.criteria.maxDiscountCap > 0 && (
+                  <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-brand-green/15 font-bold text-brand-charcoal">
+                    <Tag className="w-3 h-3 text-brand-green" />
+                    <span>Max Cap: ₹{viewingTcCoupon.criteria.maxDiscountCap}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Terms List */}
+              <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-brand-charcoal/60 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-brand-green" /> Terms & Conditions
+                </h4>
+                <ul className="space-y-2 text-xs text-brand-charcoal/80">
+                  {(viewingTcCoupon.termsAndConditions && viewingTcCoupon.termsAndConditions.length > 0
+                    ? viewingTcCoupon.termsAndConditions
+                    : generateDefaultTerms(viewingTcCoupon, viewingTcCoupon.criteria)
+                  ).map((term, idx) => (
+                    <li key={idx} className="flex items-start gap-2 leading-relaxed">
+                      <span className="text-brand-green font-bold text-sm leading-none shrink-0">•</span>
+                      <span>{term}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Footer with instant apply or eligibility hint */}
+              <div className="p-3 bg-stone-50 border-t border-stone-200 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setViewingTcCoupon(null)}
+                  className="px-4 py-2 border border-stone-300 hover:bg-stone-100 rounded-xl text-xs font-bold text-stone-700 cursor-pointer transition-colors"
+                >
+                  Close
+                </button>
+
+                {(() => {
+                  const evalRes = evaluateSmartCoupon(viewingTcCoupon, evalContext);
+                  const isAlreadyApplied = appliedCoupons.some(c => (c.code || c.id) === viewingTcCoupon.code);
+
+                  if (isAlreadyApplied) {
+                    return (
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Applied to Cart
+                      </span>
+                    );
+                  }
+
+                  if (evalRes.isValid) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await applyCouponByCode(viewingTcCoupon.code);
+                          setViewingTcCoupon(null);
+                        }}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wide cursor-pointer transition-colors shadow-xs active:scale-95 flex items-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> Apply Offer (-₹{evalRes.discountAmount})
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <span className="text-[11px] text-amber-800 font-semibold max-w-[240px] text-right leading-tight">
+                      {evalRes.helpfulHint || evalRes.rejectionReason}
+                    </span>
+                  );
+                })()}
+              </div>
+            </div>
           </div>
         )}
 

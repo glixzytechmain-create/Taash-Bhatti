@@ -26,12 +26,14 @@ import {
   ExternalLink,
   ShieldCheck,
   User,
-  Phone
+  Phone,
+  FileText,
+  X
 } from 'lucide-react';
-import { Meal, Order, OrderItem, Kitchen, SmartCoupon, CouponEvaluationContext } from '../../types';
+import { Meal, Order, OrderItem, Kitchen, SmartCoupon, CouponEvaluationContext, SmartCouponRedemptionRecord } from '../../types';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { evaluateSmartCoupon, normalizeSmartCoupon } from '../../lib/couponEngine';
+import { evaluateSmartCoupon, normalizeSmartCoupon, generateDefaultTerms } from '../../lib/couponEngine';
 
 interface DineInPortalProps {
   dineInSession: {
@@ -87,6 +89,7 @@ export default function DineInPortal({
   const [appliedCouponData, setAppliedCouponData] = useState<SmartCoupon | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+  const [viewingTcCoupon, setViewingTcCoupon] = useState<SmartCoupon | null>(null);
 
   // Attendant notification toast
   const [attendantNotified, setAttendantNotified] = useState<boolean>(false);
@@ -290,10 +293,30 @@ export default function DineInPortal({
             const currentCount = currentData.usageCount || 0;
             const currentGlobalCount = currentData.globalUsageCount || currentCount || 0;
             const currentSavings = currentData.totalSavings || 0;
+            const currentBreakdown = currentData.channelBreakdown || { delivery: 0, takeaway: 0, dine_in: 0 };
+            currentBreakdown.dine_in = (currentBreakdown.dine_in || 0) + 1;
+
+            const redemptionRecord: SmartCouponRedemptionRecord = {
+              orderId: newOrder.id,
+              userId: guestName ? `table_guest_${guestName}` : 'dine_in_guest',
+              userName: guestName ? `${guestName} (Table ${dineInSession.tableNumber})` : `Table ${dineInSession.tableNumber}`,
+              userPhone: cleanPhone || '',
+              fulfillmentMode: 'dine_in',
+              subtotal: cartSubtotal,
+              discountAmount: appliedDiscount,
+              timestamp: new Date().toISOString()
+            };
+
+            const recentRedemptions = Array.isArray(currentData.recentRedemptions)
+              ? [redemptionRecord, ...currentData.recentRedemptions].slice(0, 50)
+              : [redemptionRecord];
+
             await updateDoc(couponRef, {
               usageCount: currentCount + 1,
               globalUsageCount: currentGlobalCount + 1,
               totalSavings: currentSavings + appliedDiscount,
+              channelBreakdown: currentBreakdown,
+              recentRedemptions: recentRedemptions,
               updatedAt: new Date().toISOString()
             });
           }
@@ -720,16 +743,23 @@ export default function DineInPortal({
                   {couponError && <p className="text-[11px] text-red-400 font-medium">{couponError}</p>}
                   {couponSuccess && <p className="text-[11px] text-emerald-400 font-bold">{couponSuccess}</p>}
                   {appliedCouponData && (
-                    <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-mono text-xs font-black text-amber-300 bg-black/40 px-2 py-0.5 rounded border border-amber-500/30">
                           {appliedCouponData.code}
                         </span>
                         {appliedCouponData.badge && (
-                          <span className="text-[9px] font-extrabold uppercase bg-amber-400 text-black px-1.5 py-0.2 rounded">
+                          <span className="text-[9px] font-extrabold uppercase bg-amber-400 text-black px-1.5 py-0.5 rounded">
                             {appliedCouponData.badge}
                           </span>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => setViewingTcCoupon(appliedCouponData)}
+                          className="text-[10px] text-amber-400/80 hover:text-amber-300 underline font-semibold ml-1 cursor-pointer"
+                        >
+                          View T&C
+                        </button>
                       </div>
                       <span className="text-xs font-black text-emerald-400">
                         -₹{appliedDiscount}
@@ -947,6 +977,65 @@ export default function DineInPortal({
               <span>Review Table Order</span>
               <ChevronRight className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 5. T&C MODAL FOR DINE-IN COUPONS */}
+      {viewingTcCoupon && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-[#121820] text-stone-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-amber-500/30 flex flex-col max-h-[85vh]">
+            <div className="bg-gradient-to-r from-stone-900 to-black p-4 border-b border-stone-800 flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-black text-sm tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
+                    {viewingTcCoupon.code}
+                  </span>
+                  {viewingTcCoupon.badge && (
+                    <span className="text-[9px] font-extrabold uppercase bg-amber-400 text-black px-1.5 py-0.5 rounded">
+                      {viewingTcCoupon.badge}
+                    </span>
+                  )}
+                </div>
+                <h3 className="font-bold text-sm text-white mt-1">
+                  {viewingTcCoupon.title || `${viewingTcCoupon.code} Offer`}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingTcCoupon(null)}
+                className="w-7 h-7 rounded-full bg-stone-800 text-stone-400 hover:text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-2 flex-1 text-xs">
+              <h4 className="font-bold uppercase tracking-wider text-amber-400/80 text-[10px] flex items-center gap-1">
+                <FileText className="w-3 h-3" /> Terms & Conditions
+              </h4>
+              <ul className="space-y-1.5 text-stone-300">
+                {(viewingTcCoupon.termsAndConditions && viewingTcCoupon.termsAndConditions.length > 0
+                  ? viewingTcCoupon.termsAndConditions
+                  : generateDefaultTerms(viewingTcCoupon, viewingTcCoupon.criteria)
+                ).map((t, idx) => (
+                  <li key={idx} className="flex items-start gap-1.5 leading-relaxed">
+                    <span className="text-amber-400 shrink-0">•</span>
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="p-3 bg-stone-900/60 border-t border-stone-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingTcCoupon(null)}
+                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl cursor-pointer transition-colors"
+              >
+                Got It
+              </button>
+            </div>
           </div>
         </div>
       )}
