@@ -1201,6 +1201,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [adminTableQrDataUrl, setAdminTableQrDataUrl] = useState<string>('');
   const [adminTableQrSvg, setAdminTableQrSvg] = useState<string>('');
   const [kitchenServiceBellsConfig, setKitchenServiceBellsConfig] = useState<ServiceBellItemConfig[]>(DEFAULT_SERVICE_BELLS);
+  const [showAddNewServiceModal, setShowAddNewServiceModal] = useState<boolean>(false);
+  const [newServiceTitle, setNewServiceTitle] = useState<string>('');
+  const [newServiceIcon, setNewServiceIcon] = useState<string>('🛎️');
+  const [newServiceDescription, setNewServiceDescription] = useState<string>('');
+  const [newServicePrice, setNewServicePrice] = useState<number>(0);
 
   // Enhanced KDS Multi-Branch Terminal States
   const [kdsUnlocked, setKdsUnlocked] = useState<boolean>(false);
@@ -3207,8 +3212,37 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setShowKitchenModal(true);
   };
 
-  const updateAdminBellItem = (id: string, field: 'price' | 'isEnabled', val: any) => {
+  const updateAdminBellItem = (id: string, field: keyof ServiceBellItemConfig, val: any) => {
     setKitchenServiceBellsConfig(prev => prev.map(b => b.id === id ? { ...b, [field]: val } : b));
+  };
+
+  const handleAdminAddServiceBell = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newServiceTitle.trim()) return;
+    const newBell: ServiceBellItemConfig = {
+      id: `srv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title: newServiceTitle.trim(),
+      icon: newServiceIcon.trim() || '🛎️',
+      description: newServiceDescription.trim() || 'Complimentary table service',
+      price: Math.max(0, Number(newServicePrice) || 0),
+      isEnabled: true,
+    };
+    setKitchenServiceBellsConfig(prev => [...prev, newBell]);
+    setNewServiceTitle('');
+    setNewServiceIcon('🛎️');
+    setNewServiceDescription('');
+    setNewServicePrice(0);
+    setShowAddNewServiceModal(false);
+  };
+
+  const handleAdminDeleteServiceBell = (id: string) => {
+    setKitchenServiceBellsConfig(prev => prev.filter(b => b.id !== id));
+  };
+
+  const handleAdminResetDefaultBells = () => {
+    if (window.confirm("Reset services for this branch to the standard set?")) {
+      setKitchenServiceBellsConfig(DEFAULT_SERVICE_BELLS);
+    }
   };
 
   const handleSaveKitchen = async (e: React.FormEvent) => {
@@ -10883,81 +10917,143 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                         </div>
                       </div>
 
-                      {/* Section: Dine-In Service Bells & Add-on Pricing Controls */}
+                      {/* Section: Dine-In Service Bells & Add-on Pricing Controls (Admin Dynamic CRUD) */}
                       <div className="bg-[#121A22] border border-brand-green/20 rounded-2xl p-4 space-y-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <span className="text-base">🛎️</span>
                             <div>
-                              <h5 className="text-xs font-black uppercase tracking-wider text-white">
-                                Dine-In Service Bells & Add-on Pricing
+                              <h5 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                                <span>Dine-In Service Bells & Add-on Management</span>
+                                <span className="px-2 py-0.5 bg-brand-green/20 text-brand-green text-[9px] font-mono rounded">
+                                  {kitchenServiceBellsConfig.length} Services
+                                </span>
                               </h5>
                               <p className="text-[10px] text-gray-400">
-                                Configure the 4 1-tap table call buttons for this branch. Set price to ₹0 for complimentary or enter a custom add-on price.
+                                Add, edit, or remove instant 1-tap table call buttons. Set price to ₹0 for complimentary or enter a custom add-on charge.
                               </p>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                          {kitchenServiceBellsConfig.map((bell) => (
-                            <div
-                              key={bell.id}
-                              className={`p-3 rounded-xl border transition-all space-y-2 ${
-                                bell.isEnabled
-                                  ? 'bg-[#17212B] border-brand-green/20'
-                                  : 'bg-[#0E151C] border-white/5 opacity-60'
-                              }`}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleAdminResetDefaultBells}
+                              className="px-2.5 py-1 text-[9px] font-bold text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg cursor-pointer transition-all"
+                              title="Reset to 4 standard default services"
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xl p-1 bg-black/40 rounded-lg border border-white/5">
-                                    {bell.icon}
-                                  </span>
-                                  <div>
-                                    <h6 className="text-xs font-black text-white">{bell.title}</h6>
-                                    <p className="text-[9px] text-gray-400">{bell.description}</p>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => updateAdminBellItem(bell.id, 'isEnabled', !bell.isEnabled)}
-                                  className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
-                                    bell.isEnabled
-                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                      : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
-                                  }`}
-                                >
-                                  {bell.isEnabled ? 'Active' : 'Disabled'}
-                                </button>
-                              </div>
-
-                              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/5">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] text-gray-300 font-bold">Price:</span>
-                                  <div className="relative flex items-center">
-                                    <span className="absolute left-2 text-[10px] text-gray-400 font-mono">₹</span>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      max={1000}
-                                      value={bell.price}
-                                      onChange={(e) => updateAdminBellItem(bell.id, 'price', Math.max(0, Number(e.target.value) || 0))}
-                                      className="w-20 pl-5 pr-1.5 py-1 bg-[#0A0E13] border border-white/10 rounded-lg text-white font-mono text-[11px] font-bold focus:outline-none focus:border-brand-green"
-                                    />
-                                  </div>
-                                </div>
-                                <span className={`text-[8px] font-black px-2 py-0.5 rounded ${
-                                  bell.price === 0
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                    : 'bg-amber-400/10 text-amber-300 border border-amber-400/20'
-                                }`}>
-                                  {bell.price === 0 ? 'FREE' : `₹${bell.price}`}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
+                              Reset Defaults
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowAddNewServiceModal(true)}
+                              className="px-3 py-1.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal text-[10px] font-black uppercase tracking-wider rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-sm"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add Service</span>
+                            </button>
+                          </div>
                         </div>
+
+                        {kitchenServiceBellsConfig.length === 0 ? (
+                          <div className="p-6 text-center border border-dashed border-white/10 rounded-xl space-y-2 bg-[#0E151C]">
+                            <p className="text-xs text-gray-400">No services configured for this dining room.</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowAddNewServiceModal(true)}
+                              className="px-3 py-1.5 bg-brand-green text-brand-charcoal text-xs font-black rounded-lg cursor-pointer"
+                            >
+                              + Add First Service
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                            {kitchenServiceBellsConfig.map((bell) => (
+                              <div
+                                key={bell.id}
+                                className={`p-3 rounded-xl border transition-all space-y-2 relative group ${
+                                  bell.isEnabled
+                                    ? 'bg-[#17212B] border-brand-green/20'
+                                    : 'bg-[#0E151C] border-white/5 opacity-60'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <input
+                                      type="text"
+                                      value={bell.icon}
+                                      onChange={(e) => updateAdminBellItem(bell.id, 'icon', e.target.value)}
+                                      className="w-9 h-9 text-center text-lg bg-black/40 rounded-lg border border-white/10 focus:outline-none focus:border-brand-green shrink-0"
+                                      title="Edit Emoji / Icon"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <input
+                                        type="text"
+                                        value={bell.title}
+                                        onChange={(e) => updateAdminBellItem(bell.id, 'title', e.target.value)}
+                                        className="w-full text-xs font-black text-white bg-transparent border-b border-transparent hover:border-white/20 focus:border-brand-green focus:outline-none px-1 py-0.5"
+                                        placeholder="Service Title"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={bell.description}
+                                        onChange={(e) => updateAdminBellItem(bell.id, 'description', e.target.value)}
+                                        className="w-full text-[9px] text-gray-400 bg-transparent border-b border-transparent hover:border-white/20 focus:border-brand-green focus:outline-none px-1 py-0.5"
+                                        placeholder="Short description"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateAdminBellItem(bell.id, 'isEnabled', !bell.isEnabled)}
+                                      className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                                        bell.isEnabled
+                                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                          : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                                      }`}
+                                    >
+                                      {bell.isEnabled ? 'Active' : 'Disabled'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdminDeleteServiceBell(bell.id)}
+                                      className="p-1 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-all"
+                                      title="Delete / Remove this service"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] text-gray-300 font-bold">Price:</span>
+                                    <div className="relative flex items-center">
+                                      <span className="absolute left-2 text-[10px] text-gray-400 font-mono">₹</span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={1000}
+                                        value={bell.price}
+                                        onChange={(e) => updateAdminBellItem(bell.id, 'price', Math.max(0, Number(e.target.value) || 0))}
+                                        className="w-20 pl-5 pr-1.5 py-1 bg-[#0A0E13] border border-white/10 rounded-lg text-white font-mono text-[11px] font-bold focus:outline-none focus:border-brand-green"
+                                      />
+                                    </div>
+                                  </div>
+                                  <span className={`text-[8px] font-black px-2 py-0.5 rounded ${
+                                    bell.price === 0
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-amber-400/10 text-amber-300 border border-amber-400/20'
+                                  }`}>
+                                    {bell.price === 0 ? 'COMPLIMENTARY' : `₹${bell.price}`}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Action buttons */}
@@ -10981,6 +11077,126 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                 </div>
               )}
             </AnimatePresence>
+
+            {/* ADD CUSTOM DINE-IN SERVICE MODAL */}
+            {showAddNewServiceModal && (
+              <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="w-full max-w-md bg-[#161D24] border border-brand-green/30 rounded-3xl p-6 space-y-4 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🛎️</span>
+                      <h4 className="text-sm font-black uppercase text-white tracking-wider">
+                        Add Custom Dine-In Service
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddNewServiceModal(false)}
+                      className="text-gray-400 hover:text-white cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleAdminAddServiceBell} className="space-y-3.5 text-xs">
+                    {/* Emoji / Icon Selector */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
+                        Service Icon / Emoji *
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          required
+                          value={newServiceIcon}
+                          onChange={(e) => setNewServiceIcon(e.target.value)}
+                          className="w-14 text-center text-xl bg-[#0D1218] border border-white/10 rounded-xl py-2 text-white focus:outline-none focus:border-brand-green"
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {['💧', '🧅', '🍽️', '🛎️', '🧊', '👶', '🥢', '🪥', '🍋', '☕', '🥤', '🕯️'].map((em) => (
+                            <button
+                              key={em}
+                              type="button"
+                              onClick={() => setNewServiceIcon(em)}
+                              className="w-7 h-7 bg-white/5 hover:bg-white/15 rounded-lg text-sm flex items-center justify-center cursor-pointer transition-all"
+                            >
+                              {em}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Title */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
+                        Service Title *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Ice Bucket, Bone Plate, Mouth Freshener"
+                        value={newServiceTitle}
+                        onChange={(e) => setNewServiceTitle(e.target.value)}
+                        className="w-full bg-[#0D1218] border border-white/10 rounded-xl px-3 py-2 text-white font-bold focus:outline-none focus:border-brand-green"
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
+                        Description / Note
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Chilled ice cubes served at table"
+                        value={newServiceDescription}
+                        onChange={(e) => setNewServiceDescription(e.target.value)}
+                        className="w-full bg-[#0D1218] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-brand-green"
+                      />
+                    </div>
+
+                    {/* Price */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
+                        Price (₹) — Enter 0 for Free / Complimentary
+                      </label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3 text-gray-400 font-mono">₹</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1000}
+                          value={newServicePrice}
+                          onChange={(e) => setNewServicePrice(Math.max(0, Number(e.target.value) || 0))}
+                          className="w-full pl-7 pr-3 py-2 bg-[#0D1218] border border-white/10 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-brand-green"
+                        />
+                      </div>
+                      <p className="text-[9px] text-gray-500 mt-1">
+                        {newServicePrice === 0 ? '✨ This will be displayed as Complimentary (FREE) to seated guests.' : `💳 Diners will be asked to confirm this ₹${newServicePrice} charge before submitting.`}
+                      </p>
+                    </div>
+
+                    {/* Form Buttons */}
+                    <div className="pt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNewServiceModal(false)}
+                        className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 font-black text-xs uppercase rounded-xl cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase rounded-xl cursor-pointer shadow-md"
+                      >
+                        Add to Dining Services
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {/* ADMIN TABLE QR & ACRYLIC STANDEE MODAL */}
             <AnimatePresence>

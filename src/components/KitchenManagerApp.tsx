@@ -1746,7 +1746,7 @@ export default function KitchenManagerApp({
                                 </span>
                                 {o.fulfillmentMode === 'dine_in' && (
                                   <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase">
-                                    🍽️ DINE-IN • {o.tableNumber || 'Table 1'} {o.isDineInGuest ? '(Guest)' : ''}
+                                    🍽️ DINE-IN • {o.tableNumber || 'Table 1'} {o.tableRound && o.tableRound > 1 ? `(Round ${o.tableRound} Add-on)` : o.isDineInGuest ? '(Guest)' : ''}
                                   </span>
                                 )}
                               </div>
@@ -1892,7 +1892,7 @@ export default function KitchenManagerApp({
                               </span>
                               {o.fulfillmentMode === 'dine_in' && (
                                 <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[8px] font-black uppercase">
-                                  🍽️ DINE-IN • {o.tableNumber || 'Table 1'}
+                                  🍽️ DINE-IN • {o.tableNumber || 'Table 1'} {o.tableRound && o.tableRound > 1 ? `(Round ${o.tableRound} Add-on)` : ''}
                                 </span>
                               )}
                             </div>
@@ -2024,7 +2024,7 @@ export default function KitchenManagerApp({
                             <div>
                               <span className="text-xs font-mono font-black text-white">#{o.id}</span>
                               <span className="text-[9px] text-gray-400 block mt-0.5 font-mono">
-                                Mode: {o.fulfillmentMode === 'dine_in' ? `🍽️ Dine-In (${o.tableNumber || 'Table'})` : o.fulfillmentMode === 'takeaway' ? '🥡 Counter Takeaway' : '🛵 Doorstep Delivery'}
+                                Mode: {o.fulfillmentMode === 'dine_in' ? `🍽️ Dine-In (${o.tableNumber || 'Table'}${o.tableRound && o.tableRound > 1 ? ` • Round ${o.tableRound}` : ''})` : o.fulfillmentMode === 'takeaway' ? '🥡 Counter Takeaway' : '🛵 Doorstep Delivery'}
                               </span>
                             </div>
                             <span className="text-[9px] font-mono font-black text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
@@ -3522,7 +3522,7 @@ export default function KitchenManagerApp({
                       <span>Dine-In 1-Tap Service Bells & Add-on Pricing</span>
                     </h4>
                     <p className="text-[11px] text-gray-400">
-                      Control which instant service buttons appear on customer table screens. Set to ₹0 for complimentary hospitality or set a custom price.
+                      Station Manager Controls: Enable or pause services and adjust branch pricing for {activeKitchen?.name}. Master service catalog and global app features are managed centrally by Admin.
                     </p>
                   </div>
                 </div>
@@ -4108,6 +4108,11 @@ export default function KitchenManagerApp({
 
             <div className="border-b border-black pb-2 space-y-1">
               <p className="font-black text-base">ORDER: #{kotOrderToPrint.id}</p>
+              {kotOrderToPrint.fulfillmentMode === 'dine_in' && (
+                <p className="text-xs font-black bg-black text-white px-2 py-0.5 inline-block rounded">
+                  🍽️ {kotOrderToPrint.tableNumber || 'TABLE'}{kotOrderToPrint.tableRound ? ` • ROUND ${kotOrderToPrint.tableRound} ${kotOrderToPrint.isTableAddon ? '(ADD-ON)' : ''}` : ''}
+                </p>
+              )}
               <p className="text-[11px]">Customer: {kotOrderToPrint.customerName || (kotOrderToPrint as any).userName || 'Customer'}</p>
               <p className="text-[10px]">Address: {kotOrderToPrint.address || 'Central Delivery'}</p>
             </div>

@@ -382,6 +382,8 @@ export interface Order {
   fulfillmentMode?: 'delivery' | 'takeaway' | 'dine_in'; // Delivery vs Self-Pickup vs Table Dine-In
   tableNumber?: string; // e.g. "Table 1", "T-04", "VIP Handi Lounge"
   tableId?: string;
+  tableRound?: number; // e.g. 1 (Initial round), 2 (Add-on round / extra breads), 3 (Desserts/Drinks)
+  isTableAddon?: boolean;
   isDineInGuest?: boolean; // Dine-in guest order without login requirement
   guestName?: string;
   guestPhone?: string;
@@ -732,7 +734,7 @@ export interface Kitchen {
 }
 
 export interface ServiceBellItemConfig {
-  id: 'water' | 'onion_chutney' | 'cutlery' | 'captain';
+  id: string; // Dynamic service ID (e.g. 'water', 'cutlery', 'service_ice_bucket')
   title: string;
   icon: string;
   description: string;
@@ -745,7 +747,7 @@ export interface TableServiceRequest {
   kitchenId: string;
   tableNumber: string;
   tableId?: string;
-  type: 'water' | 'onion_chutney' | 'cutlery' | 'captain';
+  type: string; // Dynamic service type ID
   title: string;
   price: number;
   guestName?: string;

@@ -401,6 +401,9 @@ export default function DineInPortal({
 
     setIsPlacingOrder(true);
     try {
+      const currentRoundNumber = currentTableOrders.length + 1;
+      const isAddonOrder = currentTableOrders.length > 0;
+
       const newOrder: Order = {
         id: 'TB-' + Math.floor(100000 + Math.random() * 900000),
         items: [...cart],
@@ -408,6 +411,8 @@ export default function DineInPortal({
         status: 'sent',
         fulfillmentMode: 'dine_in',
         tableNumber: dineInSession.tableNumber,
+        tableRound: currentRoundNumber,
+        isTableAddon: isAddonOrder,
         isDineInGuest: !fbUser,
         guestName: guestName.trim() || 'Table Guest',
         guestPhone: cleanPhone,
@@ -415,6 +420,7 @@ export default function DineInPortal({
         dineInBhattiName: bhattiDisplayName,
         assignedKitchenId: dineInSession.bhattiId || currentBhatti?.id,
         chefNote: specialInstructions.trim() || undefined,
+        chefNotes: isAddonOrder ? [`Round ${currentRoundNumber} Add-on`] : undefined,
         total: finalTotal,
         discount: appliedDiscount,
         subtotal: cartSubtotal,
@@ -422,7 +428,7 @@ export default function DineInPortal({
         address: `Dine-In Seating: ${dineInSession.tableNumber} • ${bhattiDisplayName}`,
         paymentMethod: paymentMethod === 'counter' ? 'Pay at Counter' : paymentMethod === 'upi' ? 'UPI at Table' : 'Cash on Bill',
         trackingSteps: [
-          { title: 'Order Received', description: 'Bhatti counter registered table order', done: true, time: 'Just now' },
+          { title: 'Order Received', description: `Bhatti counter registered ${isAddonOrder ? `Round ${currentRoundNumber} add-on` : 'table order'}`, done: true, time: 'Just now' },
           { title: 'Woodfire Cooking', description: 'Chef firing fresh clay-oven specialties', done: false },
           { title: 'Plated & Sizzling', description: 'Garnished & dressed in authentic copper brass', done: false },
           { title: 'Served to Table', description: `Delivered hot to ${dineInSession.tableNumber}`, done: false },
@@ -690,6 +696,33 @@ export default function DineInPortal({
         {/* ===================== VIEW 1: DINE-IN MENU ===================== */}
         {activeView === 'menu' && (
           <div className="space-y-4">
+            {/* Active Table Session Round Indicator */}
+            {currentTableOrders.length > 0 && (
+              <div className="p-3 bg-gradient-to-r from-amber-950/80 via-[#18202A] to-amber-950/80 border border-amber-500/40 rounded-2xl flex items-center justify-between text-xs text-white shadow-md">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-1.5 bg-amber-500/20 text-amber-400 rounded-lg text-sm shrink-0">
+                    🍽️
+                  </span>
+                  <div>
+                    <span className="font-black text-amber-300 uppercase tracking-wide text-[11px] block">
+                      Adding Round {currentTableOrders.length + 1} to {dineInSession.tableNumber}
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      {currentTableOrders.length} previous {currentTableOrders.length === 1 ? 'batch' : 'batches'} in kitchen • Running Tab: ₹{cumulativeTableBill}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveView('status')}
+                  className="px-3 py-1 bg-white/10 hover:bg-white/20 text-amber-300 text-[10px] font-black uppercase rounded-lg cursor-pointer transition-all shrink-0"
+                >
+                  View Tab ➜
+                </button>
+              </div>
+            )}
+
             {/* Search & Dietary Filters */}
             <div className="flex flex-col sm:flex-row gap-2.5">
               <div className="relative flex-1">
@@ -829,6 +862,33 @@ export default function DineInPortal({
         {/* ===================== VIEW 2: TABLE CART & CHECKOUT ===================== */}
         {activeView === 'cart' && (
           <div className="space-y-4">
+            {/* Active Table Session Round Indicator */}
+            {currentTableOrders.length > 0 && (
+              <div className="p-3 bg-gradient-to-r from-amber-950/80 via-[#18202A] to-amber-950/80 border border-amber-500/40 rounded-2xl flex items-center justify-between text-xs text-white shadow-md">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-1.5 bg-amber-500/20 text-amber-400 rounded-lg text-sm shrink-0">
+                    🍽️
+                  </span>
+                  <div>
+                    <span className="font-black text-amber-300 uppercase tracking-wide text-[11px] block">
+                      Table {dineInSession.tableNumber} • Firing Round {currentTableOrders.length + 1}
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      Dishes in this order will append to your running table bill
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveView('status')}
+                  className="px-3 py-1 bg-white/10 hover:bg-white/20 text-amber-300 text-[10px] font-black uppercase rounded-lg cursor-pointer transition-all shrink-0"
+                >
+                  View Tab ➜
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <h2 className="text-base font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
                 <ShoppingBag className="w-4 h-4" />
@@ -1058,7 +1118,11 @@ export default function DineInPortal({
                   onClick={handleConfirmTableOrder}
                   className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-stone-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
                 >
-                  {isPlacingOrder ? 'Sending to Clay-Oven Kitchen...' : `🔥 Send Order to Bhatti Kitchen • ₹${finalTotal}`}
+                  {isPlacingOrder 
+                    ? 'Sending to Clay-Oven Kitchen...' 
+                    : currentTableOrders.length > 0
+                    ? `🔥 Fire Round ${currentTableOrders.length + 1} to Kitchen • ₹${finalTotal}`
+                    : `🔥 Send Order to Bhatti Kitchen • ₹${finalTotal}`}
                 </button>
               </div>
             )}
@@ -1103,6 +1167,61 @@ export default function DineInPortal({
               </div>
             )}
 
+            {/* ORDER ANOTHER ROUND / ADD DISHES ACTION BAR */}
+            {currentTableOrders.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-950/40 via-[#18202B] to-[#121820] border-2 border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 block">
+                      Round {currentTableOrders.length + 1} Add-on
+                    </span>
+                    <h3 className="text-sm font-black text-white flex items-center gap-1.5 mt-0.5">
+                      <span>➕</span>
+                      <span>Need More Dishes, Breads or Dessert?</span>
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Order extra dishes directly to {dineInSession.tableNumber}. They will append to your running table tab!
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory('All');
+                      setActiveView('menu');
+                    }}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-all active:scale-95 shrink-0"
+                  >
+                    <Utensils className="w-4 h-4" />
+                    <span>Order Another Round ➜</span>
+                  </button>
+                </div>
+
+                {/* Quick Category Shortcut Pills */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5 text-[11px]">
+                  <span className="text-gray-400 font-bold text-[10px] uppercase">Quick Add:</span>
+                  {[
+                    { label: '🫓 Breads & Naans', cat: 'Breads' },
+                    { label: '🍗 Tandoori Starters', cat: 'Starters' },
+                    { label: '🥤 Cold Beverages', cat: 'Beverages' },
+                    { label: '🍨 Desserts & Kulfi', cat: 'Desserts' },
+                  ].map((sc) => (
+                    <button
+                      key={sc.cat}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCategory(sc.cat);
+                        setActiveView('menu');
+                      }}
+                      className="px-2.5 py-1 bg-white/5 hover:bg-white/10 hover:text-amber-300 border border-white/10 rounded-lg text-gray-300 font-bold cursor-pointer transition-all"
+                    >
+                      {sc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {currentTableOrders.length === 0 ? (
               <div className="bg-[#10151D] border border-stone-800 rounded-3xl p-8 text-center space-y-4 my-8">
                 <div className="w-14 h-14 bg-stone-800 rounded-full flex items-center justify-center mx-auto text-2xl">
@@ -1136,7 +1255,14 @@ export default function DineInPortal({
                     <div key={ord.id} className="bg-[#10151D] border border-stone-800 rounded-2xl p-4 space-y-4 shadow-lg">
                       <div className="flex items-center justify-between border-b border-stone-800 pb-3">
                         <div>
-                          <span className="text-xs font-bold text-stone-400">Order #{ord.id}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-stone-400">Order #{ord.id}</span>
+                            {ord.tableRound ? (
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                                Round {ord.tableRound} {ord.isTableAddon ? '(Add-on)' : ''}
+                              </span>
+                            ) : null}
+                          </div>
                           <h4 className="text-sm font-black text-white">{ord.tableNumber || dineInSession.tableNumber}</h4>
                         </div>
                         <div className="text-right">
