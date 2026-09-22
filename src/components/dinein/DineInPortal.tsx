@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Utensils, 
   ShoppingBag, 
@@ -28,12 +28,19 @@ import {
   User,
   Phone,
   FileText,
-  X
+  X,
+  Share2,
+  Users,
+  QrCode,
+  IndianRupee,
+  CheckSquare,
+  Square
 } from 'lucide-react';
-import { Meal, Order, OrderItem, Kitchen, SmartCoupon, CouponEvaluationContext, SmartCouponRedemptionRecord } from '../../types';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { Meal, Order, OrderItem, Kitchen, SmartCoupon, CouponEvaluationContext, SmartCouponRedemptionRecord, ServiceBellItemConfig, TableServiceRequest, DEFAULT_SERVICE_BELLS } from '../../types';
+import { doc, getDoc, updateDoc, collection, addDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { evaluateSmartCoupon, normalizeSmartCoupon, generateDefaultTerms } from '../../lib/couponEngine';
+import { generateQRCodeDataUrl } from '../../lib/qrCodeGenerator';
 
 interface DineInPortalProps {
   dineInSession: {
@@ -95,6 +102,19 @@ export default function DineInPortal({
   const [attendantNotified, setAttendantNotified] = useState<boolean>(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState<boolean>(false);
 
+  // Table Service Bells State
+  const [isCallingBell, setIsCallingBell] = useState<string | null>(null);
+  const [bellFeedbackMsg, setBellFeedbackMsg] = useState<string | null>(null);
+  const [activeServiceRequests, setActiveServiceRequests] = useState<TableServiceRequest[]>([]);
+  const [confirmPaidBellItem, setConfirmPaidBellItem] = useState<ServiceBellItemConfig | null>(null);
+
+  // Table Bill Splitter State
+  const [showBillSplitModal, setShowBillSplitModal] = useState<boolean>(false);
+  const [splitDinerCount, setSplitDinerCount] = useState<number>(2);
+  const [selectedDinerSlot, setSelectedDinerSlot] = useState<number>(1);
+  const [settledDinerSlots, setSettledDinerSlots] = useState<number[]>([]);
+  const [dinerQrDataUrl, setDinerQrDataUrl] = useState<string>('');
+
   // Branch details
   const currentBhatti = useMemo(() => {
     if (dineInSession.bhattiId) {
@@ -104,6 +124,72 @@ export default function DineInPortal({
   }, [allKitchens, dineInSession.bhattiId]);
 
   const bhattiDisplayName = dineInSession.bhattiName || currentBhatti?.name || 'Taash Bhatti Main Hub';
+
+  // Active configured service bells for current kitchen
+  const activeServiceBells = useMemo(() => {
+    if (currentBhatti?.serviceBellsConfig && currentBhatti.serviceBellsConfig.length > 0) {
+      return currentBhatti.serviceBellsConfig.filter(b => b.isEnabled !== false);
+    }
+    return DEFAULT_SERVICE_BELLS;
+  }, [currentBhatti?.serviceBellsConfig]);
+
+  // Real-time listener for this table's service requests
+  useEffect(() => {
+    if (!currentBhatti?.id || !dineInSession.tableNumber) return;
+    try {
+      const q = query(
+        collection(db, 'kitchens', currentBhatti.id, 'serviceRequests'),
+        where('tableNumber', '==', dineInSession.tableNumber)
+      );
+      const unsub = onSnapshot(q, (snapshot) => {
+        const reqs = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() } as TableServiceRequest))
+          .filter(r => r.status === 'pending' || r.status === 'acknowledged');
+        setActiveServiceRequests(reqs);
+      });
+      return () => unsub();
+    } catch (e) {
+      console.warn("Could not listen to table service requests:", e);
+    }
+  }, [currentBhatti?.id, dineInSession.tableNumber]);
+
+  // Trigger service bell action
+  const handleTriggerServiceBell = async (bellItem: ServiceBellItemConfig) => {
+    if (!currentBhatti?.id) return;
+    if (bellItem.price > 0) {
+      setConfirmPaidBellItem(bellItem);
+      return;
+    }
+    await executeServiceRequest(bellItem);
+  };
+
+  const executeServiceRequest = async (bellItem: ServiceBellItemConfig) => {
+    if (!currentBhatti?.id) return;
+    setIsCallingBell(bellItem.id);
+    try {
+      const newRequest: Omit<TableServiceRequest, 'id'> = {
+        kitchenId: currentBhatti.id,
+        tableNumber: dineInSession.tableNumber,
+        tableId: (dineInSession as any).tableId,
+        type: bellItem.id,
+        title: bellItem.title,
+        price: bellItem.price || 0,
+        guestName: (guestName || currentUser?.name || 'Table Guest').trim(),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      await addDoc(collection(db, 'kitchens', currentBhatti.id, 'serviceRequests'), newRequest);
+      setBellFeedbackMsg(`🛎️ Request for "${bellItem.title}" sent to Kitchen Captain! Server alerted.`);
+      setConfirmPaidBellItem(null);
+      setTimeout(() => setBellFeedbackMsg(null), 5000);
+    } catch (err) {
+      console.error("Error creating service request:", err);
+      setBellFeedbackMsg(`Failed to dispatch call. Please notify server directly.`);
+      setTimeout(() => setBellFeedbackMsg(null), 4000);
+    } finally {
+      setIsCallingBell(null);
+    }
+  };
 
   // Find recent active orders placed for this specific table
   const currentTableOrders = useMemo(() => {
@@ -165,6 +251,70 @@ export default function DineInPortal({
   }, [cart]);
 
   const finalTotal = Math.max(0, cartSubtotal - appliedDiscount);
+
+  // Cumulative bill amount for this table (active dine-in orders or current table cart)
+  const cumulativeTableBill = useMemo(() => {
+    const ordersSum = currentTableOrders
+      .filter(o => o.status !== 'cancelled')
+      .reduce((sum, o) => sum + (o.total || 0), 0);
+    return ordersSum > 0 ? ordersSum : finalTotal;
+  }, [currentTableOrders, finalTotal]);
+
+  // Bill split calculation (equal split with remainder distribution)
+  const splitBreakdown = useMemo(() => {
+    const total = Math.max(0, cumulativeTableBill);
+    const n = Math.max(1, splitDinerCount);
+    const baseShare = Math.floor(total / n);
+    const remainder = total - (baseShare * n);
+
+    const shares: { dinerIndex: number; amount: number }[] = [];
+    for (let i = 1; i <= n; i++) {
+      shares.push({
+        dinerIndex: i,
+        amount: baseShare + (i <= remainder ? 1 : 0),
+      });
+    }
+    return { total, dinerCount: n, baseShare, shares };
+  }, [cumulativeTableBill, splitDinerCount]);
+
+  // Generate dynamic UPI QR for selected diner slot
+  useEffect(() => {
+    if (!showBillSplitModal) return;
+    const share = splitBreakdown.shares.find(s => s.dinerIndex === selectedDinerSlot);
+    const amt = share ? share.amount : splitBreakdown.baseShare;
+    if (amt <= 0) {
+      setDinerQrDataUrl('');
+      return;
+    }
+    const upiId = (currentBhatti as any)?.upiId || '9835188201@okbizaxis';
+    const payeeName = encodeURIComponent('Taash Bhatti');
+    const memo = encodeURIComponent(`${dineInSession.tableNumber} Split Diner ${selectedDinerSlot}`);
+    const upiUrl = `upi://pay?pa=${upiId}&pn=${payeeName}&am=${amt.toFixed(2)}&cu=INR&tn=${memo}`;
+
+    generateQRCodeDataUrl(upiUrl, { width: 320, margin: 2 })
+      .then(setDinerQrDataUrl)
+      .catch(() => {});
+  }, [showBillSplitModal, selectedDinerSlot, splitBreakdown, currentBhatti, dineInSession.tableNumber]);
+
+  // Toggle settled status for a diner slot
+  const handleToggleDinerSettled = (dinerIndex: number) => {
+    setSettledDinerSlots(prev => 
+      prev.includes(dinerIndex) ? prev.filter(i => i !== dinerIndex) : [...prev, dinerIndex]
+    );
+  };
+
+  // WhatsApp share for bill split
+  const handleShareSplitWhatsApp = () => {
+    const shareAmt = splitBreakdown.shares[0]?.amount || 0;
+    const text = encodeURIComponent(
+      `🍽️ *Taash Bhatti - ${dineInSession.tableNumber} Bill Split*\n\n` +
+      `Total Table Bill: *₹${splitBreakdown.total}*\n` +
+      `Guests: *${splitDinerCount}*\n` +
+      `Each Person's Share: *₹${shareAmt}*\n\n` +
+      `Pay directly via UPI or ask table captain for assistance. Cheers! 🔥`
+    );
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
 
   // Apply Smart Coupon for Table Dine-In
   const handleApplyCoupon = async () => {
@@ -394,6 +544,92 @@ export default function DineInPortal({
             </button>
           </div>
         </div>
+
+        {/* 1-TAP TABLE SERVICE BELLS (SMART CAPTAIN CALL) */}
+        <div className="max-w-4xl mx-auto mt-2.5">
+          <div className="bg-[#10151E] border border-amber-500/30 rounded-2xl p-3 shadow-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <span>🛎️</span>
+                <span>1-Tap Table Service Bells</span>
+              </span>
+              <span className="text-[9px] text-gray-400 font-mono">
+                Rings Kitchen Captain Instantly
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {activeServiceBells.map((bell) => {
+                const isPending = activeServiceRequests.some(r => r.type === bell.id && r.status === 'pending');
+                const isAck = activeServiceRequests.some(r => r.type === bell.id && r.status === 'acknowledged');
+                const isCalling = isCallingBell === bell.id;
+
+                return (
+                  <button
+                    key={bell.id}
+                    type="button"
+                    disabled={isCalling || isPending}
+                    onClick={() => handleTriggerServiceBell(bell)}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between relative group ${
+                      isAck
+                        ? 'bg-emerald-950/70 border-emerald-500/60 text-white'
+                        : isPending
+                        ? 'bg-amber-950/60 border-amber-500/50 text-white animate-pulse'
+                        : 'bg-[#151C26] hover:bg-[#1B2430] border-white/10 hover:border-amber-400/40 text-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xl">{bell.icon}</span>
+                      <span className={`text-[9px] font-mono font-black px-1.5 py-0.5 rounded-full uppercase ${
+                        bell.price > 0 
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      }`}>
+                        {bell.price > 0 ? `₹${bell.price}` : 'Free'}
+                      </span>
+                    </div>
+
+                    <div className="mt-2">
+                      <span className="text-xs font-black block leading-tight text-white group-hover:text-amber-300">
+                        {bell.title}
+                      </span>
+                      <span className="text-[9px] text-gray-400 block truncate mt-0.5">
+                        {isAck ? '🟢 Captain On The Way!' : isPending ? '⏳ Waiting for Captain' : bell.description}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Live Service Feedback Banner */}
+        {bellFeedbackMsg && (
+          <div className="max-w-4xl mx-auto mt-2 p-2.5 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 text-stone-950 text-xs font-black rounded-xl text-center shadow-lg animate-in fade-in flex items-center justify-center gap-1.5">
+            <span>{bellFeedbackMsg}</span>
+          </div>
+        )}
+
+        {/* Active Ongoing Table Requests Bar */}
+        {activeServiceRequests.length > 0 && !bellFeedbackMsg && (
+          <div className="max-w-4xl mx-auto mt-2 flex flex-wrap gap-2">
+            {activeServiceRequests.map((req) => (
+              <div
+                key={req.id}
+                className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-2 ${
+                  req.status === 'acknowledged'
+                    ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+                    : 'bg-amber-950/80 border-amber-500/50 text-amber-300'
+                }`}
+              >
+                <span>{req.status === 'acknowledged' ? '🏃 Captain is on the way:' : '⏳ Dispatched:'}</span>
+                <span className="font-extrabold text-white">{req.title}</span>
+                {req.price > 0 && <span className="font-mono text-[10px] text-amber-400">(₹{req.price})</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Attendant Notified Toast */}
         {attendantNotified && (
@@ -837,6 +1073,36 @@ export default function DineInPortal({
               Live Kitchen Status for {dineInSession.tableNumber}
             </h2>
 
+            {currentTableOrders.length > 0 && (
+              <div className="bg-gradient-to-r from-emerald-950/60 via-[#141C24] to-[#101620] border-2 border-emerald-500/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 block">
+                    Cumulative Table Bill
+                  </span>
+                  <div className="text-2xl font-black text-white font-mono mt-0.5">
+                    ₹{cumulativeTableBill}
+                  </div>
+                  <span className="text-[10px] text-gray-400">
+                    {currentTableOrders.length} {currentTableOrders.length === 1 ? 'order' : 'orders'} placed at {dineInSession.tableNumber}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDinerSlot(1);
+                      setShowBillSplitModal(true);
+                    }}
+                    className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-1.5 shadow-lg cursor-pointer transition-all active:scale-95"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Split The Bill (UPI QR)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {currentTableOrders.length === 0 ? (
               <div className="bg-[#10151D] border border-stone-800 rounded-3xl p-8 text-center space-y-4 my-8">
                 <div className="w-14 h-14 bg-stone-800 rounded-full flex items-center justify-center mx-auto text-2xl">
@@ -931,6 +1197,19 @@ export default function DineInPortal({
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>Order More Dishes</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDinerSlot(1);
+                            setShowBillSplitModal(true);
+                          }}
+                          className="px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
+                          title="Split bill equally among table guests"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Split</span>
                         </button>
 
                         {onOpenInvoice && (
@@ -1034,6 +1313,243 @@ export default function DineInPortal({
                 className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl cursor-pointer transition-colors"
               >
                 Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== MODAL: INSTANT TABLE BILL SPLITTER ===================== */}
+      {showBillSplitModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#101620] border-2 border-emerald-500/60 rounded-3xl p-5 sm:p-6 max-w-lg w-full shadow-2xl space-y-4 my-8 text-white animate-in fade-in zoom-in-95">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-bold">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                    Split Table Bill • {dineInSession.tableNumber}
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-mono">
+                    Instant Equal Split & Individual UPI QR Codes
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBillSplitModal(false)}
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Bill Summary Banner */}
+            <div className="p-4 rounded-2xl bg-[#0B0F15] border border-white/10 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-gray-400 block">Total Table Bill</span>
+                <span className="text-2xl font-black text-amber-400 font-mono">₹{splitBreakdown.total}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-gray-400 block">Each Person Pays</span>
+                <span className="text-2xl font-black text-emerald-400 font-mono">
+                  ₹{splitBreakdown.shares.find(s => s.dinerIndex === selectedDinerSlot)?.amount || splitBreakdown.baseShare}
+                </span>
+              </div>
+            </div>
+
+            {/* Diners Count Selector */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-300">Number of Guests Splitting:</span>
+                <div className="flex items-center gap-2 bg-stone-900 border border-white/10 rounded-xl px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => setSplitDinerCount(Math.max(2, splitDinerCount - 1))}
+                    disabled={splitDinerCount <= 2}
+                    className="w-6 h-6 rounded-lg bg-stone-800 text-white flex items-center justify-center font-bold disabled:opacity-30 cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <span className="text-sm font-black text-white px-2 font-mono">{splitDinerCount}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSplitDinerCount(Math.min(20, splitDinerCount + 1))}
+                    disabled={splitDinerCount >= 20}
+                    className="w-6 h-6 rounded-lg bg-emerald-500 text-stone-950 flex items-center justify-center font-bold disabled:opacity-30 cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
+                {[2, 3, 4, 5, 6, 8].map(count => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => setSplitDinerCount(count)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      splitDinerCount === count
+                        ? 'bg-emerald-500 text-brand-charcoal font-black shadow-md'
+                        : 'bg-white/5 hover:bg-white/10 text-gray-400'
+                    }`}
+                  >
+                    {count} Diners
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Individual Diner Slots */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+                Select Your Slot to View UPI QR:
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
+                {splitBreakdown.shares.map((share) => {
+                  const isSelected = selectedDinerSlot === share.dinerIndex;
+                  const isSettled = settledDinerSlots.includes(share.dinerIndex);
+
+                  return (
+                    <div
+                      key={share.dinerIndex}
+                      onClick={() => setSelectedDinerSlot(share.dinerIndex)}
+                      className={`p-2.5 rounded-xl border transition-all cursor-pointer text-left flex items-center justify-between ${
+                        isSelected
+                          ? 'bg-emerald-950/80 border-emerald-400 shadow-md ring-1 ring-emerald-400'
+                          : 'bg-[#151C26] hover:bg-white/5 border-white/10'
+                      }`}
+                    >
+                      <div>
+                        <span className="text-[10px] font-black uppercase text-gray-400 block">
+                          Guest {share.dinerIndex}
+                        </span>
+                        <span className="text-sm font-black text-white font-mono">
+                          ₹{share.amount}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleDinerSettled(share.dinerIndex);
+                        }}
+                        className="text-xs p-1 cursor-pointer"
+                        title={isSettled ? "Mark as Unpaid" : "Mark as Paid"}
+                      >
+                        {isSettled ? (
+                          <CheckSquare className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Square className="w-4 h-4 text-gray-500" />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Dynamic UPI QR Section */}
+            <div className="p-4 rounded-2xl bg-black/60 border border-emerald-500/40 text-center space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
+                  Guest {selectedDinerSlot}'s Share QR
+                </span>
+                <span className="text-xs font-mono font-bold text-amber-300">
+                  Amount: ₹{splitBreakdown.shares.find(s => s.dinerIndex === selectedDinerSlot)?.amount || splitBreakdown.baseShare}
+                </span>
+              </div>
+
+              {dinerQrDataUrl ? (
+                <div className="flex flex-col items-center">
+                  <div className="p-2.5 bg-white rounded-2xl shadow-xl inline-block">
+                    <img src={dinerQrDataUrl} alt="UPI Payment QR" className="w-40 h-40 object-contain" />
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-2 font-mono">
+                    Scan with GPay, PhonePe, Paytm, CRED or BHIM
+                  </p>
+                </div>
+              ) : (
+                <div className="p-6 text-xs text-gray-400">Generating UPI QR...</div>
+              )}
+
+              {/* Action Buttons: Pay via UPI on mobile + Mark Settled */}
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <a
+                  href={`upi://pay?pa=${encodeURIComponent((currentBhatti as any)?.upiId || '9835188201@okbizaxis')}&pn=${encodeURIComponent('Taash Bhatti')}&am=${(splitBreakdown.shares.find(s => s.dinerIndex === selectedDinerSlot)?.amount || splitBreakdown.baseShare).toFixed(2)}&cu=INR&tn=${encodeURIComponent(`${dineInSession.tableNumber} Split Guest ${selectedDinerSlot}`)}`}
+                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md"
+                >
+                  <IndianRupee className="w-3.5 h-3.5" />
+                  <span>Pay ₹{splitBreakdown.shares.find(s => s.dinerIndex === selectedDinerSlot)?.amount || splitBreakdown.baseShare} via UPI App</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => handleToggleDinerSettled(selectedDinerSlot)}
+                  className={`px-3 py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    settledDinerSlots.includes(selectedDinerSlot)
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-white/10 hover:bg-white/15 text-gray-300 border-white/10'
+                  }`}
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{settledDinerSlots.includes(selectedDinerSlot) ? 'Marked Paid ✓' : 'Mark as Paid'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Settlement Progress & Share Link */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/10">
+              <span className="text-[11px] text-gray-400 font-mono">
+                {settledDinerSlots.length} of {splitDinerCount} guests marked paid
+              </span>
+
+              <button
+                type="button"
+                onClick={handleShareSplitWhatsApp}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share Breakdown on WhatsApp</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== MODAL: CONFIRM PAID SERVICE BELL ===================== */}
+      {confirmPaidBellItem && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#121820] border-2 border-amber-500/60 rounded-3xl p-5 sm:p-6 max-w-sm w-full shadow-2xl space-y-4 text-white animate-in zoom-in-95">
+            <div className="text-center space-y-2">
+              <span className="text-4xl block">{confirmPaidBellItem.icon}</span>
+              <h3 className="text-base font-black uppercase text-white">
+                Request {confirmPaidBellItem.title}?
+              </h3>
+              <p className="text-xs text-gray-300">
+                This table add-on is priced at <strong className="text-amber-400 font-mono text-sm">₹{confirmPaidBellItem.price}</strong> and will be added to your table bill.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmPaidBellItem(null)}
+                className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 text-gray-300 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeServiceRequest(confirmPaidBellItem)}
+                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-lg"
+              >
+                Confirm • ₹{confirmPaidBellItem.price}
               </button>
             </div>
           </div>

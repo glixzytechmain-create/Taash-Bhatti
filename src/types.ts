@@ -728,7 +728,67 @@ export interface Kitchen {
   description?: string;
   tables?: BhattiTable[]; // Configured dine-in tables
   hasDineIn?: boolean; // Toggle: Dine-in accepted at this Bhatti
+  serviceBellsConfig?: ServiceBellItemConfig[]; // Configured table service bells & pricing
 }
+
+export interface ServiceBellItemConfig {
+  id: 'water' | 'onion_chutney' | 'cutlery' | 'captain';
+  title: string;
+  icon: string;
+  description: string;
+  price: number; // 0 = Free, > 0 = Paid add-on
+  isEnabled: boolean;
+}
+
+export interface TableServiceRequest {
+  id: string;
+  kitchenId: string;
+  tableNumber: string;
+  tableId?: string;
+  type: 'water' | 'onion_chutney' | 'cutlery' | 'captain';
+  title: string;
+  price: number;
+  guestName?: string;
+  status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
+  createdAt: string;
+  acknowledgedAt?: string;
+  completedAt?: string;
+}
+
+export const DEFAULT_SERVICE_BELLS: ServiceBellItemConfig[] = [
+  {
+    id: 'water',
+    title: 'Refill Water',
+    icon: '💧',
+    description: 'Fresh drinking water refill at table',
+    price: 0,
+    isEnabled: true,
+  },
+  {
+    id: 'onion_chutney',
+    title: 'Extra Onion & Chutney',
+    icon: '🧅',
+    description: 'Fresh sliced onion rings, green chutney & lemon wedges',
+    price: 0,
+    isEnabled: true,
+  },
+  {
+    id: 'cutlery',
+    title: 'Extra Plates / Cutlery',
+    icon: '🍽️',
+    description: 'Additional dining plates, spoons, forks or glasses',
+    price: 0,
+    isEnabled: true,
+  },
+  {
+    id: 'captain',
+    title: 'Call Table Captain',
+    icon: '🛎️',
+    description: 'Request table server or captain to visit table immediately',
+    price: 0,
+    isEnabled: true,
+  },
+];
 
 export interface KitchenInventoryItem {
   id: string;

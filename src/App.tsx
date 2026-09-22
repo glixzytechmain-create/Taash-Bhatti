@@ -572,6 +572,44 @@ export default function App() {
     });
   }, [orders]);
 
+  // Persistent Table Session Guardian:
+  // Keeps table session active in phone across reloads/orders until kitchen staff explicitly frees/vacates the table
+  const tableHasBeenOccupiedRef = useRef<boolean>(false);
+  const prevTableSessionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!dineInSession) {
+      tableHasBeenOccupiedRef.current = false;
+      prevTableSessionRef.current = null;
+      return;
+    }
+
+    const sessionKey = `${dineInSession.bhattiId || ''}_${dineInSession.tableNumber}`;
+    if (prevTableSessionRef.current !== sessionKey) {
+      tableHasBeenOccupiedRef.current = false;
+      prevTableSessionRef.current = sessionKey;
+    }
+
+    if (!kitchens.length) return;
+
+    const currentKitchen = kitchens.find(k => k.id === dineInSession.bhattiId) || kitchens[0];
+    const currentTable = currentKitchen?.tables?.find(t => 
+      t.tableNumber.toLowerCase() === dineInSession.tableNumber.toLowerCase() || 
+      t.id === (dineInSession as any).tableId
+    );
+
+    if (currentTable) {
+      if (currentTable.isOccupied) {
+        tableHasBeenOccupiedRef.current = true;
+      } else if (tableHasBeenOccupiedRef.current && !currentTable.isOccupied) {
+        // Table was occupied and now kitchen staff has tapped "Free" / "Vacate"
+        tableHasBeenOccupiedRef.current = false;
+        handleClearDineInSession();
+        showToast(`🍽️ Table ${dineInSession.tableNumber} was vacated by kitchen. Thank you for dining with us!`);
+      }
+    }
+  }, [kitchens, dineInSession]);
+
   // Firebase Auth and sync state
   const [fbUser, setFbUser] = useState<any>(() => {
     const cached = localStorage.getItem('fitzaika_cached_fb_user');

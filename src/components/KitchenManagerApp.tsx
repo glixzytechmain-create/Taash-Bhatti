@@ -58,7 +58,7 @@ import {
   Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord, BhattiTable } from '../types';
+import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, TableServiceRequest, DEFAULT_SERVICE_BELLS } from '../types';
 import { doc, updateDoc, collection, onSnapshot, setDoc, query, where, addDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import InAppDeliveryMap from './InAppDeliveryMap';
@@ -70,7 +70,7 @@ import { autoDispatchPlatedOrder } from '../lib/proximityDispatch';
 import { generateQRCodeDataUrl, generateQRCodeSvg, downloadFile } from '../lib/qrCodeGenerator';
 
 // Web Audio API Synthesizer Chimes
-const playKitchenChime = (type: 'new' | 'complete' | 'alert') => {
+const playKitchenChime = (type: 'new' | 'complete' | 'alert' | 'bell') => {
   try {
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const osc = audioCtx.createOscillator();
@@ -79,7 +79,33 @@ const playKitchenChime = (type: 'new' | 'complete' | 'alert') => {
     osc.connect(gainNode);
     gainNode.connect(audioCtx.destination);
     
-    if (type === 'new') {
+    if (type === 'bell') {
+      // Harmonic brass table bell (E6 ~1318.5Hz + E7 ~2637Hz) with exponential bell decay
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.2);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 1.2);
+
+      const osc2 = audioCtx.createOscillator();
+      const gainNode2 = audioCtx.createGain();
+      osc2.connect(gainNode2);
+      gainNode2.connect(audioCtx.destination);
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(2637.02, audioCtx.currentTime);
+      gainNode2.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      gainNode2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.9);
+      osc2.start();
+      osc2.stop(audioCtx.currentTime + 0.9);
+
+      // Trigger tactile device vibration if supported
+      try {
+        if ('vibrate' in navigator) {
+          navigator.vibrate([250, 100, 250, 100, 400]);
+        }
+      } catch (e) {}
+    } else if (type === 'new') {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
       gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
@@ -431,6 +457,105 @@ export default function KitchenManagerApp({
   const [selectedTableForQrModal, setSelectedTableForQrModal] = useState<BhattiTable | null>(null);
   const [tableQrDataUrl, setTableQrDataUrl] = useState<string>('');
   const [tableQrSvg, setTableQrSvg] = useState<string>('');
+
+  // Table Service Requests & Calls State
+  const [tableServiceRequests, setTableServiceRequests] = useState<TableServiceRequest[]>([]);
+  const [showServiceRequestsModal, setShowServiceRequestsModal] = useState<boolean>(false);
+  const [latestServiceCallAlert, setLatestServiceCallAlert] = useState<TableServiceRequest | null>(null);
+
+  // Service Bells Pricing Config Editor State
+  const [editingBellsConfig, setEditingBellsConfig] = useState<ServiceBellItemConfig[]>([]);
+  const [isSavingBellsConfig, setIsSavingBellsConfig] = useState<boolean>(false);
+  const [bellsConfigSuccess, setBellsConfigSuccess] = useState<string | null>(null);
+
+  // Sync Service Bells config from activeKitchen
+  useEffect(() => {
+    if (activeKitchen?.serviceBellsConfig && activeKitchen.serviceBellsConfig.length > 0) {
+      setEditingBellsConfig(activeKitchen.serviceBellsConfig);
+    } else {
+      setEditingBellsConfig(DEFAULT_SERVICE_BELLS);
+    }
+  }, [activeKitchen?.serviceBellsConfig]);
+
+  // Real-time listener for table service requests
+  const prevReqCountRef = useRef<number>(0);
+  useEffect(() => {
+    if (!activeKitchen?.id) return;
+    try {
+      const q = query(
+        collection(db, 'kitchens', activeKitchen.id, 'serviceRequests'),
+        where('status', 'in', ['pending', 'acknowledged'])
+      );
+      const unsub = onSnapshot(q, (snapshot) => {
+        const reqs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as TableServiceRequest));
+        reqs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setTableServiceRequests(reqs);
+
+        const pendingReqs = reqs.filter(r => r.status === 'pending');
+        if (pendingReqs.length > prevReqCountRef.current) {
+          // New incoming table service call!
+          playKitchenChime('bell');
+          setLatestServiceCallAlert(pendingReqs[0]);
+          speakToKitchen(`${pendingReqs[0].tableNumber} calling for ${pendingReqs[0].title}`);
+        }
+        prevReqCountRef.current = pendingReqs.length;
+      });
+      return () => unsub();
+    } catch (err) {
+      console.warn("Could not listen to kitchen service requests:", err);
+    }
+  }, [activeKitchen?.id]);
+
+  const handleAcknowledgeServiceRequest = async (requestId: string) => {
+    if (!activeKitchen?.id) return;
+    try {
+      await updateDoc(doc(db, 'kitchens', activeKitchen.id, 'serviceRequests', requestId), {
+        status: 'acknowledged',
+        acknowledgedAt: new Date().toISOString(),
+      });
+      playKitchenChime('alert');
+    } catch (e) {
+      console.error("Error acknowledging service request:", e);
+    }
+  };
+
+  const handleCompleteServiceRequest = async (requestId: string) => {
+    if (!activeKitchen?.id) return;
+    try {
+      await updateDoc(doc(db, 'kitchens', activeKitchen.id, 'serviceRequests', requestId), {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+      });
+      playKitchenChime('complete');
+      if (latestServiceCallAlert?.id === requestId) {
+        setLatestServiceCallAlert(null);
+      }
+    } catch (e) {
+      console.error("Error completing service request:", e);
+    }
+  };
+
+  const updateBellItem = (id: string, field: 'price' | 'isEnabled', val: any) => {
+    setEditingBellsConfig(prev => prev.map(b => b.id === id ? { ...b, [field]: val } : b));
+  };
+
+  const handleSaveBellsConfig = async () => {
+    if (!activeKitchen?.id) return;
+    setIsSavingBellsConfig(true);
+    setBellsConfigSuccess(null);
+    try {
+      await updateDoc(doc(db, 'kitchens', activeKitchen.id), {
+        serviceBellsConfig: editingBellsConfig,
+      });
+      setBellsConfigSuccess("Table Service Bells & Pricing saved live!");
+      playKitchenChime('complete');
+      setTimeout(() => setBellsConfigSuccess(null), 4000);
+    } catch (e) {
+      console.error("Error saving bells config:", e);
+    } finally {
+      setIsSavingBellsConfig(false);
+    }
+  };
 
   // Auto-generate QR code for selected table
   useEffect(() => {
@@ -1237,6 +1362,28 @@ export default function KitchenManagerApp({
               <span>Table Settings</span>
             </button>
 
+            {/* Table Service Calls / Bells Quick Button */}
+            <button
+              type="button"
+              onClick={() => setShowServiceRequestsModal(true)}
+              className={`px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-md border relative ${
+                tableServiceRequests.filter(r => r.status === 'pending').length > 0
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 animate-bounce'
+                  : tableServiceRequests.length > 0
+                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-400/40'
+                  : 'bg-[#161D24] hover:bg-white/10 text-gray-300 border-white/10'
+              }`}
+              title="Dine-In Table Service Calls & Bells"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>Table Calls</span>
+              {tableServiceRequests.filter(r => r.status === 'pending').length > 0 && (
+                <span className="w-4 h-4 rounded-full bg-white text-rose-700 font-extrabold text-[9px] flex items-center justify-center animate-pulse">
+                  {tableServiceRequests.filter(r => r.status === 'pending').length}
+                </span>
+              )}
+            </button>
+
             {/* Chef Station Filter */}
             <div className="bg-[#0A0E13] p-1 rounded-xl border border-white/10 flex items-center gap-1">
               {[
@@ -1296,6 +1443,62 @@ export default function KitchenManagerApp({
           </div>
         </div>
       </header>
+
+      {/* TABLE SERVICE CALL BANNER (Rings Captain/Kitchen) */}
+      {latestServiceCallAlert && (
+        <div className="bg-gradient-to-r from-rose-950 via-amber-950 to-stone-900 border-b-2 border-rose-500 px-4 py-3 text-xs text-white flex flex-wrap items-center justify-between shadow-2xl gap-3">
+          <div className="flex items-center gap-3">
+            <span className="p-2 bg-rose-600 text-white rounded-xl shadow-lg">
+              <Bell className="w-5 h-5 animate-bounce" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 bg-rose-500 text-white text-[10px] font-black uppercase tracking-wider rounded">
+                  Live Table Call
+                </span>
+                <span className="font-mono text-[11px] text-gray-300">
+                  {new Date(latestServiceCallAlert.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              </div>
+              <p className="text-sm font-black mt-0.5 text-rose-100">
+                <span className="text-amber-400 font-extrabold text-base underline decoration-rose-500 decoration-2">
+                  {latestServiceCallAlert.tableNumber}
+                </span>
+                {' requested '}
+                <span className="text-white font-black">{latestServiceCallAlert.title}</span>
+                {latestServiceCallAlert.price > 0 ? ` (₹${latestServiceCallAlert.price})` : ' (FREE)'}
+                {latestServiceCallAlert.guestName ? ` • Guest: ${latestServiceCallAlert.guestName}` : ''}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {latestServiceCallAlert.status === 'pending' && (
+              <button
+                type="button"
+                onClick={() => handleAcknowledgeServiceRequest(latestServiceCallAlert.id)}
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl shadow cursor-pointer transition-all"
+              >
+                Acknowledge 🙋
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleCompleteServiceRequest(latestServiceCallAlert.id)}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow cursor-pointer transition-all flex items-center gap-1.5"
+            >
+              <Check className="w-4 h-4" />
+              <span>Served / Done</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLatestServiceCallAlert(null)}
+              className="text-gray-400 hover:text-white text-xs uppercase font-mono px-2 py-1 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* NOTICE BANNER */}
       {noticeMessage && (
@@ -3198,6 +3401,214 @@ export default function KitchenManagerApp({
               )}
             </div>
 
+            {/* ======================================================== */}
+            {/* LIVE TABLE SERVICE CALLS QUEUE                            */}
+            {/* ======================================================== */}
+            <div className="bg-[#0D1218] border border-white/10 rounded-2xl p-5 space-y-4 shadow-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
+                      <span>Live Table Calls & Service Requests</span>
+                      {tableServiceRequests.filter(r => r.status === 'pending').length > 0 && (
+                        <span className="px-2 py-0.5 bg-rose-500 text-white text-[10px] font-black rounded-full animate-pulse">
+                          {tableServiceRequests.filter(r => r.status === 'pending').length} PENDING
+                        </span>
+                      )}
+                    </h4>
+                    <p className="text-[11px] text-gray-400">
+                      Real-time calls placed by seated diners via their table QR screen.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-gray-400 font-mono">
+                  {tableServiceRequests.length} Active Call{tableServiceRequests.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+
+              {tableServiceRequests.length === 0 ? (
+                <div className="p-8 text-center border border-dashed border-white/5 rounded-2xl bg-[#0A0E13]">
+                  <p className="text-xs text-gray-400 font-bold">
+                    ✅ No pending service calls. All seated tables are attended to!
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {tableServiceRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className={`p-4 rounded-2xl border transition-all space-y-3 relative overflow-hidden ${
+                        req.status === 'pending'
+                          ? 'bg-rose-950/20 border-rose-500/40 shadow-rose-950/20 shadow-lg'
+                          : 'bg-[#151C24] border-amber-400/30'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 block">
+                            {req.tableNumber}
+                          </span>
+                          <h5 className="text-base font-black text-white mt-0.5">
+                            {req.title}
+                          </h5>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                              req.price > 0 ? 'bg-amber-400/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-400'
+                            }`}>
+                              {req.price > 0 ? `₹${req.price}` : 'FREE'}
+                            </span>
+                            {req.guestName && (
+                              <span className="text-[10px] text-gray-400 truncate max-w-[120px]">
+                                Guest: {req.guestName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            req.status === 'pending'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                          }`}>
+                            {req.status}
+                          </span>
+                          <span className="text-[9px] text-gray-400 font-mono block mt-1">
+                            {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                        {req.status === 'pending' && (
+                          <button
+                            type="button"
+                            onClick={() => handleAcknowledgeServiceRequest(req.id)}
+                            className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl shadow transition-all cursor-pointer"
+                          >
+                            Acknowledge 🙋
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleCompleteServiceRequest(req.id)}
+                          className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow transition-all cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Mark Done</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ======================================================== */}
+            {/* DINE-IN SERVICE BELLS & ADD-ON PRICING CONTROLS           */}
+            {/* ======================================================== */}
+            <div className="bg-[#0D1218] border border-white/10 rounded-2xl p-5 space-y-4 shadow-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-amber-400/20 text-amber-400 rounded-xl border border-amber-400/30">
+                    <UtensilsCrossed className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
+                      <span>Dine-In 1-Tap Service Bells & Add-on Pricing</span>
+                    </h4>
+                    <p className="text-[11px] text-gray-400">
+                      Control which instant service buttons appear on customer table screens. Set to ₹0 for complimentary hospitality or set a custom price.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveBellsConfig}
+                  disabled={isSavingBellsConfig}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isSavingBellsConfig ? 'Saving...' : 'Save Bells & Pricing'}</span>
+                </button>
+              </div>
+
+              {bellsConfigSuccess && (
+                <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-xl text-xs font-bold text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{bellsConfigSuccess}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {editingBellsConfig.map((bell) => (
+                  <div
+                    key={bell.id}
+                    className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                      bell.isEnabled
+                        ? 'bg-[#151C24] border-white/10'
+                        : 'bg-[#10151C] border-white/5 opacity-60'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-2xl p-1.5 bg-black/40 rounded-xl border border-white/5">
+                          {bell.icon}
+                        </span>
+                        <div>
+                          <h5 className="text-sm font-black text-white">{bell.title}</h5>
+                          <p className="text-[11px] text-gray-400">{bell.description}</p>
+                        </div>
+                      </div>
+
+                      {/* Enable/Disable Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => updateBellItem(bell.id, 'isEnabled', !bell.isEnabled)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                          bell.isEnabled
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        {bell.isEnabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-300 font-bold">Price:</span>
+                        <div className="relative flex items-center">
+                          <span className="absolute left-2.5 text-xs text-gray-400 font-mono">₹</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={1000}
+                            value={bell.price}
+                            onChange={(e) => updateBellItem(bell.id, 'price', Math.max(0, Number(e.target.value) || 0))}
+                            className="w-24 pl-6 pr-2 py-1.5 bg-[#0A0E13] border border-white/10 rounded-xl text-white font-mono text-xs font-bold focus:outline-none focus:border-amber-400"
+                          />
+                        </div>
+                      </div>
+
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border ${
+                        bell.price === 0
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-amber-400/10 text-amber-300 border-amber-400/20'
+                      }`}>
+                        {bell.price === 0 ? 'Complimentary (FREE)' : 'Paid Add-on'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -3740,6 +4151,126 @@ export default function KitchenManagerApp({
                 className="flex-1 py-2 bg-black hover:bg-gray-800 text-white font-black uppercase rounded-lg cursor-pointer"
               >
                 Print Ticket
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: LIVE TABLE SERVICE CALLS & CAPTAIN ALERTS         */}
+      {/* ======================================================== */}
+      {showServiceRequestsModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-[#161D24] border border-white/10 rounded-3xl p-6 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30">
+                  <Bell className="w-5 h-5 animate-bounce" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                    <span>Table Service Calls & Captain Alerts</span>
+                    {tableServiceRequests.filter(r => r.status === 'pending').length > 0 && (
+                      <span className="px-2 py-0.5 bg-rose-500 text-white text-[10px] font-black rounded-full">
+                        {tableServiceRequests.filter(r => r.status === 'pending').length} Pending
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-[11px] text-gray-400">
+                    Live requests placed by seated guests from their smartphones.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowServiceRequestsModal(false)}
+                className="text-gray-400 hover:text-white cursor-pointer text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* List of Requests */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {tableServiceRequests.length === 0 ? (
+                <div className="py-12 text-center border border-dashed border-white/5 rounded-2xl bg-[#0F141A]">
+                  <span className="text-3xl block mb-2">🛎️</span>
+                  <p className="text-sm font-bold text-white">No Active Table Calls</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    When diners tap service bells on their phones, they will appear here instantly with sound & vibration alerts.
+                  </p>
+                </div>
+              ) : (
+                tableServiceRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      req.status === 'pending'
+                        ? 'bg-rose-950/20 border-rose-500/40'
+                        : 'bg-[#121820] border-amber-400/20'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded uppercase">
+                          {req.tableNumber}
+                        </span>
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          req.status === 'pending'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                        }`}>
+                          {req.status}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-mono">
+                          {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                      </div>
+                      <h5 className="text-base font-black text-white mt-1">
+                        {req.title}
+                      </h5>
+                      <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
+                        <span className={`font-bold ${req.price > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                          {req.price > 0 ? `₹${req.price}` : 'Complimentary (FREE)'}
+                        </span>
+                        {req.guestName && (
+                          <span>• Guest: {req.guestName}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {req.status === 'pending' && (
+                        <button
+                          type="button"
+                          onClick={() => handleAcknowledgeServiceRequest(req.id)}
+                          className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl shadow transition-all cursor-pointer"
+                        >
+                          Acknowledge 🙋
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleCompleteServiceRequest(req.id)}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Served / Done</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-white/5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowServiceRequestsModal(false)}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

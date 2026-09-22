@@ -109,7 +109,7 @@ function getSecondaryAuth() {
   }
   return getAuth(secondaryApp);
 }
-import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord, BhattiTable } from '../types';
+import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, DEFAULT_SERVICE_BELLS } from '../types';
 import { MEALS_DATA, GYMS_DATA, INITIAL_DELIVERY_PARTNERS, DEFAULT_HERO_BANNERS } from '../data';
 import AdminDealsManager from './AdminDealsManager';
 import AdminLegalManager from './AdminLegalManager';
@@ -1200,6 +1200,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [adminSelectedTableForQr, setAdminSelectedTableForQr] = useState<{ kitchenId: string; kitchenName: string; table: BhattiTable } | null>(null);
   const [adminTableQrDataUrl, setAdminTableQrDataUrl] = useState<string>('');
   const [adminTableQrSvg, setAdminTableQrSvg] = useState<string>('');
+  const [kitchenServiceBellsConfig, setKitchenServiceBellsConfig] = useState<ServiceBellItemConfig[]>(DEFAULT_SERVICE_BELLS);
 
   // Enhanced KDS Multi-Branch Terminal States
   const [kdsUnlocked, setKdsUnlocked] = useState<boolean>(false);
@@ -3181,6 +3182,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setKitchenIsActive(true);
     setKitchenTables([]);
     setKitchenHasDineIn(true);
+    setKitchenServiceBellsConfig(DEFAULT_SERVICE_BELLS);
     setNewAdminTableNumber('');
     setNewAdminTableCapacity(4);
     setNewAdminTableSection('Main Dining Hall');
@@ -3198,10 +3200,15 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setKitchenIsActive(kitchen.isActive !== false);
     setKitchenTables(kitchen.tables || []);
     setKitchenHasDineIn(kitchen.hasDineIn !== false);
+    setKitchenServiceBellsConfig(kitchen.serviceBellsConfig && kitchen.serviceBellsConfig.length > 0 ? kitchen.serviceBellsConfig : DEFAULT_SERVICE_BELLS);
     setNewAdminTableNumber('');
     setNewAdminTableCapacity(4);
     setNewAdminTableSection('Main Dining Hall');
     setShowKitchenModal(true);
+  };
+
+  const updateAdminBellItem = (id: string, field: 'price' | 'isEnabled', val: any) => {
+    setKitchenServiceBellsConfig(prev => prev.map(b => b.id === id ? { ...b, [field]: val } : b));
   };
 
   const handleSaveKitchen = async (e: React.FormEvent) => {
@@ -3221,6 +3228,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       lng: kitchenLng,
       tables: kitchenTables,
       hasDineIn: kitchenHasDineIn,
+      serviceBellsConfig: kitchenServiceBellsConfig,
     };
 
     try {
@@ -10872,6 +10880,83 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                               ))}
                             </div>
                           )}
+                        </div>
+                      </div>
+
+                      {/* Section: Dine-In Service Bells & Add-on Pricing Controls */}
+                      <div className="bg-[#121A22] border border-brand-green/20 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">🛎️</span>
+                            <div>
+                              <h5 className="text-xs font-black uppercase tracking-wider text-white">
+                                Dine-In Service Bells & Add-on Pricing
+                              </h5>
+                              <p className="text-[10px] text-gray-400">
+                                Configure the 4 1-tap table call buttons for this branch. Set price to ₹0 for complimentary or enter a custom add-on price.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          {kitchenServiceBellsConfig.map((bell) => (
+                            <div
+                              key={bell.id}
+                              className={`p-3 rounded-xl border transition-all space-y-2 ${
+                                bell.isEnabled
+                                  ? 'bg-[#17212B] border-brand-green/20'
+                                  : 'bg-[#0E151C] border-white/5 opacity-60'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xl p-1 bg-black/40 rounded-lg border border-white/5">
+                                    {bell.icon}
+                                  </span>
+                                  <div>
+                                    <h6 className="text-xs font-black text-white">{bell.title}</h6>
+                                    <p className="text-[9px] text-gray-400">{bell.description}</p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => updateAdminBellItem(bell.id, 'isEnabled', !bell.isEnabled)}
+                                  className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                                    bell.isEnabled
+                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                      : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                                  }`}
+                                >
+                                  {bell.isEnabled ? 'Active' : 'Disabled'}
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-gray-300 font-bold">Price:</span>
+                                  <div className="relative flex items-center">
+                                    <span className="absolute left-2 text-[10px] text-gray-400 font-mono">₹</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={1000}
+                                      value={bell.price}
+                                      onChange={(e) => updateAdminBellItem(bell.id, 'price', Math.max(0, Number(e.target.value) || 0))}
+                                      className="w-20 pl-5 pr-1.5 py-1 bg-[#0A0E13] border border-white/10 rounded-lg text-white font-mono text-[11px] font-bold focus:outline-none focus:border-brand-green"
+                                    />
+                                  </div>
+                                </div>
+                                <span className={`text-[8px] font-black px-2 py-0.5 rounded ${
+                                  bell.price === 0
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    : 'bg-amber-400/10 text-amber-300 border border-amber-400/20'
+                                }`}>
+                                  {bell.price === 0 ? 'FREE' : `₹${bell.price}`}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
 
