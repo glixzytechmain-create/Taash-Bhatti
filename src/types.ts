@@ -421,6 +421,7 @@ export interface Order {
   kdsStage?: 'received' | 'cooking' | 'plated' | 'dispatched' | 'delivered' | 'cancelled';
   lane?: 'lane_a' | 'lane_b' | 'lane_c';
   chefNote?: string;
+  chefNotes?: string[]; // Quick tags like Less Spicy, Extra Green Chutney, Well Done
   extraPrepMinutes?: number; // Individual order prep time adjustment in minutes
   isRaining?: boolean; // Rain Mode active at fulfilling kitchen
   createdAt?: string;
@@ -433,6 +434,10 @@ export interface Order {
   deliveryPartnerVehicle?: string;
   deliveryVehicleNumber?: string;
   deliveryNotes?: string;
+  deliveryInstructions?: string[]; // Quick rider chips like Leave at door, Don't ring bell
+  riderTip?: number; // 1-tap tip amount passed to delivery rider
+  gecAddedAmount?: number; // Shortfall amount converted to Gold Ember Coins to unlock free delivery
+  gecCoinsEarned?: number; // Gold Ember Coins earned from banking shortfall
   deliveredAt?: string;
   customerName?: string;
   customerPhone?: string;
@@ -592,6 +597,8 @@ export interface DeliveryPartner {
   deliveriesCompleted?: number;
   cashCollectedToday?: number;
   cashInHand?: number;
+  tipsEarnedToday?: number;
+  totalTipsEarned?: number;
   currentOrderId?: string | null;
   registeredAt?: string;
   firebaseAuthSynced?: boolean;

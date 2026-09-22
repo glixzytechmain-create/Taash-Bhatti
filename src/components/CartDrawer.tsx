@@ -41,8 +41,11 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
+  Truck,
+  HeartHandshake,
+  ChefHat,
 } from 'lucide-react';
-import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder } from '../lib/walletService';
+import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder, creditGoldenEmbersForShortfall } from '../lib/walletService';
 import { doc, getDoc, updateDoc, collection, onSnapshot, query, where, getDocs, increment } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupon, CouponEvaluationContext, SmartCouponRedemptionRecord } from '../types';
@@ -459,6 +462,23 @@ function CustomerMapAndSearchContent({
   );
 }
 
+const CHEF_QUICK_TAGS = [
+  { id: 'less_spicy', label: '🌶️ Less Spicy' },
+  { id: 'extra_chutney', label: '🧅 Extra Chutney & Onions' },
+  { id: 'well_done', label: '🔥 Well Done / Extra Charred' },
+  { id: 'no_cutlery', label: '🍴 No Disposable Cutlery' },
+  { id: 'low_oil', label: '🧂 Low Oil / Light Masala' },
+  { id: 'pack_gravy', label: '🧊 Pack Gravy Separately' },
+];
+
+const DELIVERY_QUICK_TAGS = [
+  { id: 'leave_door', label: '🚪 Leave at door' },
+  { id: 'no_bell', label: "🔕 Don't ring bell (Baby / Pet)" },
+  { id: 'call_arrival', label: '📞 Call only upon arrival' },
+  { id: 'leave_security', label: '💂 Leave with society security guard' },
+  { id: 'do_not_call', label: '🚫 Do not call' },
+];
+
 interface CartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -637,6 +657,23 @@ export default function CartDrawer({
     if (!allMeals || allMeals.length === 0 || !likedMeals || likedMeals.length === 0) return [];
     return allMeals.filter(m => likedMeals.includes(m.id));
   }, [allMeals, likedMeals]);
+
+  // --- HIGH-CONVERTING FOOD-TECH FEATURES ---
+  // 1. Free Delivery Shortfall & 1-Step-Ahead Gold Ember Coin Banking
+  const [bankShortfallToGec, setBankShortfallToGec] = useState<boolean>(false);
+
+  // 2. Cooking Instructions & Chef Notes
+  const [selectedChefTags, setSelectedChefTags] = useState<string[]>([]);
+  const [customChefNote, setCustomChefNote] = useState<string>('');
+
+  // 3. Delivery Instructions & Gate Notes (Rider Notes)
+  const [selectedDeliveryTags, setSelectedDeliveryTags] = useState<string[]>([]);
+  const [customDeliveryNote, setCustomDeliveryNote] = useState<string>('');
+
+  // 4. Rider Tipping
+  const [selectedTip, setSelectedTip] = useState<number>(0);
+  const [customTipInput, setCustomTipInput] = useState<string>('');
+  const [isCustomTipActive, setIsCustomTipActive] = useState<boolean>(false);
 
   // Address and Payment Selection
   const [selectedAddress, setSelectedAddress] = useState<string>(() => {
@@ -961,14 +998,57 @@ export default function CartDrawer({
     return Math.min(regularSubtotal, sumDiscount);
   }, [regularSubtotal, appliedCoupons]);
 
-  // 5. TOTAL CALCULATION
+  // 5. TOTAL CALCULATION & CONVERSION TRIGGERS
+  const FREE_DELIVERY_THRESHOLD = 500;
+  const freeDeliveryShortfall = Math.max(0, FREE_DELIVERY_THRESHOLD - regularSubtotal);
+
+  // Real Menu Recommendations for Free Delivery Gap
+  const realMenuRecommendations = useMemo(() => {
+    if (!allMeals || allMeals.length === 0) return [];
+    const inCartIds = new Set(cartItems.map((item) => item.meal.id));
+    const candidates = allMeals.filter((m) => {
+      if (inCartIds.has(m.id)) return false;
+      if ((m as any).isAvailable === false || (m as any).available === false) return false;
+      return true;
+    });
+
+    // Group A: items with price >= freeDeliveryShortfall, sorted ascending by price (closest bridge to free delivery)
+    const exactOrHigher = candidates
+      .filter((m) => m.price >= freeDeliveryShortfall)
+      .sort((a, b) => a.price - b.price);
+
+    // Group B: items with price < freeDeliveryShortfall, sorted descending by price (highest value add-ons towards shortfall)
+    const lower = candidates
+      .filter((m) => m.price < freeDeliveryShortfall)
+      .sort((a, b) => b.price - a.price);
+
+    return [...exactOrHigher, ...lower].slice(0, 8);
+  }, [allMeals, cartItems, freeDeliveryShortfall]);
+
   const isFreeDeliveryCoupon = useMemo(() => {
     return appliedCoupons.some((c) => c.discountType === 'free_delivery');
   }, [appliedCoupons]);
 
   const totalDiscount = gymDiscountVal + couponDiscountVal;
-  // Free delivery for Takeaway & Dine-In Table Service OR if order is above ₹300, OR a free delivery coupon is applied
-  const deliveryFee = (fulfillmentType === 'takeaway' || fulfillmentType === 'dine_in' || subtotal > 300 || isFreeDeliveryCoupon) ? 0 : 30;
+
+  // Shortfall amount banked into Gold Ember Coins (1 GEC = ₹1)
+  const gecShortfallAmount = (bankShortfallToGec && freeDeliveryShortfall > 0 && fulfillmentType === 'delivery') ? freeDeliveryShortfall : 0;
+
+  // Free delivery for Takeaway & Dine-In Table Service OR if order is above ₹500, OR a free delivery coupon is applied, OR customer banked shortfall to GEC
+  const isFreeDeliveryQualified = 
+    fulfillmentType === 'takeaway' || 
+    fulfillmentType === 'dine_in' || 
+    regularSubtotal >= FREE_DELIVERY_THRESHOLD || 
+    isFreeDeliveryCoupon ||
+    gecShortfallAmount > 0;
+
+  const deliveryFee = isFreeDeliveryQualified ? 0 : 30;
+
+  // Effective rider tip (only applicable on delivery)
+  const effectiveRiderTip = fulfillmentType === 'delivery'
+    ? (isCustomTipActive ? Math.max(0, Number(customTipInput) || 0) : selectedTip)
+    : 0;
+
   const billBeforeEmbers = Math.max(0, subtotal - totalDiscount + deliveryFee);
 
   // BHATTI WALLET & EMBER COINS CHECKOUT STATE
@@ -991,7 +1071,7 @@ export default function CartDrawer({
     });
   }, [billBeforeEmbers, goldenBalance, standardBalance, useGoldenEmbers, useStandardEmbers]);
 
-  const finalTotal = emberCheckout.finalPayable;
+  const finalTotal = emberCheckout.finalPayable + gecShortfallAmount + effectiveRiderTip;
 
   // Compile Pure Evaluation Context for Smart Criteria Engine
   const evalContext: CouponEvaluationContext = useMemo(() => {
@@ -1277,6 +1357,26 @@ export default function CartDrawer({
 
     const slotLabel = orderTiming === 'scheduled' ? `Scheduled: ${scheduledSlot}` : 'ASAP (15-25 mins)';
 
+    // Combine chef notes and quick tags
+    const combinedChefNotesList = [...selectedChefTags];
+    if (customChefNote.trim()) {
+      combinedChefNotesList.push(customChefNote.trim());
+    }
+    const combinedChefNoteString = combinedChefNotesList.length > 0
+      ? combinedChefNotesList.join(' • ')
+      : isDineIn 
+      ? `DINE-IN ORDER FOR ${effectiveTable}. Customer: ${finalCustomerName} (${finalCustomerPhone})`
+      : `Nutritional balance verified. Timing: ${slotLabel}`;
+
+    // Combine delivery instructions and notes
+    const combinedDeliveryInstructionsList = [...selectedDeliveryTags];
+    if (customDeliveryNote.trim()) {
+      combinedDeliveryInstructionsList.push(customDeliveryNote.trim());
+    }
+    const combinedDeliveryNoteString = combinedDeliveryInstructionsList.length > 0
+      ? combinedDeliveryInstructionsList.join(' • ')
+      : undefined;
+
     const newOrder: Order = {
       id: orderId,
       items: enrichedItems,
@@ -1300,9 +1400,13 @@ export default function CartDrawer({
       scheduledSlot: slotLabel,
       takeawayPickupOtp: takeawayOtp,
       lane: lane,
-      chefNote: isDineIn 
-        ? `DINE-IN ORDER FOR ${effectiveTable}. Customer: ${finalCustomerName} (${finalCustomerPhone})`
-        : `Nutritional balance verified. Timing: ${slotLabel}`,
+      chefNote: combinedChefNoteString,
+      chefNotes: selectedChefTags.length > 0 ? selectedChefTags : undefined,
+      deliveryNotes: combinedDeliveryNoteString,
+      deliveryInstructions: selectedDeliveryTags.length > 0 ? selectedDeliveryTags : undefined,
+      riderTip: effectiveRiderTip > 0 ? effectiveRiderTip : undefined,
+      gecAddedAmount: gecShortfallAmount > 0 ? gecShortfallAmount : undefined,
+      gecCoinsEarned: gecShortfallAmount > 0 ? gecShortfallAmount : undefined,
       createdAt: new Date().toISOString(),
       subtotal,
       discount: totalDiscount,
@@ -1450,6 +1554,28 @@ export default function CartDrawer({
       }
     }
 
+    // Credit Gold Ember Coins if customer banked free delivery shortfall
+    if (gecShortfallAmount > 0) {
+      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('fitzaika_guest_user_id') || 'guest_user';
+      try {
+        await creditGoldenEmbersForShortfall({
+          userId: activeUserId,
+          orderId,
+          amount: gecShortfallAmount
+        });
+      } catch (gecErr) {
+        console.warn("Could not credit Golden Embers for shortfall:", gecErr);
+      }
+
+      if (onUpdateUser) {
+        onUpdateUser({
+          ...user,
+          goldenEmberBalance: (user.goldenEmberBalance || 0) + gecShortfallAmount,
+          walletBalance: (user.walletBalance || 0) + gecShortfallAmount
+        });
+      }
+    }
+
     onPlaceOrder(newOrder);
     setPlacedOrderId(orderId);
     if (takeawayOtp) {
@@ -1464,6 +1590,14 @@ export default function CartDrawer({
     setPlacedTakeawayOtp('');
     onClearCart();
     setCouponCode('');
+    setBankShortfallToGec(false);
+    setSelectedChefTags([]);
+    setCustomChefNote('');
+    setSelectedDeliveryTags([]);
+    setCustomDeliveryNote('');
+    setSelectedTip(0);
+    setCustomTipInput('');
+    setIsCustomTipActive(false);
     setAppliedCoupons([]);
     setCouponSuccess(null);
     setCouponError(null);
@@ -1767,6 +1901,172 @@ export default function CartDrawer({
                   </div>
                 )}
               </div>
+
+              {/* DYNAMIC "ADD ₹X FOR FREE DELIVERY" PROGRESS BAR & UP-SELL ENGINE */}
+              {fulfillmentType === 'delivery' && (
+                <div className="bg-gradient-to-br from-emerald-50/90 via-white to-amber-50/60 border border-brand-green/20 rounded-2xl p-3.5 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shadow-xs ${
+                        isFreeDeliveryQualified ? 'bg-brand-green text-white animate-bounce' : 'bg-amber-500/20 text-amber-700'
+                      }`}>
+                        <Truck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-brand-charcoal leading-tight">
+                          {isFreeDeliveryCoupon ? (
+                            '🎉 Free Delivery Unlocked with Coupon!'
+                          ) : bankShortfallToGec && freeDeliveryShortfall > 0 ? (
+                            '🪙 Free Delivery Unlocked via Gold Embers!'
+                          ) : freeDeliveryShortfall === 0 ? (
+                            "🎉 You've Unlocked FREE Insulated Delivery!"
+                          ) : (
+                            <>
+                              Add <span className="text-brand-orange font-mono">₹{freeDeliveryShortfall}</span> more to get <span className="text-brand-green">FREE Insulated Delivery!</span>
+                            </>
+                          )}
+                        </h4>
+                        <span className="text-[9px] text-brand-charcoal/60 block mt-0.5">
+                          {freeDeliveryShortfall === 0 || isFreeDeliveryCoupon || (bankShortfallToGec && freeDeliveryShortfall > 0)
+                            ? 'Delivered in thermal-insulated bento carriers at ₹0 extra cost.'
+                            : `Free doorstep delivery threshold is ₹${FREE_DELIVERY_THRESHOLD}.`}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono font-black text-brand-green bg-emerald-100/70 border border-emerald-300 px-2 py-0.5 rounded-lg shrink-0">
+                      {isFreeDeliveryQualified ? '100%' : `${Math.min(100, Math.round((regularSubtotal / FREE_DELIVERY_THRESHOLD) * 100))}%`}
+                    </span>
+                  </div>
+
+                  {/* Progress Bar Track */}
+                  <div className="w-full h-2.5 bg-brand-cream/80 rounded-full overflow-hidden relative border border-brand-green/15">
+                    <div
+                      className={`h-full transition-all duration-500 rounded-full ${
+                        isFreeDeliveryQualified
+                          ? 'bg-gradient-to-r from-emerald-500 via-brand-green to-emerald-400'
+                          : 'bg-gradient-to-r from-amber-500 to-brand-green'
+                      }`}
+                      style={{
+                        width: `${isFreeDeliveryQualified ? 100 : Math.min(100, Math.round((regularSubtotal / FREE_DELIVERY_THRESHOLD) * 100))}%`
+                      }}
+                    />
+                  </div>
+
+                  {/* Shortfall Actions: 1-Step-Ahead GEC Accelerator & Real Menu Add-ons */}
+                  {freeDeliveryShortfall > 0 && !isFreeDeliveryCoupon && (
+                    <div className="space-y-3 pt-1">
+                      {/* 1-STEP-AHEAD INNOVATION: Bank Shortfall into Gold Ember Coins */}
+                      <div className="bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-transparent border border-amber-400/40 rounded-xl p-3 space-y-2 shadow-xs">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-brand-charcoal flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+                              🪙
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-black text-brand-charcoal">
+                                  Bank ₹{freeDeliveryShortfall} to Gold Ember Coins
+                                </span>
+                                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500 text-brand-charcoal shadow-xs">
+                                  1 GEC = ₹1
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-brand-charcoal/70 leading-snug mt-0.5">
+                                Add ₹{freeDeliveryShortfall} to your wallet as <strong>{freeDeliveryShortfall} Gold Ember Coins</strong> for future orders to unlock <strong>FREE Delivery immediately!</strong> (Save ₹30 delivery fee).
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setBankShortfallToGec(!bankShortfallToGec)}
+                            className={`px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all cursor-pointer shrink-0 flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                              bankShortfallToGec
+                                ? 'bg-brand-green text-white border border-brand-green ring-2 ring-brand-green/30'
+                                : 'bg-amber-500 hover:bg-amber-400 text-brand-charcoal border border-amber-400'
+                            }`}
+                          >
+                            {bankShortfallToGec ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                <span>Banked (+{freeDeliveryShortfall} GEC)</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                <span>Bank & Unlock Free</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 1-Tap Real Menu Recommendations */}
+                      {realMenuRecommendations.length > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase text-brand-charcoal/60 tracking-wider flex items-center gap-1">
+                              <span>🔥 Quick Add-ons to Unlock Free Delivery:</span>
+                            </span>
+                            <span className="text-[9px] font-semibold text-brand-green">
+                              Real Menu Dishes
+                            </span>
+                          </div>
+
+                          <div className="flex gap-2.5 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                            {realMenuRecommendations.map((meal) => (
+                              <div
+                                key={`free-rec-${meal.id}`}
+                                className="w-44 shrink-0 bg-white p-2 rounded-xl border border-brand-green/15 shadow-xs flex flex-col justify-between space-y-1.5 group hover:border-brand-green/40 transition-all"
+                              >
+                                <div className="flex gap-2 items-center">
+                                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-brand-green/10 bg-brand-cream/30">
+                                    <img
+                                      src={meal.image}
+                                      alt={meal.name}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <h6 className="text-[10px] font-bold text-brand-charcoal truncate leading-tight">
+                                      {meal.name}
+                                    </h6>
+                                    <div className="flex items-center justify-between mt-0.5">
+                                      <span className="text-[11px] font-black text-brand-charcoal">
+                                        ₹{meal.price}
+                                      </span>
+                                      <span className={`text-[8px] font-extrabold px-1 rounded ${
+                                        meal.price >= freeDeliveryShortfall
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : 'bg-amber-100 text-amber-800'
+                                      }`}>
+                                        {meal.price >= freeDeliveryShortfall ? '⚡ Free Dev' : `+₹${meal.price}`}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (onAddToCart) onAddToCart(meal);
+                                    else onUpdateQuantity(meal.id, 1);
+                                  }}
+                                  className="w-full py-1.5 px-2 rounded-lg bg-brand-green hover:bg-emerald-900 text-white font-extrabold text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-xs"
+                                >
+                                  <Plus className="w-3 h-3 stroke-[3]" />
+                                  <span>Add to Order</span>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* CART ITEMS LIST WITH CUSTOMIZATIONS */}
               <div className="space-y-3">
@@ -2346,6 +2646,65 @@ export default function CartDrawer({
                             </div>
                           </div>
                         )}
+                      </div>
+
+                      {/* 1-TAP DELIVERY INSTRUCTIONS & GATE NOTES (RIDER NOTES) */}
+                      <div className="bg-white border border-brand-green/15 rounded-2xl p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm">🛵</span>
+                            <div>
+                              <span className="text-xs font-black text-brand-charcoal block">
+                                Delivery Instructions & Gate Notes
+                              </span>
+                              <span className="text-[9px] text-brand-charcoal/60 block leading-tight">
+                                Visible to your delivery rider upon arrival.
+                              </span>
+                            </div>
+                          </div>
+                          {selectedDeliveryTags.length > 0 && (
+                            <span className="text-[9px] font-mono font-bold bg-brand-green/10 text-brand-green px-2 py-0.5 rounded-md">
+                              {selectedDeliveryTags.length} active
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Quick Chips */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {DELIVERY_QUICK_TAGS.map((tag) => {
+                            const isSelected = selectedDeliveryTags.includes(tag.label);
+                            return (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedDeliveryTags(selectedDeliveryTags.filter((t) => t !== tag.label));
+                                  } else {
+                                    setSelectedDeliveryTags([...selectedDeliveryTags, tag.label]);
+                                  }
+                                }}
+                                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shadow-2xs active:scale-95 ${
+                                  isSelected
+                                    ? 'bg-brand-green text-white border-brand-green font-extrabold shadow-xs'
+                                    : 'bg-brand-cream/30 text-brand-charcoal/80 border-brand-green/10 hover:border-brand-green/30'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                <span>{tag.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom Rider Directions */}
+                        <input
+                          type="text"
+                          value={customDeliveryNote}
+                          onChange={(e) => setCustomDeliveryNote(e.target.value)}
+                          placeholder="Gate code, floor/flat number, call instructions..."
+                          className="w-full px-3 py-2 bg-brand-cream/20 border border-brand-green/15 rounded-xl text-xs text-brand-charcoal placeholder-gray-400 focus:outline-none focus:border-brand-green"
+                        />
                       </div>
                     </div>
                   ) : fulfillmentType === 'takeaway' ? (
@@ -2998,6 +3357,155 @@ export default function CartDrawer({
                 </div>
               )}
 
+              {/* COOKING INSTRUCTIONS & CHEF NOTES (QUICK CHIPS & CUSTOM NOTE) */}
+              <div className="bg-white border border-brand-green/15 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">👨‍🍳</span>
+                    <div>
+                      <span className="text-xs font-black text-brand-charcoal block">
+                        Cooking Instructions & Chef Notes
+                      </span>
+                      <span className="text-[9px] text-brand-charcoal/60 block leading-tight">
+                        Handed directly to the kitchen chef station.
+                      </span>
+                    </div>
+                  </div>
+                  {selectedChefTags.length > 0 && (
+                    <span className="text-[9px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md">
+                      {selectedChefTags.length} tags selected
+                    </span>
+                  )}
+                </div>
+
+                {/* Quick Chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  {CHEF_QUICK_TAGS.map((tag) => {
+                    const isSelected = selectedChefTags.includes(tag.label);
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedChefTags(selectedChefTags.filter((t) => t !== tag.label));
+                          } else {
+                            setSelectedChefTags([...selectedChefTags, tag.label]);
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-xl text-[10px] font-bold transition-all cursor-pointer border flex items-center gap-1 shadow-2xs active:scale-95 ${
+                          isSelected
+                            ? 'bg-amber-500 text-brand-charcoal border-amber-400 font-extrabold shadow-xs'
+                            : 'bg-brand-cream/30 text-brand-charcoal/80 border-brand-green/10 hover:border-brand-green/30'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        <span>{tag.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Custom Chef Note */}
+                <input
+                  type="text"
+                  value={customChefNote}
+                  onChange={(e) => setCustomChefNote(e.target.value)}
+                  placeholder="Special instructions (e.g. Extra mint chutney, serve piping hot)..."
+                  className="w-full px-3 py-2 bg-brand-cream/20 border border-brand-green/15 rounded-xl text-xs text-brand-charcoal placeholder-gray-400 focus:outline-none focus:border-brand-green"
+                />
+              </div>
+
+              {/* RIDER TIPPING (DELIVERY ORDERS ONLY) */}
+              {fulfillmentType === 'delivery' && (
+                <div className="bg-white border border-brand-green/15 rounded-2xl p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">🛵</span>
+                      <div>
+                        <span className="text-xs font-black text-brand-charcoal block">
+                          Tip Your Delivery Rider
+                        </span>
+                        <span className="text-[9px] text-brand-charcoal/60 block leading-tight">
+                          100% of this tip goes directly to your rider.
+                        </span>
+                      </div>
+                    </div>
+                    {effectiveRiderTip > 0 && (
+                      <span className="text-xs font-mono font-black text-brand-green bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-lg">
+                        +₹{effectiveRiderTip}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[20, 30, 50].map((tipAmt) => {
+                      const isSelected = selectedTip === tipAmt && !isCustomTipActive;
+                      return (
+                        <button
+                          key={tipAmt}
+                          type="button"
+                          onClick={() => {
+                            setIsCustomTipActive(false);
+                            setSelectedTip(isSelected ? 0 : tipAmt);
+                          }}
+                          className={`py-2 px-1 rounded-xl text-center font-black text-xs transition-all cursor-pointer border active:scale-95 ${
+                            isSelected
+                              ? 'bg-brand-green text-white border-brand-green shadow-xs'
+                              : 'bg-brand-cream/20 text-brand-charcoal border-brand-green/10 hover:border-brand-green/30'
+                          }`}
+                        >
+                          ₹{tipAmt}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomTipActive(true);
+                        setSelectedTip(0);
+                      }}
+                      className={`py-2 px-1 rounded-xl text-center font-black text-xs transition-all cursor-pointer border active:scale-95 ${
+                        isCustomTipActive
+                          ? 'bg-brand-green text-white border-brand-green shadow-xs'
+                          : 'bg-brand-cream/20 text-brand-charcoal border-brand-green/10 hover:border-brand-green/30'
+                      }`}
+                    >
+                      Custom
+                    </button>
+                  </div>
+
+                  {isCustomTipActive && (
+                    <div className="flex items-center gap-2 pt-1 animate-fade-in">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">₹</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="1000"
+                          value={customTipInput}
+                          onChange={(e) => setCustomTipInput(e.target.value)}
+                          placeholder="Enter tip (e.g. 40)"
+                          className="w-full pl-7 pr-3 py-1.5 bg-brand-cream/20 border border-brand-green/20 rounded-xl text-xs font-bold text-brand-charcoal placeholder-gray-400 focus:outline-none focus:border-brand-green"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCustomTipActive(false);
+                          setCustomTipInput('');
+                          setSelectedTip(0);
+                        }}
+                        className="px-2.5 py-1.5 text-[10px] font-black text-gray-500 hover:text-red-600 cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* PAYMENT OPTION SELECTOR */}
               <div className="space-y-1.5">
                 <span className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">
@@ -3078,6 +3586,22 @@ export default function CartDrawer({
                 <span>Insulated Warm Delivery Fee</span>
                 <span>{deliveryFee === 0 ? <b className="text-brand-green">FREE</b> : `₹${deliveryFee}`}</span>
               </div>
+
+              {/* Gold Ember Banking Accelerator */}
+              {gecShortfallAmount > 0 && (
+                <div className="flex justify-between text-amber-700 font-mono font-bold">
+                  <span>🪙 Gold Ember Banking ({gecShortfallAmount} GEC)</span>
+                  <span>+₹{gecShortfallAmount}</span>
+                </div>
+              )}
+
+              {/* Delivery Rider Tip */}
+              {effectiveRiderTip > 0 && (
+                <div className="flex justify-between text-emerald-700 font-mono font-bold">
+                  <span>🛵 Delivery Rider Tip</span>
+                  <span>+₹{effectiveRiderTip}</span>
+                </div>
+              )}
 
               {/* Bhatti Wallet Ember Reductions */}
               {emberCheckout.goldenDeduction > 0 && (

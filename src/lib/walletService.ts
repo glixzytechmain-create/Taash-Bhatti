@@ -558,3 +558,106 @@ export async function debitEmberCoinsForOrder({
     return { success: false, remainingGolden: 0, remainingStandard: 0 };
   }
 }
+
+/**
+ * Credits Golden Ember Coins when a customer banks the free delivery shortfall amount.
+ * 1 GEC = ₹1. Coins never expire and can be used on future orders.
+ */
+export async function creditGoldenEmbersForShortfall({
+  userId,
+  orderId,
+  amount
+}: {
+  userId: string;
+  orderId: string;
+  amount: number;
+}): Promise<{ success: boolean; newGoldenBalance: number }> {
+  if (!userId || amount <= 0) {
+    return { success: false, newGoldenBalance: 0 };
+  }
+
+  try {
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userRef);
+    let currentGolden = 0;
+    let currentStandard = 0;
+    let currentTx: WalletTransaction[] = [];
+
+    if (userSnap.exists()) {
+      const uData = userSnap.data() as User;
+      currentGolden = Number(uData.goldenEmberBalance || 0);
+      currentStandard = Number(uData.standardEmberBalance || 0);
+      currentTx = Array.isArray(uData.walletTransactions) ? uData.walletTransactions : [];
+    } else {
+      try {
+        const cached = localStorage.getItem('fitzaika_cached_user_profile') || localStorage.getItem('fitzaika_user_session');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          currentGolden = Number(parsed.goldenEmberBalance || 0);
+          currentStandard = Number(parsed.standardEmberBalance || 0);
+          currentTx = Array.isArray(parsed.walletTransactions) ? parsed.walletTransactions : [];
+        }
+      } catch (e) {}
+    }
+
+    const newGoldenBalance = currentGolden + amount;
+    const newTotalBalance = newGoldenBalance + currentStandard;
+    const nowIso = new Date().toISOString();
+
+    const newTransaction: WalletTransaction = {
+      id: `tx-gold-bonus-${orderId.slice(-6)}-${Date.now()}`,
+      type: 'credit',
+      amount,
+      emberType: 'golden',
+      description: `🪙 Golden Ember Tokens banked from Order #${orderId.slice(-6)} (Free Delivery Accelerator)`,
+      orderId,
+      createdAt: nowIso
+    };
+
+    const updatedTxList = [newTransaction, ...currentTx];
+
+    try {
+      await setDoc(
+        userRef,
+        {
+          goldenEmberBalance: newGoldenBalance,
+          walletBalance: newTotalBalance,
+          walletTransactions: updatedTxList
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn("Could not setDoc in Firestore for shortfall credit:", err);
+    }
+
+    try {
+      ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+        const cached = localStorage.getItem(key);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          parsed.goldenEmberBalance = newGoldenBalance;
+          parsed.walletBalance = newTotalBalance;
+          parsed.walletTransactions = updatedTxList;
+          localStorage.setItem(key, JSON.stringify(parsed));
+        }
+      });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('fitzaika_user_updated', {
+            detail: {
+              goldenEmberBalance: newGoldenBalance,
+              standardEmberBalance: currentStandard,
+              walletBalance: newTotalBalance,
+              walletTransactions: updatedTxList
+            }
+          })
+        );
+      }
+    } catch (e) {}
+
+    return { success: true, newGoldenBalance };
+  } catch (e) {
+    console.warn("Could not credit Golden Ember shortfall in Firestore:", e);
+    return { success: false, newGoldenBalance: 0 };
+  }
+}

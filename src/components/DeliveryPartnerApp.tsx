@@ -54,7 +54,11 @@ import {
   Wifi,
   WifiOff,
   CloudOff,
-  Zap
+  Zap,
+  Star,
+  Award,
+  ThumbsUp,
+  Coins
 } from 'lucide-react';
 import { DeliveryPartner, Order, Kitchen, ChatMessage, SupportTicket, CashDepositRequest } from '../types';
 import { INITIAL_DELIVERY_PARTNERS } from '../data';
@@ -149,8 +153,8 @@ export default function DeliveryPartnerApp({
   const [showMailboxModal, setShowMailboxModal] = useState<boolean>(false);
   const [mailboxInputMsg, setMailboxInputMsg] = useState<string>('');
 
-  // Active Tab state: 'deliveries' vs 'account' vs 'complaints'
-  const [dpActiveTab, setDpActiveTab] = useState<'deliveries' | 'account' | 'complaints'>('deliveries');
+  // Active Tab state: 'deliveries' vs 'account' vs 'ratings' vs 'complaints'
+  const [dpActiveTab, setDpActiveTab] = useState<'deliveries' | 'account' | 'ratings' | 'complaints'>('deliveries');
 
   // Payment Collection States for Unpaid / COD Orders
   const [selectedPaymentMode, setSelectedPaymentMode] = useState<'cash' | 'upi'>('cash');
@@ -1137,14 +1141,16 @@ export default function DeliveryPartnerApp({
     setIsCollectingPayment(true);
     setOtpError(null);
     try {
-      const amount = activeUnlockedOrder.total;
+      const physicalAmount = activeUnlockedOrder.total;
+      const riderTip = Number(activeUnlockedOrder.riderTip || 0);
+      const cashToDeposit = Math.max(0, physicalAmount - riderTip);
       const nowIso = new Date().toISOString();
       const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       const updatedSteps = activeUnlockedOrder.trackingSteps ? [...activeUnlockedOrder.trackingSteps] : [];
       updatedSteps.push({
-        title: `Cash Collected: ₹${amount}`,
-        description: `₹${amount} physical cash received at customer doorstep by ${currentPartner.name}. Added to Rider Cash-in-Hand.`,
+        title: `Cash Collected: ₹${physicalAmount}${riderTip > 0 ? ` (Includes ₹${riderTip} Tip)` : ''}`,
+        description: `₹${physicalAmount} physical cash received at customer doorstep by ${currentPartner.name}. ₹${cashToDeposit} to deposit at kitchen hub${riderTip > 0 ? `, ₹${riderTip} tip kept by rider` : ''}.`,
         done: true,
         time: nowTime
       });
@@ -1153,7 +1159,7 @@ export default function DeliveryPartnerApp({
       const orderUpdate: any = {
         paymentStatus: 'collected',
         collectedPaymentMethod: 'cash',
-        cashCollectedAmount: amount,
+        cashCollectedAmount: physicalAmount,
         paymentCollectedAt: nowIso,
         paymentCollectedBy: currentPartner.id,
         paymentCollectedByName: currentPartner.name,
@@ -1164,15 +1170,19 @@ export default function DeliveryPartnerApp({
         console.warn("Firestore cash collection error:", e);
       });
 
-      // Update partner cash in hand and cash collected today
-      const newCashInHand = (currentPartner.cashInHand || 0) + amount;
-      const newCashCollectedToday = (currentPartner.cashCollectedToday || 0) + amount;
+      // Update partner cash in hand (owed to kitchen cashier) and tips earned
+      const newCashInHand = (currentPartner.cashInHand || 0) + cashToDeposit;
+      const newCashCollectedToday = (currentPartner.cashCollectedToday || 0) + physicalAmount;
+      const newTipsEarnedToday = (currentPartner.tipsEarnedToday || 0) + riderTip;
+      const newTotalTipsEarned = (currentPartner.totalTipsEarned || 0) + riderTip;
 
       try {
         const partnerRef = doc(db, 'delivery_partners', currentPartner.id);
         await updateDoc(partnerRef, {
           cashInHand: newCashInHand,
-          cashCollectedToday: newCashCollectedToday
+          cashCollectedToday: newCashCollectedToday,
+          tipsEarnedToday: newTipsEarnedToday,
+          totalTipsEarned: newTotalTipsEarned,
         });
       } catch (e) {
         console.warn("Error updating partner cash stats in Firestore:", e);
@@ -1181,7 +1191,9 @@ export default function DeliveryPartnerApp({
       const updatedPartner: DeliveryPartner = {
         ...currentPartner,
         cashInHand: newCashInHand,
-        cashCollectedToday: newCashCollectedToday
+        cashCollectedToday: newCashCollectedToday,
+        tipsEarnedToday: newTipsEarnedToday,
+        totalTipsEarned: newTotalTipsEarned,
       };
       setCurrentPartner(updatedPartner);
       localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(updatedPartner));
@@ -1807,6 +1819,24 @@ export default function DeliveryPartnerApp({
           </button>
 
           <button
+            onClick={() => setDpActiveTab('ratings')}
+            className={`py-3 px-4 text-xs font-black uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
+              dpActiveTab === 'ratings'
+                ? 'border-amber-400 text-amber-400 bg-amber-500/10'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <Award className="w-4 h-4" />
+            <span>Driver Ratings & Tips</span>
+            {((currentPartner.tipsEarnedToday ?? 0) > 0 || (currentPartner.totalTipsEarned ?? 0) > 0) && (
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-brand-charcoal flex items-center gap-0.5">
+                <Coins className="w-2.5 h-2.5" />
+                ₹{currentPartner.tipsEarnedToday ?? currentPartner.totalTipsEarned ?? 0}
+              </span>
+            )}
+          </button>
+
+          <button
             onClick={() => setDpActiveTab('complaints')}
             className={`py-3 px-4 text-xs font-black uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer relative shrink-0 ${
               dpActiveTab === 'complaints'
@@ -1909,7 +1939,11 @@ export default function DeliveryPartnerApp({
               <span className="text-[9px] font-black text-gray-400 uppercase block">Deliveries Today</span>
               <span className="text-lg font-black text-brand-green">{currentPartner.deliveriesCompleted ?? 0}</span>
             </div>
-            <div className="bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-center">
+            <div
+              onClick={() => setDpActiveTab('ratings')}
+              className="bg-black/40 border border-white/10 hover:border-amber-400/50 rounded-2xl px-4 py-2.5 text-center cursor-pointer transition-all hover:bg-white/[0.04]"
+              title="Click to view full Ratings & Tip Analytics"
+            >
               <span className="text-[9px] font-black text-gray-400 uppercase block">Driver Rating</span>
               {(!currentPartner.rating || currentPartner.deliveriesCompleted === 0) ? (
                 <div>
@@ -2023,6 +2057,22 @@ export default function DeliveryPartnerApp({
                     <p className="text-[10px] text-gray-400 truncate mt-1">
                       📍 {order.address}
                     </p>
+
+                    {((order.deliveryInstructions && order.deliveryInstructions.length > 0) || order.deliveryNotes) && (
+                      <div className="flex items-center gap-1 mt-1.5 text-[9px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 truncate">
+                        <span>📝</span>
+                        <span className="truncate">
+                          {order.deliveryInstructions?.[0] || order.deliveryNotes}
+                        </span>
+                      </div>
+                    )}
+
+                    {(order.riderTip ?? 0) > 0 && (
+                      <div className="flex items-center gap-1 mt-1 text-[9px] font-black text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30 w-fit">
+                        <Coins className="w-2.5 h-2.5 text-emerald-400" />
+                        <span>₹{order.riderTip} Tip</span>
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
@@ -2543,6 +2593,61 @@ export default function DeliveryPartnerApp({
                     </div>
                   </div>
 
+                  {/* Customer Delivery Instructions & Gate Notes */}
+                  {((activeUnlockedOrder.deliveryInstructions && activeUnlockedOrder.deliveryInstructions.length > 0) || activeUnlockedOrder.deliveryNotes) && (
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/40 via-[#141A22] to-[#0D1219] border-2 border-amber-500/50 space-y-2.5 shadow-xl">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-black uppercase text-amber-400 tracking-wider flex items-center gap-2">
+                          <span>🚪</span>
+                          <span>DELIVERY INSTRUCTIONS & GATE NOTES</span>
+                        </span>
+                        <span className="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                          RIDER DIRECTIVE
+                        </span>
+                      </div>
+                      {activeUnlockedOrder.deliveryInstructions && activeUnlockedOrder.deliveryInstructions.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {activeUnlockedOrder.deliveryInstructions.map((tag, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-200 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                            >
+                              <span>📌</span>
+                              <span>{tag}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {activeUnlockedOrder.deliveryNotes && (
+                        <div className="p-3 rounded-xl bg-black/50 border border-amber-500/30 text-xs text-amber-100 font-medium italic">
+                          "{activeUnlockedOrder.deliveryNotes}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Rider Tip Callout if Present */}
+                  {(activeUnlockedOrder.riderTip ?? 0) > 0 && (
+                    <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between shadow-lg">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-bold">
+                          <Coins className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 block">
+                            Customer Added Tip
+                          </span>
+                          <span className="text-xs text-gray-300">
+                            You earn an additional tip on this order!
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-base font-black text-emerald-400 font-mono px-3 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40">
+                        +₹{activeUnlockedOrder.riderTip}
+                      </span>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleArrivedAtCustomer}
                     disabled={isUpdating}
@@ -2583,6 +2688,31 @@ export default function DeliveryPartnerApp({
                       <span className="font-extrabold text-white">{activeUnlockedOrder.paymentMethod || 'Cash on Delivery'}</span>
                     </div>
                   </div>
+
+                  {/* Cash Settlement Split Breakdown for Tips */}
+                  {Number(activeUnlockedOrder.riderTip || 0) > 0 && (
+                    <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-3.5 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-300 font-bold">💵 Total Physical Cash from Customer:</span>
+                        <span className="font-mono font-black text-white text-sm">₹{activeUnlockedOrder.total}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs border-t border-white/10 pt-1.5">
+                        <span className="text-amber-300 font-bold">🏢 Cash to Handover to Kitchen Hub (Excl. Tip):</span>
+                        <span className="font-mono font-black text-amber-400 text-sm">
+                          ₹{activeUnlockedOrder.total - (activeUnlockedOrder.riderTip || 0)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs border-t border-white/10 pt-1.5 bg-emerald-950/40 p-2 rounded-xl border border-emerald-500/30">
+                        <span className="text-emerald-300 font-extrabold flex items-center gap-1">
+                          <Coins className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Your Rider Tip (Keep 100% in Pocket):</span>
+                        </span>
+                        <span className="font-mono font-black text-emerald-400 text-sm">
+                          +₹{activeUnlockedOrder.riderTip}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Payment Mode Selection Tabs */}
                   <div className="space-y-2">
@@ -2630,11 +2760,20 @@ export default function DeliveryPartnerApp({
                             Collect Physical Cash: <span className="text-emerald-400 font-mono">₹{activeUnlockedOrder.total}</span>
                           </h4>
                           <p className="text-xs text-gray-400 leading-relaxed">
-                            Count and collect ₹{activeUnlockedOrder.total} from the customer. After receiving cash, click <strong className="text-emerald-300">Payment Done</strong>.
+                            Count and collect ₹{activeUnlockedOrder.total} from the customer.
+                            {Number(activeUnlockedOrder.riderTip || 0) > 0 ? (
+                              <> Net owed to hub: <strong className="text-amber-300">₹{activeUnlockedOrder.total - (activeUnlockedOrder.riderTip || 0)}</strong>. The <strong className="text-emerald-300">₹{activeUnlockedOrder.riderTip} tip</strong> is 100% yours.</>
+                            ) : (
+                              <> After receiving cash, click <strong className="text-emerald-300">Payment Done</strong>.</>
+                            )}
                           </p>
                           <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-[11px] text-emerald-300 flex items-center gap-2">
                             <Wallet className="w-4 h-4 shrink-0 text-emerald-400" />
-                            <span>This collection will immediately update your <strong>Account Cash-in-Hand</strong> balance.</span>
+                            <span>
+                              {Number(activeUnlockedOrder.riderTip || 0) > 0
+                                ? `Adds ₹${activeUnlockedOrder.total - (activeUnlockedOrder.riderTip || 0)} to Hub Deposit balance (Excl. Tip). You keep ₹${activeUnlockedOrder.riderTip}.`
+                                : 'This collection will immediately update your Account Cash-in-Hand balance.'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -3023,24 +3162,39 @@ export default function DeliveryPartnerApp({
 
               return (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Card 1: Cash in Hand (Physical currency with rider) */}
+                  {/* Card 1: Cash in Hand & Tip Reconciliation */}
                   <div className="bg-[#121820] border-2 border-emerald-500/40 rounded-3xl p-5 space-y-3 relative overflow-hidden">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
-                        CURRENT CASH IN HAND
+                        CASH SETTLEMENT & IN-HAND
                       </span>
                       <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
                         <Wallet className="w-4 h-4" />
                       </div>
                     </div>
-                    <div>
-                      <div className="text-3xl font-black text-white font-mono">
-                        ₹{currentPartner.cashInHand ?? 0}
+
+                    <div className="grid grid-cols-2 gap-2 p-3 bg-black/40 rounded-2xl border border-white/10">
+                      <div>
+                        <span className="text-[9px] font-bold text-gray-400 uppercase block">To Deposit (Excl. Tip)</span>
+                        <div className="text-2xl font-black text-emerald-400 font-mono">
+                          ₹{currentPartner.cashInHand ?? 0}
+                        </div>
+                        <span className="text-[8px] text-gray-400 block font-sans">Kitchen cash balance</span>
                       </div>
+                      <div className="border-l border-white/10 pl-2">
+                        <span className="text-[9px] font-bold text-amber-400 uppercase block">Total in Pocket (Incl. Tip)</span>
+                        <div className="text-2xl font-black text-white font-mono">
+                          ₹{(currentPartner.cashInHand ?? 0) + (currentPartner.tipsEarnedToday ?? 0)}
+                        </div>
+                        <span className="text-[8px] text-amber-300/80 block font-sans">Includes ₹{currentPartner.tipsEarnedToday ?? 0} tips</span>
+                      </div>
+                    </div>
+
+                    <div>
                       <p className="text-[11px] text-gray-400 mt-1">
                         {(currentPartner.cashInHand ?? 0) > 0
-                          ? '⚠️ Must deposit to Kitchen Hub Cashier before ending shift.'
-                          : '✓ All cash collections settled with Kitchen Cashier.'}
+                          ? `⚠️ Deposit exactly the net kitchen amount (₹${currentPartner.cashInHand ?? 0}) to the Cashier. Tips are 100% yours to keep.`
+                          : '✓ All kitchen cash collections settled with Kitchen Cashier.'}
                       </p>
                       {pendingDepositSum > 0 && (
                         <div className="mt-2 text-[10px] font-mono text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
@@ -3427,6 +3581,239 @@ export default function DeliveryPartnerApp({
                 );
               })()}
             </div>
+          </div>
+        ) : dpActiveTab === 'ratings' ? (
+          /* DRIVER RATINGS & TIPS HUB */
+          <div className="space-y-6 animate-fade-in">
+            {/* Header & Performance Banner */}
+            <div className="bg-gradient-to-r from-amber-950/40 via-[#1C1814] to-[#10161E] border border-amber-500/30 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase flex items-center gap-1">
+                    <Award className="w-3 h-3" />
+                    <span>Rider Excellence & Tip Earnings</span>
+                  </span>
+                  <span className="text-xs text-gray-400 font-mono">100% Tips Directly to You</span>
+                </div>
+                <h2 className="text-xl font-extrabold text-white">
+                  Driver Ratings & Tips Hub
+                </h2>
+                <p className="text-xs text-gray-300 leading-relaxed max-w-2xl">
+                  Track your customer satisfaction ratings, on-time delivery compliments, and cumulative tip earnings. 100% of customer tips belong to you and are never deducted or remitted to the restaurant hub.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="p-4 rounded-2xl bg-black/40 border border-amber-500/30 text-center min-w-[120px]">
+                  <span className="text-[10px] font-black uppercase text-gray-400 block">Overall Rating</span>
+                  <div className="text-2xl font-black text-amber-400 flex items-center justify-center gap-1 mt-0.5">
+                    <Star className="w-5 h-5 fill-amber-400 text-amber-400" />
+                    <span>{currentPartner.rating ? currentPartner.rating.toFixed(1) : '5.0'}</span>
+                  </div>
+                  <span className="text-[9px] text-gray-500 block font-mono">Based on customer reviews</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tip Analytics KPI Cards */}
+            {(() => {
+              const partnerOrders = allOrders.filter(
+                (o) => o.deliveryPartnerId === currentPartner.id || (o as any).assignedRiderId === currentPartner.id
+              );
+              const tippedOrders = partnerOrders.filter((o) => (o.riderTip ?? 0) > 0);
+              const calculatedTipsTotal = tippedOrders.reduce((sum, o) => sum + (o.riderTip || 0), 0);
+              const calculatedTipsToday = tippedOrders
+                .filter((o) => isDateToday(o.date) || isDateToday((o as any).deliveredAt))
+                .reduce((sum, o) => sum + (o.riderTip || 0), 0);
+
+              const displayTipsToday = (currentPartner.tipsEarnedToday ?? 0) > 0 
+                ? currentPartner.tipsEarnedToday 
+                : calculatedTipsToday;
+              const displayTipsAllTime = (currentPartner.totalTipsEarned ?? 0) > 0 
+                ? currentPartner.totalTipsEarned 
+                : calculatedTipsTotal;
+
+              return (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Card 1: Tips Today */}
+                    <div className="bg-[#121820] border-2 border-amber-500/40 rounded-3xl p-5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">
+                          TIPS COLLECTED TODAY
+                        </span>
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                          <Coins className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-black text-white font-mono">
+                        ₹{displayTipsToday ?? 0}
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        {displayTipsToday ? 'Collected from generous customers today!' : 'No tips received yet today.'}
+                      </p>
+                    </div>
+
+                    {/* Card 2: Cumulative All-Time Tips */}
+                    <div className="bg-[#121820] border border-white/10 rounded-3xl p-5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">
+                          LIFETIME TIPS EARNED
+                        </span>
+                        <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-300">
+                          <Award className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-black text-emerald-400 font-mono">
+                        ₹{displayTipsAllTime ?? 0}
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        Cumulative bonus tips across all completed deliveries.
+                      </p>
+                    </div>
+
+                    {/* Card 3: Tipped Orders Count */}
+                    <div className="bg-[#121820] border border-white/10 rounded-3xl p-5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">
+                          TIPPED DELIVERIES
+                        </span>
+                        <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-300">
+                          <ThumbsUp className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-black text-brand-orange font-mono">
+                        {tippedOrders.length} <span className="text-sm font-sans text-gray-400">orders</span>
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        Deliveries where customers voluntarily added a gratuity.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Rider Compliments & Quality Score */}
+                  <div className="bg-[#121820] border border-white/10 rounded-3xl p-6 space-y-4">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>Customer Compliments & Star Badges</span>
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-base">
+                          ⚡
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-white block">Lightning Fast</span>
+                          <span className="text-[10px] text-gray-400 font-mono">98% on-time</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-base">
+                          📦
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-white block">Safe Handling</span>
+                          <span className="text-[10px] text-gray-400 font-mono">Zero spillage</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center text-base">
+                          😊
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-white block">Polite & Courteous</span>
+                          <span className="text-[10px] text-gray-400 font-mono">Top rated</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-base">
+                          🛡️
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-white block">Hygiene Verified</span>
+                          <span className="text-[10px] text-gray-400 font-mono">Insulated bag</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Order-by-Order Tip Ledger Table */}
+                  <div className="bg-[#121820] border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+                      <div>
+                        <h3 className="text-sm font-black uppercase text-white flex items-center gap-2">
+                          <Coins className="w-4 h-4 text-amber-400" />
+                          <span>Order-by-Order Tip History</span>
+                        </h3>
+                        <p className="text-xs text-gray-400">
+                          Transparent audit log of every tip received from customers.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full font-bold self-start sm:self-auto">
+                        0% Commission Deducted
+                      </span>
+                    </div>
+
+                    {tippedOrders.length === 0 ? (
+                      <div className="p-8 text-center bg-black/20 rounded-2xl border border-white/5 space-y-2">
+                        <Coins className="w-10 h-10 text-gray-600 mx-auto" />
+                        <p className="text-xs font-bold text-gray-400">
+                          No tipped orders yet.
+                        </p>
+                        <p className="text-[11px] text-gray-500 max-w-md mx-auto">
+                          When customers add tips (₹20, ₹30, ₹50 or custom) during checkout or delivery, they will show up here immediately.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs font-sans">
+                          <thead>
+                            <tr className="border-b border-white/10 text-gray-400 text-[10px] font-black uppercase tracking-wider">
+                              <th className="pb-3">Order Ref</th>
+                              <th className="pb-3">Customer</th>
+                              <th className="pb-3">Payment Mode</th>
+                              <th className="pb-3">Order Total</th>
+                              <th className="pb-3">Tip Earned</th>
+                              <th className="pb-3 text-right">Date & Time</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {tippedOrders.map((to) => (
+                              <tr key={to.id} className="hover:bg-white/[0.02] transition-colors">
+                                <td className="py-3 font-mono font-bold text-brand-orange">
+                                  #{to.id.slice(-6)}
+                                </td>
+                                <td className="py-3 text-white font-medium">
+                                  <div>{to.customerName || 'Customer'}</div>
+                                  <div className="text-[10px] text-gray-400 truncate max-w-xs">{to.address}</div>
+                                </td>
+                                <td className="py-3">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-white/5 text-gray-300 border border-white/10">
+                                    {(to as any).paymentMethod || (to as any).collectedPaymentMethod || 'Online / UPI'}
+                                  </span>
+                                </td>
+                                <td className="py-3 font-mono font-bold text-white">
+                                  ₹{to.total}
+                                </td>
+                                <td className="py-3 font-mono font-black text-emerald-400 text-sm">
+                                  +₹{to.riderTip}
+                                </td>
+                                <td className="py-3 text-gray-400 font-mono text-[11px] text-right">
+                                  {new Date(to.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         ) : (
           /* RIDER COMPLAINTS & HELPDESK WORKSPACE */

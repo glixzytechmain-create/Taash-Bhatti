@@ -1568,6 +1568,27 @@ export default function KitchenManagerApp({
                               ))}
                             </div>
 
+                            {/* Chef Instructions & Quick Tags */}
+                            {(Boolean(o.chefNotes?.length) || Boolean(o.chefNote)) && (
+                              <div className="bg-amber-950/40 border border-amber-500/40 p-2 rounded-xl space-y-1">
+                                <span className="text-[9px] font-black uppercase text-amber-400 block">👨‍🍳 CHEF INSTRUCTIONS:</span>
+                                {o.chefNotes && o.chefNotes.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {o.chefNotes.map((tag, tIdx) => (
+                                      <span key={tIdx} className="px-1.5 py-0.5 rounded bg-amber-400 text-brand-charcoal text-[8px] font-black uppercase shadow-xs">
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {o.chefNote && (
+                                  <p className="text-[9px] text-amber-200 font-medium leading-snug">
+                                    "{o.chefNote}"
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
                             {/* Prep Time Controller */}
                             <div className="bg-[#10151C] p-2 rounded-xl border border-white/5 flex items-center justify-between gap-1 text-[9px]">
                               <div className="flex items-center gap-1 font-mono text-gray-300">
@@ -1674,6 +1695,27 @@ export default function KitchenManagerApp({
                             </div>
                             <KDSTimer createdAt={o.cookingStartedAt || o.createdAt} />
                           </div>
+
+                          {/* Chef Directives & Quick Tags */}
+                          {(Boolean(o.chefNotes?.length) || Boolean(o.chefNote)) && (
+                            <div className="bg-amber-950/50 border border-amber-500/50 p-2.5 rounded-xl space-y-1.5 shadow-sm">
+                              <span className="text-[9px] font-black uppercase text-amber-400 block">👨‍🍳 CHEF DIRECTIVES:</span>
+                              {o.chefNotes && o.chefNotes.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {o.chefNotes.map((tag, tIdx) => (
+                                    <span key={tIdx} className="px-2 py-0.5 rounded-md bg-amber-400 text-brand-charcoal text-[8px] font-black uppercase shadow-xs">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {o.chefNote && (
+                                <p className="text-[10px] text-amber-200 font-medium leading-snug">
+                                  "{o.chefNote}"
+                                </p>
+                              )}
+                            </div>
+                          )}
 
                           {/* Items with Recipe Directives */}
                           <div className="space-y-2">
@@ -3658,6 +3700,18 @@ export default function KitchenManagerApp({
               <p className="text-[11px]">Customer: {kotOrderToPrint.customerName || (kotOrderToPrint as any).userName || 'Customer'}</p>
               <p className="text-[10px]">Address: {kotOrderToPrint.address || 'Central Delivery'}</p>
             </div>
+
+            {(Boolean(kotOrderToPrint.chefNotes?.length) || Boolean(kotOrderToPrint.chefNote)) && (
+              <div className="border-b border-black pb-2 space-y-1 bg-gray-100 p-1.5 rounded">
+                <p className="font-black text-[10px] uppercase">CHEF INSTRUCTIONS / TAGS:</p>
+                {kotOrderToPrint.chefNotes && kotOrderToPrint.chefNotes.length > 0 && (
+                  <p className="text-[10px] font-bold">TAGS: {kotOrderToPrint.chefNotes.join(', ')}</p>
+                )}
+                {kotOrderToPrint.chefNote && (
+                  <p className="text-[10px] italic">NOTE: {kotOrderToPrint.chefNote}</p>
+                )}
+              </div>
+            )}
 
             <div className="border-b border-black pb-2 space-y-1">
               <p className="font-black text-[11px] uppercase border-b border-gray-300 pb-1">ITEMS:</p>
