@@ -27,3 +27,4 @@ xcuserdata/
 *.xcuserstate
 .antigravity/
 build-deliverables/
+.firebase/

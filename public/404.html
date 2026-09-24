@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>404 • Lost in the Charcoal Smoke | Taash Bhatti</title>
+    <meta name="description" content="404 Page Not Found - Play The Great Naan Escape arcade game while we guide you back to Taash Bhatti." />
+    <meta name="theme-color" content="#12161A" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        background-color: #12161a;
+        color: #ffffff;
+        font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        overflow-x: hidden;
+        user-select: none;
+      }
+      .ambient-glow {
+        position: fixed;
+        top: -100px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 600px;
+        height: 350px;
+        background: radial-gradient(circle, rgba(255, 87, 34, 0.16) 0%, transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+      }
+      header {
+        position: relative;
+        z-index: 10;
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(18, 22, 26, 0.85);
+        backdrop-filter: blur(12px);
+      }
+      .brand-box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .flame-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #ff5722, #e65100);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 15px rgba(255, 87, 34, 0.35);
+      }
+      .brand-title {
+        font-size: 16px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .badge-404 {
+        font-size: 10px;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(255, 87, 34, 0.2);
+        color: #ff5722;
+        border: 1px solid rgba(255, 87, 34, 0.35);
+      }
+      .brand-sub {
+        font-size: 11px;
+        color: #9ca3af;
+      }
+      .btn-feast {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #ff5722, #f59e0b);
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 800;
+        text-decoration: none;
+        box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3);
+        transition: transform 0.1s ease, filter 0.2s ease;
+      }
+      .btn-feast:active {
+        transform: scale(0.96);
+      }
+      main {
+        position: relative;
+        z-index: 10;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+        max-width: 800px;
+        margin: 0 auto;
+        width: 100%;
+      }
+      .header-meta {
+        text-align: center;
+        margin-bottom: 18px;
+      }
+      .pill-smoke {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: rgba(255, 87, 34, 0.15);
+        border: 1px solid rgba(255, 87, 34, 0.3);
+        color: #ff5722;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      h2 {
+        font-size: clamp(24px, 5vw, 42px);
+        font-weight: 900;
+        line-height: 1.15;
+        margin-bottom: 8px;
+      }
+      .meta-desc {
+        font-size: 13px;
+        color: #d1d5db;
+        max-width: 520px;
+        margin: 0 auto;
+        line-height: 1.5;
+      }
+      .arena-card {
+        width: 100%;
+        max-width: 720px;
+        background: rgba(0, 0, 0, 0.6);
+        border: 1px solid rgba(255, 87, 34, 0.3);
+        border-radius: 24px;
+        padding: 16px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(16px);
+      }
+      .hud-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 14px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        margin-bottom: 12px;
+      }
+      .hud-score {
+        color: #fbbf24;
+        font-weight: 800;
+      }
+      .hud-best {
+        color: #e5e7eb;
+      }
+      .canvas-wrap {
+        position: relative;
+        width: 100%;
+        height: 240px;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #0a0d10;
+        cursor: pointer;
+        touch-action: none;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(6px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 16px;
+        transition: opacity 0.2s ease;
+      }
+      .overlay.hidden {
+        display: none;
+      }
+      .btn-play {
+        margin-top: 14px;
+        padding: 10px 24px;
+        border-radius: 12px;
+        background: #ff5722;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 800;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(255, 87, 34, 0.4);
+      }
+      .btn-play:active {
+        transform: scale(0.95);
+      }
+      .hints {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+        font-size: 11px;
+        color: #9ca3af;
+        padding: 0 4px;
+      }
+      .quick-nav {
+        margin-top: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+      }
+      .nav-link {
+        padding: 10px 18px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 800;
+        text-decoration: none;
+        transition: background 0.2s ease;
+      }
+      .nav-link:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+      footer {
+        padding: 16px;
+        text-align: center;
+        font-size: 12px;
+        color: #6b7280;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ambient-glow"></div>
+
+    <header>
+      <div class="brand-box">
+        <div class="flame-icon">🔥</div>
+        <div>
+          <div class="brand-title">
+            <span>TAASH BHATTI</span>
+            <span class="badge-404">404 ARCADE</span>
+          </div>
+          <div class="brand-sub">Original Woodfire & Clay-Oven Dining</div>
+        </div>
+      </div>
+
+      <a href="/" class="btn-feast">🍽️ Back to Feast</a>
+    </header>
+
+    <main>
+      <div class="header-meta">
+        <div class="pill-smoke">✨ Lost in the Charcoal Smoke</div>
+        <h2>404 • You've Wandered Off The Recipe!</h2>
+        <p class="meta-desc">
+          Even our GPS delivery riders couldn't find this page. It was either eaten by hungry kitchen staff or smoked to ashes in the clay oven!
+        </p>
+      </div>
+
+      <div class="arena-card">
+        <div class="hud-bar">
+          <div class="hud-score" id="hudScore">SCORE: 0000</div>
+          <div class="hud-best" id="hudBest">BEST: 0000</div>
+          <div style="color: #9ca3af; font-size: 11px;">CHILL MODE • 🫓</div>
+        </div>
+
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="gameCanvas" width="750" height="280"></canvas>
+
+          <!-- START OVERLAY -->
+          <div class="overlay" id="startOverlay">
+            <h3 style="font-size: 22px; font-weight: 900; margin-bottom: 6px;">The Great Naan Escape</h3>
+            <p style="font-size: 12px; color: #d1d5db; max-width: 380px;">
+              A fresh garlic butter naan has escaped the 400°C clay bhatti! Tap or press Space to leap over hot coals, rolling pins, and chillies.
+            </p>
+            <button class="btn-play" id="btnStart">TAP / SPACE TO JUMP</button>
+          </div>
+
+          <!-- GAMEOVER OVERLAY -->
+          <div class="overlay hidden" id="gameOverOverlay">
+            <div style="font-size: 11px; font-weight: 900; color: #ff5722; letter-spacing: 2px;">KITCHEN CAUGHT!</div>
+            <h3 style="font-size: 26px; font-weight: 900; color: #f87171; margin: 4px 0 6px;">GAME OVER</h3>
+            <p id="failQuote" style="font-size: 12px; color: #e5e7eb; margin-bottom: 14px;">Overcooked in the bhatti coals!</p>
+            <button class="btn-play" id="btnRestart">🔄 Play Again (Space)</button>
+          </div>
+        </div>
+
+        <div class="hints">
+          <span>🕹️ Controls: <strong>[Space / Up Arrow]</strong> or <strong>Tap Screen</strong></span>
+          <span>✨ <strong>Double-Tap</strong> in mid-air for a Butter Spin!</span>
+        </div>
+      </div>
+
+      <div class="quick-nav">
+        <a href="/" class="nav-link">Explore Royal Menu ➜</a>
+        <a href="/#deals" class="nav-link">Today's Bhatti Deals</a>
+        <a href="/#bhattis" class="nav-link">Restaurant Locations</a>
+      </div>
+    </main>
+
+    <footer>
+      © <span id="curYear"></span> Taash Bhatti • Authentic Woodfire & Clay-Oven Dining
+    </footer>
+
+    <script>
+      document.getElementById('curYear').textContent = new Date().getFullYear();
+
+      // Web Audio SFX
+      class SoundFX {
+        constructor() {
+          this.ctx = null;
+        }
+        init() {
+          if (!this.ctx) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) this.ctx = new AC();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+        }
+        jump() {
+          this.init();
+          if (!this.ctx) return;
+          try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.frequency.setValueAtTime(260, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(580, this.ctx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.12);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.12);
+          } catch(e) {}
+        }
+        doubleJump() {
+          this.init();
+          if (!this.ctx) return;
+          try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.frequency.setValueAtTime(450, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.16);
+            gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.16);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.16);
+          } catch(e) {}
+        }
+        crash() {
+          this.init();
+          if (!this.ctx) return;
+          try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(140, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.25);
+            gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.25);
+          } catch(e) {}
+        }
+      }
+      const sfx = new SoundFX();
+
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+      const hudScore = document.getElementById('hudScore');
+      const hudBest = document.getElementById('hudBest');
+      const startOverlay = document.getElementById('startOverlay');
+      const gameOverOverlay = document.getElementById('gameOverOverlay');
+      const failQuote = document.getElementById('failQuote');
+
+      let savedBest = 0;
+      try {
+        savedBest = parseInt(localStorage.getItem('tb_404_naan_highscore') || '0', 10);
+      } catch(e) {}
+      hudBest.textContent = 'BEST: ' + String(savedBest).padStart(4, '0');
+
+      const QUOTES = [
+        "Overcooked! Slipped right into the glowing bhatti coals!",
+        "Bummer! Whacked by the head chef's supersonic rolling pin!",
+        "Too spicy! Tripped headfirst over an unforgiving ghost chilli!",
+        "Butter slip! Lost footing on the greasy tandoor hearth!",
+        "Caught! The hungry tandoor master pulled you back for dinner!"
+      ];
+
+      const state = {
+        gameState: 'idle',
+        score: 0,
+        highScore: savedBest,
+        speed: 4.8,
+        gravity: 0.65,
+        groundY: 230,
+        player: {
+          x: 75,
+          y: 186,
+          width: 52,
+          height: 44,
+          vy: 0,
+          isGrounded: true,
+          jumpCount: 0,
+          rotation: 0,
+          spinSpeed: 0,
+          scaleX: 1,
+          scaleY: 1,
+          runCycle: 0
+        },
+        obstacles: [],
+        particles: [],
+        lastSpawn: 0,
+        nextGap: 240,
+        groundOffset: 0,
+        shake: 0
+      };
+
+      function triggerJump() {
+        if (state.gameState === 'idle') {
+          state.gameState = 'playing';
+          startOverlay.classList.add('hidden');
+        } else if (state.gameState === 'gameover') {
+          resetGame();
+          return;
+        }
+
+        const p = state.player;
+        if (p.isGrounded) {
+          p.vy = -12.8;
+          p.isGrounded = false;
+          p.jumpCount = 1;
+          p.scaleX = 0.82;
+          p.scaleY = 1.25;
+          sfx.jump();
+          if (navigator.vibrate) navigator.vibrate(15);
+        } else if (p.jumpCount === 1) {
+          p.vy = -11.2;
+          p.jumpCount = 2;
+          p.spinSpeed = 16;
+          sfx.doubleJump();
+          if (navigator.vibrate) navigator.vibrate([10, 20]);
+        }
+      }
+
+      function resetGame() {
+        state.gameState = 'playing';
+        state.score = 0;
+        state.speed = 4.8;
+        state.player.y = 186;
+        state.player.vy = 0;
+        state.player.isGrounded = true;
+        state.player.jumpCount = 0;
+        state.player.rotation = 0;
+        state.player.spinSpeed = 0;
+        state.obstacles = [];
+        state.particles = [];
+        state.lastSpawn = 0;
+        state.nextGap = 220;
+        gameOverOverlay.classList.add('hidden');
+      }
+
+      document.getElementById('canvasWrap').addEventListener('click', triggerJump);
+      document.getElementById('btnStart').addEventListener('click', (e) => { e.stopPropagation(); triggerJump(); });
+      document.getElementById('btnRestart').addEventListener('click', (e) => { e.stopPropagation(); resetGame(); });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+          e.preventDefault();
+          triggerJump();
+        }
+      });
+
+      function gameLoop() {
+        const width = canvas.width;
+        const height = canvas.height;
+        const gY = state.groundY;
+
+        ctx.save();
+        if (state.shake > 0) {
+          ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake);
+          state.shake *= 0.85;
+          if (state.shake < 0.5) state.shake = 0;
+        }
+
+        // BG
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0a0d10');
+        bgGrad.addColorStop(0.7, '#181310');
+        bgGrad.addColorStop(1, '#2c1408');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        // Ground
+        if (state.gameState === 'playing') state.groundOffset += state.speed;
+        ctx.fillStyle = '#21140e';
+        ctx.fillRect(0, gY, width, height - gY);
+        ctx.strokeStyle = '#ff6b35';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(0, gY);
+        ctx.lineTo(width, gY);
+        ctx.stroke();
+
+        // Cracks
+        ctx.fillStyle = 'rgba(255, 140, 0, 0.3)';
+        for (let i = 0; i < 18; i++) {
+          const gx = ((i * 50 - (state.groundOffset % 50) + width) % width);
+          ctx.fillRect(gx, gY + 5 + (i % 3) * 6, (i % 2 === 0 ? 14 : 8), 2.5);
+        }
+
+        // Updates
+        if (state.gameState === 'playing') {
+          state.score += 1;
+          const curScore = Math.floor(state.score / 6);
+          hudScore.textContent = 'SCORE: ' + String(curScore).padStart(4, '0');
+          if (state.speed < 9.5) state.speed += 0.0008;
+
+          // Spawn
+          state.lastSpawn += state.speed;
+          if (state.lastSpawn > state.nextGap) {
+            state.lastSpawn = 0;
+            state.nextGap = Math.random() * 160 + 210;
+            const types = ['charcoal', 'belan', 'chilli'];
+            const t = types[Math.floor(Math.random() * types.length)];
+            state.obstacles.push({
+              type: t,
+              x: width + 20,
+              y: t === 'charcoal' ? gY - 34 : t === 'belan' ? gY - 26 : gY - 38,
+              width: t === 'belan' ? 44 : 32,
+              height: t === 'charcoal' ? 34 : t === 'belan' ? 24 : 38,
+              rot: 0
+            });
+          }
+
+          // Sparks
+          if (Math.random() < 0.25) {
+            state.particles.push({
+              x: width + 10,
+              y: gY - Math.random() * 20,
+              vx: -state.speed * 0.8,
+              vy: -Math.random() * 2,
+              size: Math.random() * 3 + 1,
+              color: '#ff8c00',
+              alpha: 1
+            });
+          }
+        }
+
+        // Player
+        const p = state.player;
+        if (state.gameState === 'playing') {
+          p.vy += state.gravity;
+          p.y += p.vy;
+          p.runCycle += 0.25;
+
+          if (p.spinSpeed !== 0) {
+            p.rotation += p.spinSpeed;
+            if (p.rotation >= 360) {
+              p.rotation = 0;
+              p.spinSpeed = 0;
+            }
+          }
+
+          if (p.y >= gY - p.height) {
+            p.y = gY - p.height;
+            p.vy = 0;
+            p.isGrounded = true;
+            p.jumpCount = 0;
+          }
+        }
+
+        // Draw Player Naan
+        ctx.save();
+        ctx.translate(p.x + p.width / 2, p.y + p.height / 2);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+
+        // Legs
+        if (p.isGrounded && state.gameState === 'playing') {
+          const f1 = Math.sin(p.runCycle) * 6;
+          const f2 = -Math.sin(p.runCycle) * 6;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(-14, p.height / 2 - 2 + f1, 6, 4);
+          ctx.fillRect(14, p.height / 2 - 2 + f2, 6, 4);
+        }
+
+        // Body
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.width / 2, p.height / 2, 0, 0, Math.PI * 2);
+        const naanGrad = ctx.createRadialGradient(-4, -6, 4, 0, 0, p.width / 1.7);
+        naanGrad.addColorStop(0, '#fff4db');
+        naanGrad.addColorStop(0.55, '#f5be6c');
+        naanGrad.addColorStop(0.9, '#d68336');
+        naanGrad.addColorStop(1, '#9b4a1b');
+        ctx.fillStyle = naanGrad;
+        ctx.fill();
+        ctx.strokeStyle = '#6b320d';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Blisters
+        ctx.fillStyle = '#261309';
+        [[-10, -8, 4], [10, -6, 5], [-12, 6, 5], [12, 6, 4]].forEach(b => {
+          ctx.beginPath();
+          ctx.arc(b[0], b[1], b[2], 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Butter pool
+        ctx.beginPath();
+        ctx.ellipse(0, -2, 12, 6, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 245, 140, 0.75)';
+        ctx.fill();
+
+        // Eyes
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-8, -4, 5, 0, Math.PI * 2);
+        ctx.arc(8, -4, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#1e272e';
+        ctx.beginPath();
+        ctx.arc(-6, -4, 2.8, 0, Math.PI * 2);
+        ctx.arc(10, -4, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Draw Obstacles
+        for (let i = state.obstacles.length - 1; i >= 0; i--) {
+          const obs = state.obstacles[i];
+          if (state.gameState === 'playing') obs.x -= state.speed;
+
+          ctx.save();
+          ctx.translate(obs.x + obs.width / 2, obs.y + obs.height / 2);
+
+          if (obs.type === 'charcoal') {
+            ctx.fillStyle = '#1e272e';
+            ctx.fillRect(-obs.width / 2, -obs.height / 2, obs.width, obs.height);
+            ctx.strokeStyle = '#ff793f';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-obs.width / 2, -obs.height / 2, obs.width, obs.height);
+          } else if (obs.type === 'belan') {
+            ctx.fillStyle = '#d38b5d';
+            ctx.fillRect(-obs.width / 2, -obs.height / 2, obs.width, obs.height);
+            ctx.strokeStyle = '#5a2e12';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(-obs.width / 2, -obs.height / 2, obs.width, obs.height);
+          } else {
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+
+          // Collision check
+          if (state.gameState === 'playing') {
+            if (
+              p.x + 8 < obs.x + obs.width - 4 &&
+              p.x + p.width - 8 > obs.x + 4 &&
+              p.y + 6 < obs.y + obs.height - 2 &&
+              p.y + p.height - 4 > obs.y + 4
+            ) {
+              state.gameState = 'gameover';
+              state.shake = 16;
+              sfx.crash();
+              if (navigator.vibrate) navigator.vibrate([40, 60, 100]);
+
+              const finalScore = Math.floor(state.score / 6);
+              if (finalScore > state.highScore) {
+                state.highScore = finalScore;
+                hudBest.textContent = 'BEST: ' + String(finalScore).padStart(4, '0');
+                try {
+                  localStorage.setItem('tb_404_naan_highscore', finalScore.toString());
+                } catch(e) {}
+              }
+
+              failQuote.textContent = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+              gameOverOverlay.classList.remove('hidden');
+            }
+          }
+
+          if (obs.x + obs.width < -30) state.obstacles.splice(i, 1);
+        }
+
+        // Draw Particles
+        for (let i = state.particles.length - 1; i >= 0; i--) {
+          const pt = state.particles[i];
+          pt.x += pt.vx;
+          pt.y += pt.vy;
+          pt.alpha -= 0.025;
+          if (pt.alpha <= 0) {
+            state.particles.splice(i, 1);
+            continue;
+          }
+          ctx.save();
+          ctx.globalAlpha = pt.alpha;
+          ctx.fillStyle = pt.color;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.restore();
+        requestAnimationFrame(gameLoop);
+      }
+
+      requestAnimationFrame(gameLoop);
+    </script>
+  </body>
+</html>

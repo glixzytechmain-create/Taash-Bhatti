@@ -58,6 +58,7 @@ import KitchenManagerApp from './components/KitchenManagerApp';
 import IdentityVerificationModal from './components/IdentityVerificationModal';
 import SupportMailboxModal from './components/SupportMailboxModal';
 import TaashOpeningSplash from './components/TaashOpeningSplash';
+import NaanEscape404 from './components/NaanEscape404';
 import CityGeofenceSelectorModal from './components/CityGeofenceSelectorModal';
 import NotificationPromptModal from './components/NotificationPromptModal';
 import SelectDeliveryAddressModal from './components/SelectDeliveryAddressModal';
@@ -308,6 +309,24 @@ export default function App() {
     return null;
   });
   const [preloadedCouponCode, setPreloadedCouponCode] = useState<string | null>(null);
+
+  // 404 Route Detection: checks for unknown paths or explicit error=404 query parameters
+  const [is404Route, setIs404Route] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('error') === '404' || params.get('page') === '404' || path === '/404' || path.startsWith('/404/')) {
+          return true;
+        }
+        // Known allowed base paths
+        const validPrefixes = ['/', '/index.html', '/buddydeck', '/kds', '/admin', '/delivery-partner', '/support'];
+        const isKnown = validPrefixes.some(p => path === p || (p !== '/' && path.startsWith(p)));
+        return !isKnown;
+      }
+    } catch (e) {}
+    return false;
+  });
 
   // Dine-In Table QR Scanner Session (?table=Table%201&bhatti=k1)
   const [dineInSession, setDineInSession] = useState<{
@@ -2561,6 +2580,21 @@ export default function App() {
           </div>
         </motion.div>
       </div>
+    );
+  }
+
+  // 404 Interceptor: If an unknown route or 404 error is reached
+  if (is404Route) {
+    return (
+      <NaanEscape404
+        onBackToFeast={() => {
+          setIs404Route(false);
+          setActiveTab('home');
+          if (typeof window !== 'undefined' && window.history?.pushState) {
+            window.history.pushState({}, '', '/');
+          }
+        }}
+      />
     );
   }
 
