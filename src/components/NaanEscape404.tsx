@@ -131,17 +131,17 @@ export default function NaanEscape404({ onBackToFeast }: NaanEscape404Props) {
     gameState: 'idle' as 'idle' | 'playing' | 'gameover',
     score: 0,
     highScore: 0,
-    speed: 4.6,
+    speed: 4.8,
     gravity: 0.62,
-    viewW: 600,
-    viewH: 260,
+    viewW: 800,
+    viewH: 400,
     dpr: 1,
-    groundY: 216,
+    groundY: 356,
     player: {
-      x: 50,
-      y: 172,
-      width: 50,
-      height: 42,
+      x: 60,
+      y: 312,
+      width: 54,
+      height: 44,
       vy: 0,
       isGrounded: true,
       jumpCount: 0,
@@ -215,8 +215,8 @@ export default function NaanEscape404({ onBackToFeast }: NaanEscape404Props) {
 
     const p = state.player;
     if (p.isGrounded) {
-      // First Jump
-      p.vy = -12.4;
+      // First Jump (taller, airy leap)
+      p.vy = -13.6;
       p.isGrounded = false;
       p.jumpCount = 1;
       p.scaleX = 0.82;
@@ -242,8 +242,8 @@ export default function NaanEscape404({ onBackToFeast }: NaanEscape404Props) {
         });
       }
     } else if (p.jumpCount < 2) {
-      // Butter Double Jump! (Spin in mid-air)
-      p.vy = -11.0;
+      // Butter Double Jump! (Spin in mid-air with generous lift)
+      p.vy = -12.0;
       p.jumpCount = 2;
       p.spinSpeed = 18;
       sfx.doubleJump();
@@ -999,7 +999,7 @@ export default function NaanEscape404({ onBackToFeast }: NaanEscape404Props) {
       </header>
 
       {/* MAIN GAME ARENA & 404 CONTENT */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-3 sm:px-4 py-4 sm:py-6 max-w-4xl mx-auto w-full">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-3 sm:px-6 py-3 sm:py-5 max-w-6xl mx-auto w-full">
         {/* Funny 404 Headlines */}
         <div className="text-center space-y-1.5 sm:space-y-2 mb-3 sm:mb-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/15 border border-brand-orange/30 text-brand-orange text-[10px] sm:text-xs font-black tracking-wider uppercase">
@@ -1016,10 +1016,10 @@ export default function NaanEscape404({ onBackToFeast }: NaanEscape404Props) {
           </p>
         </div>
 
-        {/* GAME CANVAS ARENA CONTAINER */}
-        <div className="relative w-full max-w-2xl bg-black/60 rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 border border-brand-orange/30 shadow-2xl backdrop-blur-xl group">
+        {/* GAME CANVAS ARENA CONTAINER (Spacious on both mobile & desktop) */}
+        <div className="relative w-full max-w-5xl bg-black/60 rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-brand-orange/30 shadow-2xl backdrop-blur-xl group">
           {/* Top Score HUD Bar */}
-          <div className="flex items-center justify-between px-3 py-1.5 sm:py-2 mb-2 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-[11px] sm:text-xs font-mono">
+          <div className="flex items-center justify-between px-3.5 py-2 mb-2.5 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-[11px] sm:text-xs font-mono">
             <div className="flex items-center gap-1.5 text-amber-400 font-black">
               <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-orange" />
               <span>SCORE: {score.toString().padStart(4, '0')}</span>
@@ -1036,12 +1036,12 @@ export default function NaanEscape404({ onBackToFeast }: NaanEscape404Props) {
             </div>
           </div>
 
-          {/* Interactive HTML5 Canvas Container (Fluid Responsive width, no clipping!) */}
+          {/* Interactive HTML5 Canvas Container (Generous vertical height on mobile and desktop) */}
           <div
             ref={containerRef}
             onClick={handleJump}
             style={{ touchAction: 'none' }}
-            className="relative w-full h-[210px] xs:h-[230px] sm:h-[280px] rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer select-none bg-[#0a0d10] border border-white/10"
+            className="relative w-full h-[310px] xs:h-[350px] sm:h-[400px] md:h-[450px] lg:h-[490px] rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer select-none bg-[#0a0d10] border border-white/10"
           >
             <canvas
               ref={canvasRef}
