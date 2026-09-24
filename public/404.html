@@ -29,6 +29,7 @@
         justify-content: space-between;
         overflow-x: hidden;
         user-select: none;
+        touch-action: manipulation;
       }
       .ambient-glow {
         position: fixed;
@@ -44,7 +45,7 @@
       header {
         position: relative;
         z-index: 10;
-        padding: 16px 24px;
+        padding: 14px 20px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -55,52 +56,53 @@
       .brand-box {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
       }
       .flame-icon {
-        width: 38px;
-        height: 38px;
+        width: 36px;
+        height: 36px;
         border-radius: 12px;
         background: linear-gradient(135deg, #ff5722, #e65100);
         display: flex;
         align-items: center;
         justify-content: center;
         box-shadow: 0 4px 15px rgba(255, 87, 34, 0.35);
+        font-size: 18px;
       }
       .brand-title {
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 900;
         letter-spacing: -0.02em;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
       }
       .badge-404 {
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 800;
-        padding: 2px 8px;
+        padding: 2px 7px;
         border-radius: 999px;
         background: rgba(255, 87, 34, 0.2);
         color: #ff5722;
         border: 1px solid rgba(255, 87, 34, 0.35);
       }
       .brand-sub {
-        font-size: 11px;
+        font-size: 10px;
         color: #9ca3af;
       }
       .btn-feast {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        padding: 10px 18px;
+        gap: 6px;
+        padding: 8px 14px;
         border-radius: 12px;
         background: linear-gradient(135deg, #ff5722, #f59e0b);
         color: #ffffff;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 800;
         text-decoration: none;
         box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3);
-        transition: transform 0.1s ease, filter 0.2s ease;
+        transition: transform 0.1s ease;
       }
       .btn-feast:active {
         transform: scale(0.96);
@@ -113,49 +115,50 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 24px 16px;
+        padding: 16px 12px;
         max-width: 800px;
         margin: 0 auto;
         width: 100%;
       }
       .header-meta {
         text-align: center;
-        margin-bottom: 18px;
+        margin-bottom: 14px;
       }
       .pill-smoke {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 4px 12px;
+        padding: 3px 10px;
         border-radius: 999px;
         background: rgba(255, 87, 34, 0.15);
         border: 1px solid rgba(255, 87, 34, 0.3);
         color: #ff5722;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 800;
         text-transform: uppercase;
-        margin-bottom: 10px;
-      }
-      h2 {
-        font-size: clamp(24px, 5vw, 42px);
-        font-weight: 900;
-        line-height: 1.15;
         margin-bottom: 8px;
       }
+      h2 {
+        font-size: clamp(20px, 4.5vw, 36px);
+        font-weight: 900;
+        line-height: 1.18;
+        margin-bottom: 6px;
+      }
       .meta-desc {
-        font-size: 13px;
+        font-size: 12px;
         color: #d1d5db;
-        max-width: 520px;
+        max-width: 480px;
         margin: 0 auto;
-        line-height: 1.5;
+        line-height: 1.45;
+        padding: 0 8px;
       }
       .arena-card {
         width: 100%;
-        max-width: 720px;
-        background: rgba(0, 0, 0, 0.6);
+        max-width: 680px;
+        background: rgba(0, 0, 0, 0.65);
         border: 1px solid rgba(255, 87, 34, 0.3);
-        border-radius: 24px;
-        padding: 16px;
+        border-radius: 20px;
+        padding: 12px;
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
         backdrop-filter: blur(16px);
       }
@@ -163,13 +166,13 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 8px 14px;
+        padding: 6px 12px;
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 14px;
+        border-radius: 12px;
         font-family: 'JetBrains Mono', monospace;
-        font-size: 12px;
-        margin-bottom: 12px;
+        font-size: 11px;
+        margin-bottom: 10px;
       }
       .hud-score {
         color: #fbbf24;
@@ -181,13 +184,13 @@
       .canvas-wrap {
         position: relative;
         width: 100%;
-        height: 240px;
-        border-radius: 16px;
+        height: 220px;
+        border-radius: 14px;
         overflow: hidden;
         border: 1px solid rgba(255, 255, 255, 0.1);
         background: #0a0d10;
         cursor: pointer;
-        touch-action: none;
+        touch-action: none !important;
       }
       canvas {
         width: 100%;
@@ -204,19 +207,18 @@
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: 16px;
-        transition: opacity 0.2s ease;
+        padding: 14px;
       }
       .overlay.hidden {
         display: none;
       }
       .btn-play {
-        margin-top: 14px;
-        padding: 10px 24px;
+        margin-top: 12px;
+        padding: 9px 20px;
         border-radius: 12px;
         background: #ff5722;
         color: #ffffff;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 800;
         border: none;
         cursor: pointer;
@@ -227,26 +229,36 @@
       }
       .hints {
         display: flex;
-        justify-content: space-between;
-        margin-top: 10px;
-        font-size: 11px;
+        flex-direction: column;
+        gap: 3px;
+        margin-top: 8px;
+        font-size: 10px;
         color: #9ca3af;
         padding: 0 4px;
       }
+      @media (min-width: 500px) {
+        .hints {
+          flex-direction: row;
+          justify-content: space-between;
+        }
+        .canvas-wrap {
+          height: 260px;
+        }
+      }
       .quick-nav {
-        margin-top: 24px;
+        margin-top: 18px;
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 10px;
         justify-content: center;
       }
       .nav-link {
-        padding: 10px 18px;
+        padding: 8px 14px;
         border-radius: 12px;
         background: rgba(255, 255, 255, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.12);
         color: #ffffff;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 800;
         text-decoration: none;
         transition: background 0.2s ease;
@@ -255,9 +267,9 @@
         background: rgba(255, 255, 255, 0.16);
       }
       footer {
-        padding: 16px;
+        padding: 14px;
         text-align: center;
-        font-size: 12px;
+        font-size: 11px;
         color: #6b7280;
         border-top: 1px solid rgba(255, 255, 255, 0.08);
       }
@@ -294,16 +306,16 @@
         <div class="hud-bar">
           <div class="hud-score" id="hudScore">SCORE: 0000</div>
           <div class="hud-best" id="hudBest">BEST: 0000</div>
-          <div style="color: #9ca3af; font-size: 11px;">CHILL MODE • 🫓</div>
+          <div style="color: #9ca3af; font-size: 10px;">CHILL MODE • 🫓</div>
         </div>
 
         <div class="canvas-wrap" id="canvasWrap">
-          <canvas id="gameCanvas" width="750" height="280"></canvas>
+          <canvas id="gameCanvas"></canvas>
 
           <!-- START OVERLAY -->
           <div class="overlay" id="startOverlay">
-            <h3 style="font-size: 22px; font-weight: 900; margin-bottom: 6px;">The Great Naan Escape</h3>
-            <p style="font-size: 12px; color: #d1d5db; max-width: 380px;">
+            <h3 style="font-size: 20px; font-weight: 900; margin-bottom: 4px;">The Great Naan Escape</h3>
+            <p style="font-size: 11px; color: #d1d5db; max-width: 360px;">
               A fresh garlic butter naan has escaped the 400°C clay bhatti! Tap or press Space to leap over hot coals, rolling pins, and chillies.
             </p>
             <button class="btn-play" id="btnStart">TAP / SPACE TO JUMP</button>
@@ -311,16 +323,16 @@
 
           <!-- GAMEOVER OVERLAY -->
           <div class="overlay hidden" id="gameOverOverlay">
-            <div style="font-size: 11px; font-weight: 900; color: #ff5722; letter-spacing: 2px;">KITCHEN CAUGHT!</div>
-            <h3 style="font-size: 26px; font-weight: 900; color: #f87171; margin: 4px 0 6px;">GAME OVER</h3>
-            <p id="failQuote" style="font-size: 12px; color: #e5e7eb; margin-bottom: 14px;">Overcooked in the bhatti coals!</p>
+            <div style="font-size: 10px; font-weight: 900; color: #ff5722; letter-spacing: 2px;">KITCHEN CAUGHT!</div>
+            <h3 style="font-size: 24px; font-weight: 900; color: #f87171; margin: 4px 0 6px;">GAME OVER</h3>
+            <p id="failQuote" style="font-size: 11px; color: #e5e7eb; margin-bottom: 12px;">Overcooked in the bhatti coals!</p>
             <button class="btn-play" id="btnRestart">🔄 Play Again (Space)</button>
           </div>
         </div>
 
         <div class="hints">
           <span>🕹️ Controls: <strong>[Space / Up Arrow]</strong> or <strong>Tap Screen</strong></span>
-          <span>✨ <strong>Double-Tap</strong> in mid-air for a Butter Spin!</span>
+          <span style="color: #fde047;">✨ <strong>Double-Tap in mid-air</strong> for Butter Spin!</span>
         </div>
       </div>
 
@@ -404,6 +416,7 @@
       }
       const sfx = new SoundFX();
 
+      const canvasWrap = document.getElementById('canvasWrap');
       const canvas = document.getElementById('gameCanvas');
       const ctx = canvas.getContext('2d');
       const hudScore = document.getElementById('hudScore');
@@ -430,14 +443,17 @@
         gameState: 'idle',
         score: 0,
         highScore: savedBest,
-        speed: 4.8,
-        gravity: 0.65,
-        groundY: 230,
+        speed: 4.6,
+        gravity: 0.62,
+        viewW: 600,
+        viewH: 240,
+        dpr: 1,
+        groundY: 198,
         player: {
-          x: 75,
-          y: 186,
-          width: 52,
-          height: 44,
+          x: 45,
+          y: 156,
+          width: 50,
+          height: 42,
           vy: 0,
           isGrounded: true,
           jumpCount: 0,
@@ -450,10 +466,34 @@
         obstacles: [],
         particles: [],
         lastSpawn: 0,
-        nextGap: 240,
+        nextGap: 210,
         groundOffset: 0,
         shake: 0
       };
+
+      function updateCanvasSize() {
+        const rect = canvasWrap.getBoundingClientRect();
+        const w = Math.floor(rect.width);
+        const h = Math.floor(rect.height);
+        if (w > 0 && h > 0) {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          canvas.width = Math.floor(w * dpr);
+          canvas.height = Math.floor(h * dpr);
+          state.viewW = w;
+          state.viewH = h;
+          state.dpr = dpr;
+          state.groundY = h - 42;
+          // Naan is always safely positioned 12% from left, never clipped offscreen!
+          state.player.x = Math.max(32, Math.floor(w * 0.12));
+          if (state.player.isGrounded) {
+            state.player.y = state.groundY - state.player.height;
+          }
+        }
+      }
+
+      window.addEventListener('resize', updateCanvasSize);
+      window.addEventListener('orientationchange', updateCanvasSize);
+      updateCanvasSize();
 
       function triggerJump() {
         if (state.gameState === 'idle') {
@@ -466,27 +506,28 @@
 
         const p = state.player;
         if (p.isGrounded) {
-          p.vy = -12.8;
+          p.vy = -12.4;
           p.isGrounded = false;
           p.jumpCount = 1;
           p.scaleX = 0.82;
           p.scaleY = 1.25;
           sfx.jump();
           if (navigator.vibrate) navigator.vibrate(15);
-        } else if (p.jumpCount === 1) {
-          p.vy = -11.2;
+        } else if (p.jumpCount < 2) {
+          // Double jump works reliably on touch!
+          p.vy = -11.0;
           p.jumpCount = 2;
-          p.spinSpeed = 16;
+          p.spinSpeed = 18;
           sfx.doubleJump();
-          if (navigator.vibrate) navigator.vibrate([10, 20]);
+          if (navigator.vibrate) navigator.vibrate([15, 20]);
         }
       }
 
       function resetGame() {
         state.gameState = 'playing';
         state.score = 0;
-        state.speed = 4.8;
-        state.player.y = 186;
+        state.speed = 4.6;
+        state.player.y = state.groundY - state.player.height;
         state.player.vy = 0;
         state.player.isGrounded = true;
         state.player.jumpCount = 0;
@@ -495,11 +536,21 @@
         state.obstacles = [];
         state.particles = [];
         state.lastSpawn = 0;
-        state.nextGap = 220;
+        state.nextGap = Math.max(180, state.viewW * 0.52);
         gameOverOverlay.classList.add('hidden');
       }
 
-      document.getElementById('canvasWrap').addEventListener('click', triggerJump);
+      // Native non-passive touchstart listener eliminates 300ms click lag and zoom prevention
+      canvasWrap.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        triggerJump();
+      }, { passive: false });
+
+      canvasWrap.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        triggerJump();
+      });
+
       document.getElementById('btnStart').addEventListener('click', (e) => { e.stopPropagation(); triggerJump(); });
       document.getElementById('btnRestart').addEventListener('click', (e) => { e.stopPropagation(); resetGame(); });
 
@@ -511,11 +562,13 @@
       });
 
       function gameLoop() {
-        const width = canvas.width;
-        const height = canvas.height;
+        const width = state.viewW;
+        const height = state.viewH;
         const gY = state.groundY;
 
         ctx.save();
+        ctx.scale(state.dpr, state.dpr);
+
         if (state.shake > 0) {
           ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake);
           state.shake *= 0.85;
@@ -543,9 +596,10 @@
 
         // Cracks
         ctx.fillStyle = 'rgba(255, 140, 0, 0.3)';
-        for (let i = 0; i < 18; i++) {
-          const gx = ((i * 50 - (state.groundOffset % 50) + width) % width);
-          ctx.fillRect(gx, gY + 5 + (i % 3) * 6, (i % 2 === 0 ? 14 : 8), 2.5);
+        const crackCount = Math.floor(width / 35);
+        for (let i = 0; i < crackCount; i++) {
+          const gx = ((i * 45 - (state.groundOffset % 45) + width) % width);
+          ctx.fillRect(gx, gY + 5 + (i % 3) * 5, (i % 2 === 0 ? 12 : 7), 2.5);
         }
 
         // Updates
@@ -553,21 +607,21 @@
           state.score += 1;
           const curScore = Math.floor(state.score / 6);
           hudScore.textContent = 'SCORE: ' + String(curScore).padStart(4, '0');
-          if (state.speed < 9.5) state.speed += 0.0008;
+          if (state.speed < 9.0) state.speed += 0.0008;
 
           // Spawn
           state.lastSpawn += state.speed;
           if (state.lastSpawn > state.nextGap) {
             state.lastSpawn = 0;
-            state.nextGap = Math.random() * 160 + 210;
+            state.nextGap = Math.max(190, width * 0.52) + Math.random() * 110;
             const types = ['charcoal', 'belan', 'chilli'];
             const t = types[Math.floor(Math.random() * types.length)];
             state.obstacles.push({
               type: t,
               x: width + 20,
-              y: t === 'charcoal' ? gY - 34 : t === 'belan' ? gY - 26 : gY - 38,
+              y: t === 'charcoal' ? gY - 34 : t === 'belan' ? gY - 24 : gY - 36,
               width: t === 'belan' ? 44 : 32,
-              height: t === 'charcoal' ? 34 : t === 'belan' ? 24 : 38,
+              height: t === 'charcoal' ? 34 : t === 'belan' ? 24 : 36,
               rot: 0
             });
           }
@@ -619,8 +673,8 @@
           const f1 = Math.sin(p.runCycle) * 6;
           const f2 = -Math.sin(p.runCycle) * 6;
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(-14, p.height / 2 - 2 + f1, 6, 4);
-          ctx.fillRect(14, p.height / 2 - 2 + f2, 6, 4);
+          ctx.fillRect(-13, p.height / 2 - 2 + f1, 6, 4);
+          ctx.fillRect(13, p.height / 2 - 2 + f2, 6, 4);
         }
 
         // Body
