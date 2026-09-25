@@ -1064,12 +1064,12 @@ export default function App() {
 
   // First-Time App Tour Trigger:
   // - ONLY for unauthenticated guests (!authChecking && !fbUser && !auth.currentUser)
-  // - ONLY in customer gateway (!is404Active)
+  // - ONLY in customer gateway (!is404Route)
   // - Exactly ONCE per device (persisted in localStorage under 'tb_guided_tour_completed_v1')
   useEffect(() => {
     if (authChecking) return;
     if (currentGateway !== 'customer') return;
-    if (is404Active) return;
+    if (is404Route) return;
     if (fbUser || auth.currentUser) return; // Strictly non-authenticated users only
 
     try {
@@ -1085,7 +1085,7 @@ export default function App() {
         }
       }
     } catch (e) {}
-  }, [authChecking, fbUser, currentGateway, is404Active]);
+  }, [authChecking, fbUser, currentGateway, is404Route]);
 
   const handleDismissFirstTimeTour = () => {
     setShowFirstTimeTour(false);

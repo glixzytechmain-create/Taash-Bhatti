@@ -1202,7 +1202,7 @@ export default function DeliveryPartnerApp({
         ...activeUnlockedOrder,
         paymentStatus: 'collected',
         collectedPaymentMethod: 'cash',
-        cashCollectedAmount: amount,
+        cashCollectedAmount: physicalAmount,
         paymentCollectedAt: nowIso,
         paymentCollectedBy: currentPartner.id,
         paymentCollectedByName: currentPartner.name,
@@ -1226,7 +1226,7 @@ export default function DeliveryPartnerApp({
         osc.stop(audioCtx.currentTime + 0.3);
       } catch (e) {}
 
-      setStatusSuccessMsg(`💵 ₹${amount} Cash Collected! Credited to your Account Cash-in-Hand. Please ask customer for their 4-digit Delivery OTP.`);
+      setStatusSuccessMsg(`💵 ₹${physicalAmount} Cash Collected! Credited to your Account Cash-in-Hand. Please ask customer for their 4-digit Delivery OTP.`);
     } catch (err) {
       console.error("Failed to collect cash:", err);
     } finally {
