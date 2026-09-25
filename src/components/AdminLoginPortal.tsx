@@ -54,7 +54,7 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Initialize or retrieve existing invisible reCAPTCHA verifier for Firebase Auth
-  const getOrCreateRecaptchaVerifier = (): RecaptchaVerifier | null => {
+  const getOrCreateRecaptchaVerifier = async (): Promise<RecaptchaVerifier | null> => {
     try {
       const containerId = 'firebase-admin-recaptcha-container';
       let container = document.getElementById(containerId);
@@ -62,25 +62,25 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
         container = document.createElement('div');
         container.id = containerId;
         document.body.appendChild(container);
-      } else {
-        container.innerHTML = '';
       }
 
       if (recaptchaVerifierRef.current) {
-        try {
-          recaptchaVerifierRef.current.clear();
-        } catch (e) {}
-        recaptchaVerifierRef.current = null;
+        return recaptchaVerifierRef.current;
       }
 
       const verifier = new RecaptchaVerifier(auth, containerId, {
         size: 'invisible',
         callback: () => {},
         'expired-callback': () => {
-          setError('reCAPTCHA security token expired. Please tap Resend.');
+          if (recaptchaVerifierRef.current) {
+            try { recaptchaVerifierRef.current.clear(); } catch (_) {}
+            recaptchaVerifierRef.current = null;
+          }
+          setError('Security token expired. Please tap Resend SMS Code.');
         },
       });
 
+      await verifier.render();
       recaptchaVerifierRef.current = verifier;
       return verifier;
     } catch (err: any) {
@@ -96,13 +96,26 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
     setStep('dispatching');
 
     try {
-      const verifier = getOrCreateRecaptchaVerifier();
+      let verifier = await getOrCreateRecaptchaVerifier();
       if (!verifier) {
         throw new Error('Could not initialize Firebase security verifier. Please check your connection.');
       }
 
       const targetPhone = getAdminDestinationPhone();
-      const confirmation = await signInWithPhoneNumber(auth, targetPhone, verifier);
+      let confirmation: ConfirmationResult;
+      try {
+        confirmation = await signInWithPhoneNumber(auth, targetPhone, verifier);
+      } catch (firstErr: any) {
+        console.warn('First signInWithPhoneNumber attempt note:', firstErr?.code || firstErr?.message);
+        // If reCAPTCHA token was stale, reset it once and retry
+        if (recaptchaVerifierRef.current) {
+          try { recaptchaVerifierRef.current.clear(); } catch (_) {}
+          recaptchaVerifierRef.current = null;
+        }
+        const freshVerifier = await getOrCreateRecaptchaVerifier();
+        if (!freshVerifier) throw firstErr;
+        confirmation = await signInWithPhoneNumber(auth, targetPhone, freshVerifier);
+      }
       confirmationRef.current = confirmation;
 
       setStep('otp_challenge');
@@ -121,6 +134,8 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
         friendlyError = 'Invalid destination phone number configuration.';
       } else if (err.code === 'auth/quota-exceeded') {
         friendlyError = 'SMS verification quota exceeded. Please try again later.';
+      } else if (err.code === 'auth/internal-error') {
+        friendlyError = 'Security verification handshake error. Please check your connection and tap Resend.';
       } else if (err.message) {
         friendlyError = err.message;
       }
@@ -143,10 +158,6 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
           recaptchaVerifierRef.current.clear();
         } catch (e) {}
         recaptchaVerifierRef.current = null;
-      }
-      const container = document.getElementById('firebase-admin-recaptcha-container');
-      if (container) {
-        container.remove();
       }
     };
   }, []);
