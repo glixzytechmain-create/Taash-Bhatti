@@ -48,6 +48,7 @@ import {
   Trash2,
   Gamepad2,
   Ticket,
+  Compass,
 } from 'lucide-react';
 import { User, Order, FAQ, SubscriptionPlan, Meal, SupportTicket, ChatMessage, OrderDeliveryRating, Kitchen, MealReview } from '../types';
 import { FAQS_DATA, SUBSCRIPTIONS_DATA } from '../data';
@@ -370,6 +371,7 @@ interface AccountTabProps {
   onOpenLegal?: (tab: 'terms' | 'privacy') => void;
   onOpenPushTester?: () => void;
   onApplyReward?: (couponCode: string) => void;
+  onStartTour?: () => void;
 }
 
 
@@ -395,6 +397,7 @@ export default function AccountTab({
   onOpenLegal,
   onOpenPushTester,
   onApplyReward,
+  onStartTour,
 }: AccountTabProps) {
   // Navigation inside Account screen
   const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet' | 'rewards'>('profile');
@@ -2989,6 +2992,34 @@ export default function AccountTab({
               </div>
             )}
           </div>
+
+          {/* BASIC APP WALKTHROUGH & TUTORIAL REPLAY BUTTON */}
+          {onStartTour && (
+            <div className="pt-2">
+              <button
+                type="button"
+                id="profile-replay-tour-btn"
+                onClick={onStartTour}
+                className="w-full p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-brand-orange/10 to-amber-500/10 hover:from-amber-500/20 hover:to-brand-orange/20 border-2 border-dashed border-amber-400/60 text-brand-charcoal font-black text-xs flex items-center justify-between transition-all cursor-pointer shadow-xs group active:scale-98"
+              >
+                <div className="flex items-center gap-3 text-left">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-orange to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0">
+                    <Compass className="w-5 h-5 text-white animate-spin" style={{ animationDuration: '8s' }} />
+                  </div>
+                  <div>
+                    <div className="font-black text-xs text-brand-charcoal flex items-center gap-1.5">
+                      <span>Interactive App Tour & Tutorial</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 font-black text-[9px] uppercase tracking-wider">Guide</span>
+                    </div>
+                    <div className="text-[10px] text-brand-charcoal/60 font-semibold mt-0.5">
+                      Replay the step-by-step walkthrough of Menu, Deals, Cart, Coupons & Ordering anytime
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-brand-orange group-hover:translate-x-1 transition-transform shrink-0" />
+              </button>
+            </div>
+          )}
 
         </div>
       )}

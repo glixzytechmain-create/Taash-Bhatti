@@ -1066,23 +1066,37 @@ export default function App() {
   // - Highlights buttons one-by-one with live in-app navigation
   // - ONLY for unauthenticated guests (!authChecking && !fbUser && !auth.currentUser)
   // - ONLY in customer gateway (!is404Route)
-  // - Testing mode: Does not lock with localStorage until green signal!
+  // - Automatically triggers ONCE per device (persisted in localStorage under 'tb_guided_tour_completed_v1')
+  // - Replayable anytime via the Account/Profile tab
   useEffect(() => {
     if (authChecking) return;
     if (currentGateway !== 'customer') return;
     if (is404Route) return;
     if (fbUser || auth.currentUser) return; // Strictly non-authenticated users only
 
-    const timer = setTimeout(() => {
-      if (!auth.currentUser && !fbUser) {
-        setShowFirstTimeTour(true);
+    try {
+      if (typeof window !== 'undefined') {
+        const hasSeenTour = localStorage.getItem('tb_guided_tour_completed_v1');
+        if (!hasSeenTour) {
+          const timer = setTimeout(() => {
+            if (!auth.currentUser && !fbUser) {
+              setShowFirstTimeTour(true);
+            }
+          }, 1800);
+          return () => clearTimeout(timer);
+        }
       }
-    }, 1800);
-    return () => clearTimeout(timer);
+    } catch (e) {}
   }, [authChecking, fbUser, currentGateway, is404Route]);
 
   const handleDismissFirstTimeTour = () => {
     setShowFirstTimeTour(false);
+    setCartOpen(false);
+    setActiveTab('home');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      localStorage.setItem('tb_guided_tour_completed_v1', 'true');
+    } catch (e) {}
   };
 
   const handleEnsureCartDemoItem = () => {
@@ -3162,6 +3176,7 @@ export default function App() {
             onOpenLegal={handleOpenLegal}
             onOpenPushTester={() => setShowPushTester(true)}
             onApplyReward={handleApplyRewardToCart}
+            onStartTour={() => setShowFirstTimeTour(true)}
           />
         )}
 
@@ -3668,19 +3683,6 @@ export default function App() {
             handleApplyRewardToCart(couponCode);
           }}
         />
-      )}
-
-      {/* FLOATING TOUR TRIGGER (FOR EASY REPEAT TESTING) */}
-      {!showFirstTimeTour && !fbUser && currentGateway === 'customer' && !is404Route && (
-        <button
-          type="button"
-          onClick={() => setShowFirstTimeTour(true)}
-          className="fixed bottom-20 left-4 z-30 px-3.5 py-2 rounded-2xl bg-stone-900/95 hover:bg-black text-amber-300 border-2 border-amber-400/60 text-xs font-black tracking-wide shadow-2xl flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-md"
-          title="Restart Interactive Tour"
-        >
-          <span className="text-sm">🧭</span>
-          <span>Take Tour</span>
-        </button>
       )}
 
       {/* INTERACTIVE SPOTLIGHT APP TOUR (BUTTON-BY-BUTTON LIVE DEMO) */}
