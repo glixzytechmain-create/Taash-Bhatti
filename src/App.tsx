@@ -59,6 +59,7 @@ import IdentityVerificationModal from './components/IdentityVerificationModal';
 import SupportMailboxModal from './components/SupportMailboxModal';
 import TaashOpeningSplash from './components/TaashOpeningSplash';
 import NaanEscape404 from './components/NaanEscape404';
+import FirstTimeAppTour from './components/FirstTimeAppTour';
 import CityGeofenceSelectorModal from './components/CityGeofenceSelectorModal';
 import NotificationPromptModal from './components/NotificationPromptModal';
 import SelectDeliveryAddressModal from './components/SelectDeliveryAddressModal';
@@ -641,6 +642,7 @@ export default function App() {
   });
   const [authChecking, setAuthChecking] = useState<boolean>(true);
   const [showOpeningSplash, setShowOpeningSplash] = useState<boolean>(true);
+  const [showFirstTimeTour, setShowFirstTimeTour] = useState<boolean>(false);
 
   // Onboarding wizard overlay state (Disabled per user request)
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
@@ -1059,6 +1061,38 @@ export default function App() {
       setShowMandatoryPhoneModal(false);
     }
   }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified]);
+
+  // First-Time App Tour Trigger:
+  // - ONLY for unauthenticated guests (!authChecking && !fbUser && !auth.currentUser)
+  // - ONLY in customer gateway (!is404Active)
+  // - Exactly ONCE per device (persisted in localStorage under 'tb_guided_tour_completed_v1')
+  useEffect(() => {
+    if (authChecking) return;
+    if (currentGateway !== 'customer') return;
+    if (is404Active) return;
+    if (fbUser || auth.currentUser) return; // Strictly non-authenticated users only
+
+    try {
+      if (typeof window !== 'undefined') {
+        const hasSeenTour = localStorage.getItem('tb_guided_tour_completed_v1');
+        if (!hasSeenTour) {
+          const timer = setTimeout(() => {
+            if (!auth.currentUser && !fbUser) {
+              setShowFirstTimeTour(true);
+            }
+          }, 2000);
+          return () => clearTimeout(timer);
+        }
+      }
+    } catch (e) {}
+  }, [authChecking, fbUser, currentGateway, is404Active]);
+
+  const handleDismissFirstTimeTour = () => {
+    setShowFirstTimeTour(false);
+    try {
+      localStorage.setItem('tb_guided_tour_completed_v1', 'true');
+    } catch (e) {}
+  };
 
   const handleOnboardingComplete = async (updatedData: Partial<User>) => {
     const nextUser = {
@@ -3635,6 +3669,17 @@ export default function App() {
           }}
         />
       )}
+
+      {/* FIRST-TIME GUIDED APP TOUR (NON-AUTHENTICATED ONLY, ONCE PER DEVICE) */}
+      <FirstTimeAppTour
+        isOpen={showFirstTimeTour}
+        onClose={handleDismissFirstTimeTour}
+        onSelectTab={(tab) => {
+          setActiveTab(tab);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenCart={() => setCartOpen(true)}
+      />
 
     </div>
   );
