@@ -2894,7 +2894,7 @@ export default function CartDrawer({
               )}
 
               {/* COUPON INPUT */}
-              <div className="space-y-1.5">
+              <div id="cart-coupons-section" className="space-y-1.5 scroll-mt-20">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black uppercase text-brand-charcoal/50 tracking-wide flex items-center gap-1">
                     <Tag className="w-3 h-3 text-brand-green" /> 2. Special Offers & Coupons

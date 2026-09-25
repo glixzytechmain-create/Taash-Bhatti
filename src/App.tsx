@@ -1062,36 +1062,36 @@ export default function App() {
     }
   }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified]);
 
-  // First-Time App Tour Trigger:
+  // Interactive Guided App Tour:
+  // - Highlights buttons one-by-one with live in-app navigation
   // - ONLY for unauthenticated guests (!authChecking && !fbUser && !auth.currentUser)
   // - ONLY in customer gateway (!is404Route)
-  // - Exactly ONCE per device (persisted in localStorage under 'tb_guided_tour_completed_v1')
+  // - Testing mode: Does not lock with localStorage until green signal!
   useEffect(() => {
     if (authChecking) return;
     if (currentGateway !== 'customer') return;
     if (is404Route) return;
     if (fbUser || auth.currentUser) return; // Strictly non-authenticated users only
 
-    try {
-      if (typeof window !== 'undefined') {
-        const hasSeenTour = localStorage.getItem('tb_guided_tour_completed_v1');
-        if (!hasSeenTour) {
-          const timer = setTimeout(() => {
-            if (!auth.currentUser && !fbUser) {
-              setShowFirstTimeTour(true);
-            }
-          }, 2000);
-          return () => clearTimeout(timer);
-        }
+    const timer = setTimeout(() => {
+      if (!auth.currentUser && !fbUser) {
+        setShowFirstTimeTour(true);
       }
-    } catch (e) {}
+    }, 1800);
+    return () => clearTimeout(timer);
   }, [authChecking, fbUser, currentGateway, is404Route]);
 
   const handleDismissFirstTimeTour = () => {
     setShowFirstTimeTour(false);
-    try {
-      localStorage.setItem('tb_guided_tour_completed_v1', 'true');
-    } catch (e) {}
+  };
+
+  const handleEnsureCartDemoItem = () => {
+    if (cart.length === 0 && meals.length > 0) {
+      const demoMeal = meals.find((m) => m.name.toLowerCase().includes('handi') || m.name.toLowerCase().includes('dal')) || meals[0];
+      if (demoMeal) {
+        setCart([{ meal: demoMeal, quantity: 1 }]);
+      }
+    }
   };
 
   const handleOnboardingComplete = async (updatedData: Partial<User>) => {
@@ -3670,7 +3670,20 @@ export default function App() {
         />
       )}
 
-      {/* FIRST-TIME GUIDED APP TOUR (NON-AUTHENTICATED ONLY, ONCE PER DEVICE) */}
+      {/* FLOATING TOUR TRIGGER (FOR EASY REPEAT TESTING) */}
+      {!showFirstTimeTour && !fbUser && currentGateway === 'customer' && !is404Route && (
+        <button
+          type="button"
+          onClick={() => setShowFirstTimeTour(true)}
+          className="fixed bottom-20 left-4 z-30 px-3.5 py-2 rounded-2xl bg-stone-900/95 hover:bg-black text-amber-300 border-2 border-amber-400/60 text-xs font-black tracking-wide shadow-2xl flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-md"
+          title="Restart Interactive Tour"
+        >
+          <span className="text-sm">🧭</span>
+          <span>Take Tour</span>
+        </button>
+      )}
+
+      {/* INTERACTIVE SPOTLIGHT APP TOUR (BUTTON-BY-BUTTON LIVE DEMO) */}
       <FirstTimeAppTour
         isOpen={showFirstTimeTour}
         onClose={handleDismissFirstTimeTour}
@@ -3679,6 +3692,10 @@ export default function App() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenCart={() => setCartOpen(true)}
+        onCloseCart={() => setCartOpen(false)}
+        isCartOpen={cartOpen}
+        cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
+        onEnsureCartDemoItem={handleEnsureCartDemoItem}
       />
 
     </div>
