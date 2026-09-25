@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Layout, 
   ArrowLeft, 
@@ -84,11 +84,16 @@ import {
   Gamepad2,
   QrCode,
   Download,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import InAppDeliveryMap from './InAppDeliveryMap';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 import { ImageUploader } from './ImageUploader';
+import { VideoUploader, DEFAULT_FOOD_VIDEO_PRESETS } from './VideoUploader';
+import { processVideoFile } from '../lib/videoUpload';
+import { compressImageFile } from '../lib/imageUpload';
 import { DeveloperMenuModal } from './DeveloperMenuModal';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from '../lib/featureFlags';
 import { AppFeatureFlags, SmartCoupon, SmartCouponCriteria, DayOfWeek } from '../types';
@@ -1171,6 +1176,8 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [newGalleryUrl, setNewGalleryUrl] = useState('');
   const [newGalleryType, setNewGalleryType] = useState<'image' | 'video'>('image');
   const [newGalleryCaption, setNewGalleryCaption] = useState('');
+  const lineupFileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingLineup, setIsProcessingLineup] = useState(false);
   const [formPrice, setFormPrice] = useState(300);
   const [formCalories, setFormCalories] = useState(400);
   const [formProtein, setFormProtein] = useState(30);
@@ -1828,6 +1835,35 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
 
   const handleRemoveGalleryItem = (index: number) => {
     setFormGallery((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleLineupFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    setIsProcessingLineup(true);
+    try {
+      if (file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mov)$/i)) {
+        setNewGalleryType('video');
+        const res = await processVideoFile(file);
+        setNewGalleryUrl(res.dataUrl);
+        if (!newGalleryCaption.trim()) {
+          setNewGalleryCaption(file.name.replace(/\.[^/.]+$/, ''));
+        }
+      } else {
+        setNewGalleryType('image');
+        const dataUrl = await compressImageFile(file, 800);
+        setNewGalleryUrl(dataUrl);
+        if (!newGalleryCaption.trim()) {
+          setNewGalleryCaption(file.name.replace(/\.[^/.]+$/, ''));
+        }
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to process file');
+    } finally {
+      setIsProcessingLineup(false);
+      e.target.value = '';
+    }
   };
 
   // Save Meal (Add or Update)
@@ -12066,36 +12102,17 @@ Free express delivery directly to trainer desks"
                           </div>
                         </div>
 
-                        {/* Looping Video URL & Preset Chips */}
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">
-                            Looping Dish Video URL (.mp4 / .webm)
-                          </label>
-                          <input
-                            type="url"
-                            value={formVideo}
-                            onChange={(e) => setFormVideo(e.target.value)}
-                            placeholder="https://assets.mixkit.co/.../dish-sizzle.mp4"
-                            className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-mono"
-                          />
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                            <span className="text-[9px] text-gray-500 uppercase font-mono">Video Presets:</span>
-                            {[
-                              { name: '🔥 Sizzling Vegetables & Paneer', url: 'https://assets.mixkit.co/videos/preview/mixkit-vegetables-sizzling-in-a-pan-43097-large.mp4' },
-                              { name: '🍗 Tandoori Chicken Grill', url: 'https://assets.mixkit.co/videos/preview/mixkit-chicken-meat-cooked-in-pan-43099-large.mp4' },
-                              { name: '🍲 Slow-Cooked Handi Gravy', url: 'https://assets.mixkit.co/videos/preview/mixkit-fresh-spicy-food-dish-slow-cooked-in-pan-43098-large.mp4' }
-                            ].map((preset) => (
-                              <button
-                                key={preset.name}
-                                type="button"
-                                onClick={() => setFormVideo(preset.url)}
-                                className="text-[9px] bg-brand-charcoal hover:bg-[#242F3C] text-gray-300 px-2 py-0.5 rounded-md border border-white/10 cursor-pointer"
-                              >
-                                {preset.name}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                        {/* Looping Video - Upload from Device or Paste URL / Presets */}
+                        <VideoUploader
+                          value={formVideo}
+                          onChange={(val) => {
+                            setFormVideo(val);
+                            if (val && formShowcaseMediaType !== 'video') {
+                              setFormShowcaseMediaType('video');
+                            }
+                          }}
+                          label="Looping Dish Video (Upload from Device or Paste URL)"
+                        />
 
                         {/* Dual Controls: Card Showcase Media & Aspect Ratio Selection */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -12111,22 +12128,23 @@ Free express delivery directly to trainer desks"
                                 className={`py-2 px-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
                                   formShowcaseMediaType === 'image'
                                     ? 'bg-brand-green/20 text-brand-green border-brand-green font-black shadow-xs'
-                                    : 'bg-brand-charcoal text-gray-400 border-white/10'
+                                    : 'bg-brand-charcoal text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
                                 }`}
                               >
                                 <span>📷 Photo</span>
                               </button>
                               <button
                                 type="button"
-                                disabled={!formVideo.trim()}
-                                onClick={() => formVideo.trim() && setFormShowcaseMediaType('video')}
-                                title={!formVideo.trim() ? 'Add a video URL above first' : ''}
-                                className={`py-2 px-2 text-[11px] font-bold rounded-lg border transition-all text-center flex items-center justify-center gap-1 ${
-                                  !formVideo.trim()
-                                    ? 'opacity-40 cursor-not-allowed bg-brand-charcoal text-gray-600 border-white/5'
-                                    : formShowcaseMediaType === 'video'
-                                    ? 'bg-brand-orange/20 text-brand-orange border-brand-orange font-black shadow-xs cursor-pointer'
-                                    : 'bg-brand-charcoal text-gray-400 border-white/10 cursor-pointer'
+                                onClick={() => {
+                                  setFormShowcaseMediaType('video');
+                                  if (!formVideo.trim()) {
+                                    setFormVideo(DEFAULT_FOOD_VIDEO_PRESETS[0].url);
+                                  }
+                                }}
+                                className={`py-2 px-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
+                                  formShowcaseMediaType === 'video'
+                                    ? 'bg-brand-orange/20 text-brand-orange border-brand-orange font-black shadow-xs'
+                                    : 'bg-brand-charcoal text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
                                 }`}
                               >
                                 <span>🎥 Looping Video</span>
@@ -12286,9 +12304,34 @@ Free express delivery directly to trainer desks"
 
                           {/* Add New Lineup Item Row */}
                           <div className="bg-brand-charcoal/50 p-2.5 rounded-xl border border-white/5 space-y-2">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase block">
-                              + Add Photo or Video to Lineup
-                            </span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] font-bold text-gray-400 uppercase block">
+                                + Add Photo or Video to Lineup
+                              </span>
+                              <input
+                                type="file"
+                                ref={lineupFileInputRef}
+                                accept="image/*,video/mp4,video/webm,video/quicktime,video/*"
+                                className="hidden"
+                                onChange={handleLineupFileChange}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => lineupFileInputRef.current?.click()}
+                                disabled={isProcessingLineup}
+                                className="text-[10px] font-bold text-brand-green hover:underline cursor-pointer bg-transparent border-none p-0 flex items-center gap-1 disabled:opacity-50"
+                              >
+                                {isProcessingLineup ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 animate-spin" /> Processing Media...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Upload className="w-3 h-3" /> Upload File from Device
+                                  </>
+                                )}
+                              </button>
+                            </div>
                             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                               <div className="sm:col-span-3">
                                 <select
@@ -12302,10 +12345,10 @@ Free express delivery directly to trainer desks"
                               </div>
                               <div className="sm:col-span-5">
                                 <input
-                                  type="url"
+                                  type="text"
                                   value={newGalleryUrl}
                                   onChange={(e) => setNewGalleryUrl(e.target.value)}
-                                  placeholder="Media URL https://..."
+                                  placeholder="Media URL or click upload above"
                                   className="w-full bg-[#141A22] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 font-mono"
                                 />
                               </div>
@@ -14678,36 +14721,11 @@ Free express delivery directly to trainer desks"
                                 <span className="font-bold">🎬 Clean Video Billboard Mode:</span> As requested, video billboards run on a continuous silent loop without any overlay buttons or tags. A single tap anywhere on the video directly opens the assigned redirect link!
                               </div>
 
-                              <div>
-                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Looping Video URL (.mp4 / .webm) *</label>
-                                <input
-                                  type="url"
-                                  required={bannerMediaType === 'video'}
-                                  value={bannerVideoUrl}
-                                  onChange={(e) => setBannerVideoUrl(e.target.value)}
-                                  placeholder="https://assets.mixkit.co/.../video.mp4"
-                                  className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-mono"
-                                />
-                              </div>
-
-                              {/* Looping Food Video Preset Chips */}
-                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                                <span className="text-[9px] text-gray-500 uppercase font-mono">Video Presets:</span>
-                                {[
-                                  { name: '🔥 Sizzling Vegetables & Paneer', url: 'https://assets.mixkit.co/videos/preview/mixkit-vegetables-sizzling-in-a-pan-43097-large.mp4' },
-                                  { name: '🍗 Tandoori Chicken Grill', url: 'https://assets.mixkit.co/videos/preview/mixkit-chicken-meat-cooked-in-pan-43099-large.mp4' },
-                                  { name: '🍲 Slow-Cooked Handi Gravy', url: 'https://assets.mixkit.co/videos/preview/mixkit-fresh-spicy-food-dish-slow-cooked-in-pan-43098-large.mp4' }
-                                ].map((preset) => (
-                                  <button
-                                    key={preset.name}
-                                    type="button"
-                                    onClick={() => setBannerVideoUrl(preset.url)}
-                                    className="text-[9px] bg-[#141A22] hover:bg-[#242F3C] text-gray-300 px-2 py-0.5 rounded-md border border-white/10 cursor-pointer"
-                                  >
-                                    {preset.name}
-                                  </button>
-                                ))}
-                              </div>
+                              <VideoUploader
+                                value={bannerVideoUrl}
+                                onChange={setBannerVideoUrl}
+                                label="Looping Video (Upload from Device or Paste URL)"
+                              />
 
                               {/* Aspect Ratio selector */}
                               <div className="pt-1">
@@ -14733,34 +14751,13 @@ Free express delivery directly to trainer desks"
                                   ))}
                                 </div>
                               </div>
-
-                              {/* Live video preview */}
-                              {bannerVideoUrl && (
-                                <div className="rounded-xl overflow-hidden border border-brand-orange/30 aspect-video max-h-36 bg-black relative">
-                                  <video
-                                    src={bannerVideoUrl}
-                                    autoPlay
-                                    loop
-                                    muted
-                                    playsInline
-                                    className="w-full h-full object-cover pointer-events-none"
-                                  />
-                                  <div className="absolute top-2 left-2 bg-black/70 text-white text-[9px] font-mono px-2 py-0.5 rounded-full border border-white/20">
-                                    🎥 LIVE VIDEO PREVIEW (CLICK OPENS ASSIGNED LINK)
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           ) : (
                             <div className="mt-3 space-y-2 pt-2 border-t border-white/10">
-                              <label className="text-[10px] font-bold text-gray-400 uppercase block">Banner Image URL</label>
-                              <input
-                                type="url"
-                                required={bannerMediaType === 'image'}
+                              <ImageUploader
                                 value={bannerImage}
-                                onChange={(e) => setBannerImage(e.target.value)}
-                                placeholder="https://images.unsplash.com/..."
-                                className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-mono"
+                                onChange={setBannerImage}
+                                label="Billboard Banner Image"
                               />
                               {/* Image Preset Chips */}
                               <div className="flex flex-wrap items-center gap-1.5 pt-0.5">

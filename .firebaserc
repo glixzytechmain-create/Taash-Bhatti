@@ -1,1 +1,15 @@
-{"projects":{"default":"taash-bhatti"}}
+{
+  "projects": {
+    "default": "taash-bhatti"
+  },
+  "targets": {
+    "taash-bhatti": {
+      "hosting": {
+        "taash-bhatti": [
+          "taash-bhatti"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
