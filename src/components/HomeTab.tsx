@@ -404,77 +404,121 @@ export default function HomeTab({
                   onClick={() => handleBannerClick(activeBanner)}
                   className="absolute inset-0 cursor-pointer p-5 flex flex-col justify-between"
                 >
-                  {/* Background Image Overlay */}
-                  {activeBanner.image && (
-                    <div className="absolute inset-0 z-0">
-                      <img
-                        src={activeBanner.image}
-                        alt={activeBanner.title}
-                        className="w-full h-full object-cover opacity-35 group-hover:scale-105 transition-transform duration-700"
-                        referrerPolicy="no-referrer"
+                  {/* Clean Video Billboard Mode: Full surface clickable, zero buttons or tags */}
+                  {activeBanner.videoUrl && (activeBanner.mediaType === 'video' || !activeBanner.image) ? (
+                    <div className="absolute inset-0 z-0 overflow-hidden">
+                      <video
+                        src={activeBanner.videoUrl}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-700"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-brand-charcoal via-brand-charcoal/80 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20 pointer-events-none" />
+
+                      {/* Minimal Slide Counter & Arrow Controls in Corner */}
+                      <div 
+                        className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5" 
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-[9px] font-mono text-white/90 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/15">
+                          {currentBannerIndex + 1}/{banners.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentBannerIndex((prev) => (prev - 1 + banners.length) % banners.length)}
+                          className="w-6 h-6 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center border border-white/15 transition-all cursor-pointer"
+                          aria-label="Previous banner"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentBannerIndex((prev) => (prev + 1) % banners.length)}
+                          className="w-6 h-6 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center border border-white/15 transition-all cursor-pointer"
+                          aria-label="Next banner"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      {/* Standard Image Banner with Content Overlay */}
+                      {activeBanner.image && (
+                        <div className="absolute inset-0 z-0">
+                          <img
+                            src={activeBanner.image}
+                            alt={activeBanner.title}
+                            className="w-full h-full object-cover opacity-35 group-hover:scale-105 transition-transform duration-700"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-brand-charcoal via-brand-charcoal/80 to-transparent" />
+                        </div>
+                      )}
+
+                      {/* Header Badge & Transition Timer Indicator */}
+                      <div className="relative z-10 flex items-center justify-between">
+                        <span className="bg-brand-orange text-white font-black text-[10px] uppercase px-3 py-1 rounded-full shadow-md tracking-wider flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3" />
+                          {activeBanner.badge || 'PROMOTION'}
+                        </span>
+
+                        <span className="text-[9px] font-mono text-gray-300 bg-black/60 backdrop-blur-md px-2 py-1 rounded-md border border-white/10 flex items-center gap-1">
+                          <Timer className="w-3 h-3 text-brand-orange" />
+                          {currentBannerIndex + 1}/{banners.length}
+                        </span>
+                      </div>
+
+                      {/* Banner Content Body */}
+                      <div className="relative z-10 space-y-1.5 my-auto pt-4">
+                        <h3 className="text-lg sm:text-xl font-black text-amber-300 leading-tight drop-shadow-md">
+                          {activeBanner.title}
+                        </h3>
+                        <p className="text-xs text-gray-200 line-clamp-2 leading-relaxed font-medium">
+                          {activeBanner.subtitle}
+                        </p>
+                      </div>
+
+                      {/* Footer CTA & Direct Redirection */}
+                      <div className="relative z-10 pt-3 border-t border-white/15 flex items-center justify-between">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleBannerClick(activeBanner);
+                          }}
+                          className="px-4 py-2 bg-brand-orange hover:bg-brand-orange/90 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5 group-hover:scale-105"
+                        >
+                          <span>{activeBanner.buttonText || 'Explore Now ➜'}</span>
+                          {activeBanner.linkUrl?.startsWith('http') && <ExternalLink className="w-3 h-3" />}
+                        </button>
+
+                        {/* Manual Navigation Controls */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCurrentBannerIndex((prev) => (prev - 1 + banners.length) % banners.length);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-white/15 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-white/15 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </>
                   )}
-
-                  {/* Header Badge & Transition Timer Indicator */}
-                  <div className="relative z-10 flex items-center justify-between">
-                    <span className="bg-brand-orange text-white font-black text-[10px] uppercase px-3 py-1 rounded-full shadow-md tracking-wider flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3" />
-                      {activeBanner.badge || 'PROMOTION'}
-                    </span>
-
-                    <span className="text-[9px] font-mono text-gray-300 bg-black/60 backdrop-blur-md px-2 py-1 rounded-md border border-white/10 flex items-center gap-1">
-                      <Timer className="w-3 h-3 text-brand-orange" />
-                      {currentBannerIndex + 1}/{banners.length}
-                    </span>
-                  </div>
-
-                  {/* Banner Content Body */}
-                  <div className="relative z-10 space-y-1.5 my-auto pt-4">
-                    <h3 className="text-lg sm:text-xl font-black text-amber-300 leading-tight drop-shadow-md">
-                      {activeBanner.title}
-                    </h3>
-                    <p className="text-xs text-gray-200 line-clamp-2 leading-relaxed font-medium">
-                      {activeBanner.subtitle}
-                    </p>
-                  </div>
-
-                  {/* Footer CTA & Direct Redirection */}
-                  <div className="relative z-10 pt-3 border-t border-white/15 flex items-center justify-between">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleBannerClick(activeBanner);
-                      }}
-                      className="px-4 py-2 bg-brand-orange hover:bg-brand-orange/90 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5 group-hover:scale-105"
-                    >
-                      <span>{activeBanner.buttonText || 'Explore Now ➜'}</span>
-                      {activeBanner.linkUrl?.startsWith('http') && <ExternalLink className="w-3 h-3" />}
-                    </button>
-
-                    {/* Manual Navigation Controls */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentBannerIndex((prev) => (prev - 1 + banners.length) % banners.length);
-                        }}
-                        className="w-7 h-7 rounded-lg bg-white/15 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
-                        }}
-                        className="w-7 h-7 rounded-lg bg-white/15 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
                 </motion.div>
               </AnimatePresence>
 
@@ -630,12 +674,32 @@ export default function HomeTab({
               className="w-72 sm:w-80 bg-white rounded-3xl border border-brand-green/15 p-4 shadow-sm hover:shadow-xl transition-all shrink-0 snap-start flex flex-col justify-between space-y-3 relative group"
             >
               <div className="relative rounded-2xl overflow-hidden h-44 border border-brand-green/10">
-                <img
-                  src={meal.image}
-                  alt={meal.name}
-                  className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${meal.isAvailable === false ? 'grayscale contrast-75 opacity-70' : ''}`}
-                  referrerPolicy="no-referrer"
-                />
+                {meal.showcaseMediaType === 'video' && meal.video ? (
+                  <video
+                    src={meal.video}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500"
+                  />
+                ) : (
+                  <img
+                    src={meal.image}
+                    alt={meal.name}
+                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${meal.isAvailable === false ? 'grayscale contrast-75 opacity-70' : ''}`}
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+
+                {/* Multi-Media Lineup Count Badge */}
+                {meal.gallery && meal.gallery.length > 1 && (
+                  <div className="absolute bottom-3 right-3 bg-black/75 backdrop-blur-xs text-white text-[9px] font-black px-2 py-0.5 rounded-full border border-white/20 flex items-center gap-1 shadow-md z-10">
+                    <span>{meal.video ? '🎥' : '📷'}</span>
+                    <span>{meal.gallery.length}</span>
+                  </div>
+                )}
 
                 {meal.rating && meal.rating > 0 && meal.reviewsCount && meal.reviewsCount > 0 ? (
                   <button

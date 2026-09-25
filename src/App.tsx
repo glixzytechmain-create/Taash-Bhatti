@@ -69,6 +69,7 @@ import TapFeedbackEffect from './components/TapFeedbackEffect';
 import FloatingDeliveredRateBubble from './components/FloatingDeliveredRateBubble';
 import DeliveredOrderRatingModal from './components/DeliveredOrderRatingModal';
 import MealReviewsSection from './components/MealReviewsSection';
+import DishMediaGalleryViewer from './components/DishMediaGalleryViewer';
 import DeliverableOrderTracker from './components/DeliverableOrderTracker';
 import GroupOrderRoomView from './components/GroupOrderRoomView';
 import GroupOrderFloatingBubble from './components/GroupOrderFloatingBubble';
@@ -3252,26 +3253,19 @@ export default function App() {
       {activeQuickViewMeal && (
         <div className="fixed inset-0 z-50 bg-brand-charcoal/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-[32px] sm:rounded-3xl overflow-hidden shadow-2xl border-t border-brand-green/10 flex flex-col max-h-[90vh]">
-            <div className="relative h-56 shrink-0">
-              <img
-                src={activeQuickViewMeal.image}
-                alt={activeQuickViewMeal.name}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-              <button
-                onClick={() => setActiveQuickViewMeal(null)}
-                className="absolute top-4 right-4 p-2.5 rounded-full bg-brand-charcoal/80 text-white hover:bg-brand-charcoal transition-all"
-              >
-                ✕
-              </button>
-
-              {activeQuickViewMeal.rating && activeQuickViewMeal.rating > 0 ? (
-                <div className="absolute bottom-4 left-4 bg-brand-charcoal/90 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md">
-                  ★ {activeQuickViewMeal.rating.toFixed(1)} Rating
-                </div>
-              ) : null}
-            </div>
+            {/* Interactive Multi-Media Lineup Header (Videos + Photos) */}
+            <DishMediaGalleryViewer
+              meal={activeQuickViewMeal}
+              onClose={() => setActiveQuickViewMeal(null)}
+              showCloseButton={true}
+              bottomLeftBadge={
+                activeQuickViewMeal.rating && activeQuickViewMeal.rating > 0 ? (
+                  <div className="bg-brand-charcoal/90 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-white/10">
+                    ★ {activeQuickViewMeal.rating.toFixed(1)} Rating
+                  </div>
+                ) : null
+              }
+            />
 
             <div className="p-6 overflow-y-auto space-y-4">
               <div>

@@ -30,6 +30,7 @@ import { MEALS_DATA } from '../data';
 import MealReviewsSection from './MealReviewsSection';
 import GoesWellWithExtension from './GoesWellWithExtension';
 import CartQuantityButton from './CartQuantityButton';
+import DishMediaGalleryViewer from './DishMediaGalleryViewer';
 
 interface FlyingCardAnimation {
   id: string;
@@ -572,14 +573,41 @@ export default function MenuTab({
                 className="meal-card-container bg-white rounded-3xl border border-brand-green/10 p-3.5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group/card relative"
               >
                 <div>
-                  {/* Photo area */}
-                  <div className="relative rounded-2xl overflow-hidden h-44 mb-3">
-                    <img
-                      src={meal.image}
-                      alt={meal.name}
-                      className={`w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-105 ${soldOutInfo.isSoldOut ? 'grayscale contrast-75 opacity-70' : ''}`}
-                      referrerPolicy="no-referrer"
-                    />
+                  {/* Photo / Looping Video area */}
+                  <div
+                    onClick={() => setSelectedQuickView(meal)}
+                    className="relative rounded-2xl overflow-hidden h-44 mb-3 cursor-pointer group/media"
+                  >
+                    {meal.showcaseMediaType === 'video' && meal.video ? (
+                      <video
+                        src={meal.video}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className={`w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover/card:scale-105 ${
+                          meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                        } ${soldOutInfo.isSoldOut ? 'grayscale contrast-75 opacity-70' : ''}`}
+                      />
+                    ) : (
+                      <img
+                        src={meal.image}
+                        alt={meal.name}
+                        className={`w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-105 ${
+                          meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                        } ${soldOutInfo.isSoldOut ? 'grayscale contrast-75 opacity-70' : ''}`}
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+
+                    {/* Multi-Media Lineup Count Badge */}
+                    {meal.gallery && meal.gallery.length > 1 && (
+                      <div className="absolute bottom-2.5 right-2.5 bg-black/75 backdrop-blur-xs text-white text-[9px] font-black px-2 py-0.5 rounded-full border border-white/20 flex items-center gap-1 shadow-md z-10 pointer-events-none">
+                        <span>{meal.video ? '🎥' : '📷'}</span>
+                        <span>{meal.gallery.length}</span>
+                      </div>
+                    )}
 
                     {/* Left top: Rating (STRICTLY ONLY shown when dish has been rated with reviews) */}
                     {meal.rating && meal.rating > 0 && meal.reviewsCount && meal.reviewsCount > 0 ? (
@@ -785,42 +813,34 @@ export default function MenuTab({
         <div className="fixed inset-0 z-50 bg-brand-charcoal/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-[32px] sm:rounded-3xl overflow-hidden shadow-2xl border-t border-brand-green/10 flex flex-col max-h-[90vh]">
             
-            {/* Hero Photo header */}
-            <div className="relative h-56 shrink-0">
-              <img
-                src={selectedQuickView.image}
-                alt={selectedQuickView.name}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-              <button
-                onClick={() => setSelectedQuickView(null)}
-                className="absolute top-4 right-4 p-2.5 rounded-full bg-brand-charcoal/80 text-white hover:bg-brand-charcoal transition-all cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              {selectedQuickView.rating && selectedQuickView.rating > 0 && selectedQuickView.reviewsCount && selectedQuickView.reviewsCount > 0 ? (
-                <div className="absolute bottom-4 left-4 bg-brand-charcoal/90 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md">
-                  <Star className="w-3.5 h-3.5 text-brand-orange fill-brand-orange" />
-                  {selectedQuickView.rating.toFixed(1)} ({selectedQuickView.reviewsCount} {selectedQuickView.reviewsCount === 1 ? 'review' : 'reviews'})
-                </div>
-              ) : null}
-
-              {/* Deal to Deck on Quick View */}
-              <button
-                type="button"
-                onClick={(e) => handleDealToDeck(e, selectedQuickView)}
-                className={`absolute bottom-4 right-4 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-                  likedMeals.includes(selectedQuickView.id)
-                    ? 'bg-amber-500 text-white border-amber-300'
-                    : 'bg-white/90 text-brand-charcoal border-white/60 hover:bg-white'
-                }`}
-              >
-                <span>🃏</span>
-                <span>{likedMeals.includes(selectedQuickView.id) ? 'In My Deck' : 'Add to Deck'}</span>
-              </button>
-            </div>
+            {/* Interactive Multi-Media Lineup Header (Videos + Photos) */}
+            <DishMediaGalleryViewer
+              meal={selectedQuickView}
+              onClose={() => setSelectedQuickView(null)}
+              showCloseButton={true}
+              bottomLeftBadge={
+                selectedQuickView.rating && selectedQuickView.rating > 0 && selectedQuickView.reviewsCount && selectedQuickView.reviewsCount > 0 ? (
+                  <div className="bg-brand-charcoal/90 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-white/10">
+                    <Star className="w-3.5 h-3.5 text-brand-orange fill-brand-orange" />
+                    {selectedQuickView.rating.toFixed(1)} ({selectedQuickView.reviewsCount} {selectedQuickView.reviewsCount === 1 ? 'review' : 'reviews'})
+                  </div>
+                ) : null
+              }
+              bottomRightAction={
+                <button
+                  type="button"
+                  onClick={(e) => handleDealToDeck(e, selectedQuickView)}
+                  className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase flex items-center gap-1.5 shadow-md transition-all cursor-pointer backdrop-blur-md active:scale-95 ${
+                    likedMeals.includes(selectedQuickView.id)
+                      ? 'bg-amber-500 text-white border-amber-300'
+                      : 'bg-white/90 text-brand-charcoal border-white/60 hover:bg-white'
+                  }`}
+                >
+                  <span>🃏</span>
+                  <span>{likedMeals.includes(selectedQuickView.id) ? 'In My Deck' : 'Add to Deck'}</span>
+                </button>
+              }
+            />
 
             {/* Scrollable details container */}
             <div className="p-6 overflow-y-auto space-y-4">

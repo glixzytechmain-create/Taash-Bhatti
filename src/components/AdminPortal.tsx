@@ -109,7 +109,7 @@ function getSecondaryAuth() {
   }
   return getAuth(secondaryApp);
 }
-import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, DEFAULT_SERVICE_BELLS } from '../types';
+import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, DEFAULT_SERVICE_BELLS, MealMediaItem } from '../types';
 import { MEALS_DATA, GYMS_DATA, INITIAL_DELIVERY_PARTNERS, DEFAULT_HERO_BANNERS } from '../data';
 import AdminDealsManager from './AdminDealsManager';
 import AdminLegalManager from './AdminLegalManager';
@@ -699,6 +699,9 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [bannerSubtitle, setBannerSubtitle] = useState<string>('');
   const [bannerBadge, setBannerBadge] = useState<string>('🔥 SPECIAL PROMO');
   const [bannerImage, setBannerImage] = useState<string>('');
+  const [bannerMediaType, setBannerMediaType] = useState<'image' | 'video'>('image');
+  const [bannerVideoUrl, setBannerVideoUrl] = useState<string>('');
+  const [bannerAspectRatio, setBannerAspectRatio] = useState<'16:9' | '21:9' | 'auto'>('16:9');
   const [bannerLinkUrl, setBannerLinkUrl] = useState<string>('menu');
   const [bannerButtonText, setBannerButtonText] = useState<string>('Explore Now ➜');
   const [bannerIsActive, setBannerIsActive] = useState<boolean>(true);
@@ -1160,6 +1163,14 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formImage, setFormImage] = useState('');
+  const [formVideo, setFormVideo] = useState('');
+  const [formShowcaseMediaType, setFormShowcaseMediaType] = useState<'image' | 'video'>('image');
+  const [formAspectRatio, setFormAspectRatio] = useState<'4:3' | '16:9' | '1:1'>('4:3');
+  const [formFocalPoint, setFormFocalPoint] = useState<'center' | 'top' | 'bottom'>('center');
+  const [formGallery, setFormGallery] = useState<MealMediaItem[]>([]);
+  const [newGalleryUrl, setNewGalleryUrl] = useState('');
+  const [newGalleryType, setNewGalleryType] = useState<'image' | 'video'>('image');
+  const [newGalleryCaption, setNewGalleryCaption] = useState('');
   const [formPrice, setFormPrice] = useState(300);
   const [formCalories, setFormCalories] = useState(400);
   const [formProtein, setFormProtein] = useState(30);
@@ -1739,6 +1750,14 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormName('');
     setFormDescription('');
     setFormImage('');
+    setFormVideo('');
+    setFormShowcaseMediaType('image');
+    setFormAspectRatio('4:3');
+    setFormFocalPoint('center');
+    setFormGallery([]);
+    setNewGalleryUrl('');
+    setNewGalleryType('image');
+    setNewGalleryCaption('');
     setFormPrice(299);
     setFormCalories(450);
     setFormProtein(30);
@@ -1765,6 +1784,14 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormName(meal.name);
     setFormDescription(meal.description);
     setFormImage(meal.image);
+    setFormVideo(meal.video || '');
+    setFormShowcaseMediaType(meal.showcaseMediaType || (meal.video ? 'video' : 'image'));
+    setFormAspectRatio(meal.aspectRatio || '4:3');
+    setFormFocalPoint(meal.focalPoint || 'center');
+    setFormGallery(meal.gallery || []);
+    setNewGalleryUrl('');
+    setNewGalleryType('image');
+    setNewGalleryCaption('');
     setFormPrice(meal.price);
     setFormCalories(meal.calories);
     setFormProtein(meal.protein);
@@ -1783,6 +1810,24 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormGoesWellWith(meal.goesWellWith || []);
     setPairingSearchTerm('');
     setShowFormModal(true);
+  };
+
+  // Meal Gallery Lineup Item Handlers
+  const handleAddGalleryItem = () => {
+    if (!newGalleryUrl.trim()) return;
+    const newItem: MealMediaItem = {
+      id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: newGalleryType,
+      url: newGalleryUrl.trim(),
+      caption: newGalleryCaption.trim() || undefined,
+    };
+    setFormGallery((prev) => [...prev, newItem]);
+    setNewGalleryUrl('');
+    setNewGalleryCaption('');
+  };
+
+  const handleRemoveGalleryItem = (index: number) => {
+    setFormGallery((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Save Meal (Add or Update)
@@ -1809,6 +1854,16 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       name: formName.trim(),
       description: formDescription.trim(),
       image: targetImage,
+      video: formVideo.trim() || undefined,
+      showcaseMediaType: formShowcaseMediaType,
+      aspectRatio: formAspectRatio,
+      focalPoint: formFocalPoint,
+      gallery: formGallery.length > 0 
+        ? formGallery 
+        : (formVideo.trim() ? [
+            { id: `${mealId}-vid`, type: 'video', url: formVideo.trim(), caption: 'Looping Preview' },
+            { id: `${mealId}-img`, type: 'image', url: targetImage, caption: formName.trim() }
+          ] : undefined),
       price: Number(formPrice),
       calories: Number(formCalories),
       protein: Number(formProtein),
@@ -2716,6 +2771,9 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setBannerSubtitle('');
     setBannerBadge('🔥 SPECIAL PROMO');
     setBannerImage('https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop&q=80');
+    setBannerMediaType('image');
+    setBannerVideoUrl('');
+    setBannerAspectRatio('16:9');
     setBannerLinkUrl('menu');
     setBannerButtonText('Explore Special ➜');
     setBannerIsActive(true);
@@ -2729,6 +2787,9 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setBannerSubtitle(banner.subtitle || '');
     setBannerBadge(banner.badge || '');
     setBannerImage(banner.image || '');
+    setBannerMediaType(banner.mediaType || (banner.videoUrl ? 'video' : 'image'));
+    setBannerVideoUrl(banner.videoUrl || '');
+    setBannerAspectRatio(banner.aspectRatio || '16:9');
     setBannerLinkUrl(banner.linkUrl || 'menu');
     setBannerButtonText(banner.buttonText || 'Explore Special ➜');
     setBannerIsActive(banner.isActive !== false);
@@ -2747,6 +2808,9 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       subtitle: bannerSubtitle.trim(),
       badge: bannerBadge.trim(),
       image: bannerImage.trim() || 'https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop&q=80',
+      mediaType: bannerMediaType,
+      videoUrl: bannerVideoUrl.trim() || undefined,
+      aspectRatio: bannerAspectRatio,
       linkUrl: bannerLinkUrl.trim(),
       buttonText: bannerButtonText.trim() || 'Explore Special ➜',
       isActive: bannerIsActive,
@@ -11989,6 +12053,290 @@ Free express delivery directly to trainer desks"
                         </span>
                       </div>
 
+                      {/* Section: Dish Visual Studio (Looping Video + Multi-Image Lineup + Aspect Ratio Framing) */}
+                      <div className="bg-[#141A22] border border-brand-green/20 rounded-2xl p-4 space-y-4">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                          <div>
+                            <span className="text-[9px] font-black uppercase text-brand-orange tracking-wider flex items-center gap-1.5">
+                              🎥 & 📸 DISH VISUAL STUDIO & FRAMING CALIBRATOR
+                            </span>
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              Configure multi-image lineup, silent looping video showcase, and cross-screen aspect ratio calibration.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Looping Video URL & Preset Chips */}
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">
+                            Looping Dish Video URL (.mp4 / .webm)
+                          </label>
+                          <input
+                            type="url"
+                            value={formVideo}
+                            onChange={(e) => setFormVideo(e.target.value)}
+                            placeholder="https://assets.mixkit.co/.../dish-sizzle.mp4"
+                            className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-mono"
+                          />
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            <span className="text-[9px] text-gray-500 uppercase font-mono">Video Presets:</span>
+                            {[
+                              { name: '🔥 Sizzling Vegetables & Paneer', url: 'https://assets.mixkit.co/videos/preview/mixkit-vegetables-sizzling-in-a-pan-43097-large.mp4' },
+                              { name: '🍗 Tandoori Chicken Grill', url: 'https://assets.mixkit.co/videos/preview/mixkit-chicken-meat-cooked-in-pan-43099-large.mp4' },
+                              { name: '🍲 Slow-Cooked Handi Gravy', url: 'https://assets.mixkit.co/videos/preview/mixkit-fresh-spicy-food-dish-slow-cooked-in-pan-43098-large.mp4' }
+                            ].map((preset) => (
+                              <button
+                                key={preset.name}
+                                type="button"
+                                onClick={() => setFormVideo(preset.url)}
+                                className="text-[9px] bg-brand-charcoal hover:bg-[#242F3C] text-gray-300 px-2 py-0.5 rounded-md border border-white/10 cursor-pointer"
+                              >
+                                {preset.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Dual Controls: Card Showcase Media & Aspect Ratio Selection */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          {/* Showcase Media Selector */}
+                          <div className="bg-brand-charcoal/60 p-3 rounded-xl border border-white/5 space-y-2">
+                            <label className="text-[10px] font-bold text-gray-300 uppercase block">
+                              Dish Card Showcase Thumbnail
+                            </label>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setFormShowcaseMediaType('image')}
+                                className={`py-2 px-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
+                                  formShowcaseMediaType === 'image'
+                                    ? 'bg-brand-green/20 text-brand-green border-brand-green font-black shadow-xs'
+                                    : 'bg-brand-charcoal text-gray-400 border-white/10'
+                                }`}
+                              >
+                                <span>📷 Photo</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!formVideo.trim()}
+                                onClick={() => formVideo.trim() && setFormShowcaseMediaType('video')}
+                                title={!formVideo.trim() ? 'Add a video URL above first' : ''}
+                                className={`py-2 px-2 text-[11px] font-bold rounded-lg border transition-all text-center flex items-center justify-center gap-1 ${
+                                  !formVideo.trim()
+                                    ? 'opacity-40 cursor-not-allowed bg-brand-charcoal text-gray-600 border-white/5'
+                                    : formShowcaseMediaType === 'video'
+                                    ? 'bg-brand-orange/20 text-brand-orange border-brand-orange font-black shadow-xs cursor-pointer'
+                                    : 'bg-brand-charcoal text-gray-400 border-white/10 cursor-pointer'
+                                }`}
+                              >
+                                <span>🎥 Looping Video</span>
+                              </button>
+                            </div>
+                            <span className="text-[9px] text-gray-500 block leading-tight">
+                              Card shows this media. Opening the dish reveals the full visual lineup.
+                            </span>
+                          </div>
+
+                          {/* Fixed Aspect Ratio Preset Selection */}
+                          <div className="bg-brand-charcoal/60 p-3 rounded-xl border border-white/5 space-y-2">
+                            <label className="text-[10px] font-bold text-gray-300 uppercase block">
+                              Display Aspect Ratio (Fixed Format)
+                            </label>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {[
+                                { id: '4:3', label: '4:3 Menu' },
+                                { id: '16:9', label: '16:9 Cinema' },
+                                { id: '1:1', label: '1:1 Square' },
+                              ].map((ar) => (
+                                <button
+                                  key={ar.id}
+                                  type="button"
+                                  onClick={() => setFormAspectRatio(ar.id as any)}
+                                  className={`py-2 px-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
+                                    formAspectRatio === ar.id
+                                      ? 'bg-white/20 text-white border-white/40 font-black'
+                                      : 'bg-brand-charcoal text-gray-400 border-white/10'
+                                  }`}
+                                >
+                                  {ar.label}
+                                </button>
+                              ))}
+                            </div>
+                            {/* Focal Point Anchor */}
+                            <div className="flex items-center gap-1.5 pt-1">
+                              <span className="text-[9px] text-gray-500 uppercase font-mono">Focal Focus:</span>
+                              {(['center', 'top', 'bottom'] as const).map((fp) => (
+                                <button
+                                  key={fp}
+                                  type="button"
+                                  onClick={() => setFormFocalPoint(fp)}
+                                  className={`text-[9px] px-2 py-0.5 rounded capitalize border cursor-pointer ${
+                                    formFocalPoint === fp
+                                      ? 'bg-brand-green/20 text-brand-green border-brand-green/40 font-bold'
+                                      : 'bg-brand-charcoal text-gray-400 border-white/10'
+                                  }`}
+                                >
+                                  {fp}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Live Visual Framing Preview */}
+                        {(formImage || formVideo) && (
+                          <div className="bg-black/50 p-3 rounded-xl border border-white/10">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[9px] font-mono text-gray-400 uppercase">
+                                Live Frame Preview ({formAspectRatio} • {formFocalPoint} focus • showing {formShowcaseMediaType}):
+                              </span>
+                              <span className="text-[9px] font-mono text-brand-green bg-brand-green/10 px-2 py-0.5 rounded border border-brand-green/20">
+                                Seamless Zero-Audio Loop
+                              </span>
+                            </div>
+                            <div className="flex justify-center">
+                              <div
+                                className={`relative overflow-hidden rounded-xl border border-white/20 bg-black ${
+                                  formAspectRatio === '16:9'
+                                    ? 'aspect-[16/9] w-full max-w-[280px]'
+                                    : formAspectRatio === '1:1'
+                                    ? 'aspect-square w-full max-w-[200px]'
+                                    : 'aspect-[4/3] w-full max-w-[240px]'
+                                }`}
+                              >
+                                {formShowcaseMediaType === 'video' && formVideo ? (
+                                  <video
+                                    src={formVideo}
+                                    autoPlay
+                                    loop
+                                    muted
+                                    playsInline
+                                    className={`w-full h-full object-cover pointer-events-none ${
+                                      formFocalPoint === 'top' ? 'object-top' : formFocalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                                    }`}
+                                  />
+                                ) : (
+                                  <img
+                                    src={formImage || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80'}
+                                    alt="Preview"
+                                    className={`w-full h-full object-cover ${
+                                      formFocalPoint === 'top' ? 'object-top' : formFocalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                                    }`}
+                                    referrerPolicy="no-referrer"
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Multi-Media Gallery Lineup Builder */}
+                        <div className="border-t border-white/10 pt-3 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-gray-300 uppercase">
+                              Total Visual Lineup ({formGallery.length} additional media items)
+                            </span>
+                            <span className="text-[9px] text-gray-500">
+                              Diners can browse this lineup in the quick-view modal
+                            </span>
+                          </div>
+
+                          {/* Existing Gallery Items */}
+                          {formGallery.length > 0 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {formGallery.map((item, idx) => (
+                                <div
+                                  key={item.id || idx}
+                                  className="flex items-center gap-2 bg-brand-charcoal p-2 rounded-xl border border-white/10 text-xs"
+                                >
+                                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 relative">
+                                    {item.type === 'video' ? (
+                                      <div className="w-full h-full bg-stone-900 flex items-center justify-center text-white text-[9px]">
+                                        🎥
+                                      </div>
+                                    ) : (
+                                      <img
+                                        src={item.url}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[9px] font-mono font-bold text-brand-orange uppercase block">
+                                      {item.type === 'video' ? '🎥 Looping Video' : '📷 Image'}
+                                    </span>
+                                    <p className="text-[10px] text-white/90 truncate">
+                                      {item.caption || item.url}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveGalleryItem(idx)}
+                                    className="p-1 hover:bg-red-500/20 text-red-400 rounded-lg cursor-pointer transition-colors"
+                                    title="Remove from lineup"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Add New Lineup Item Row */}
+                          <div className="bg-brand-charcoal/50 p-2.5 rounded-xl border border-white/5 space-y-2">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase block">
+                              + Add Photo or Video to Lineup
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                              <div className="sm:col-span-3">
+                                <select
+                                  value={newGalleryType}
+                                  onChange={(e) => setNewGalleryType(e.target.value as any)}
+                                  className="w-full bg-[#141A22] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white"
+                                >
+                                  <option value="image">📷 Photo</option>
+                                  <option value="video">🎥 Video</option>
+                                </select>
+                              </div>
+                              <div className="sm:col-span-5">
+                                <input
+                                  type="url"
+                                  value={newGalleryUrl}
+                                  onChange={(e) => setNewGalleryUrl(e.target.value)}
+                                  placeholder="Media URL https://..."
+                                  className="w-full bg-[#141A22] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 font-mono"
+                                />
+                              </div>
+                              <div className="sm:col-span-4">
+                                <input
+                                  type="text"
+                                  value={newGalleryCaption}
+                                  onChange={(e) => setNewGalleryCaption(e.target.value)}
+                                  placeholder="Caption (e.g. Sizzling Platter)"
+                                  className="w-full bg-[#141A22] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={handleAddGalleryItem}
+                                disabled={!newGalleryUrl.trim()}
+                                className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
+                                  newGalleryUrl.trim()
+                                    ? 'bg-brand-green text-white border-brand-green/40 hover:bg-brand-green/80 cursor-pointer shadow-xs'
+                                    : 'opacity-40 cursor-not-allowed bg-gray-800 text-gray-500 border-white/5'
+                                }`}
+                              >
+                                Add to Lineup
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Section B: Price & Macro Targets */}
                       <div className="bg-brand-charcoal/20 border border-brand-green/5 p-3.5 rounded-2xl grid grid-cols-2 sm:grid-cols-5 gap-3">
                         <div>
@@ -14296,56 +14644,171 @@ Free express delivery directly to trainer desks"
                           />
                         </div>
 
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Badge Pill Text</label>
-                          <input
-                            type="text"
-                            value={bannerBadge}
-                            onChange={(e) => setBannerBadge(e.target.value)}
-                            placeholder="e.g. 🔥 CATERING SPECIAL"
-                            className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-brand-orange font-black focus:outline-none focus:border-brand-green"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Button Label</label>
-                          <input
-                            type="text"
-                            value={bannerButtonText}
-                            onChange={(e) => setBannerButtonText(e.target.value)}
-                            placeholder="e.g. Order Catering ➜"
-                            className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none focus:border-brand-green"
-                          />
-                        </div>
-
-                        <div className="col-span-2 space-y-1.5">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase block">Banner Image URL</label>
-                          <input
-                            type="url"
-                            value={bannerImage}
-                            onChange={(e) => setBannerImage(e.target.value)}
-                            placeholder="https://images.unsplash.com/..."
-                            className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-mono"
-                          />
-                          {/* Image Preset Chips */}
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            <span className="text-[9px] text-gray-500 uppercase font-mono">Presets:</span>
-                            {[
-                              { name: '🔥 BBQ Bhatti', url: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop&q=80' },
-                              { name: '🥗 Protein Bowl', url: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=80' },
-                              { name: '🍱 Party Platter', url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80' }
-                            ].map((preset) => (
-                              <button
-                                key={preset.name}
-                                type="button"
-                                onClick={() => setBannerImage(preset.url)}
-                                className="text-[9px] bg-[#1A222B] hover:bg-[#242F3C] text-gray-300 px-2 py-0.5 rounded-md border border-white/10 cursor-pointer"
-                              >
-                                {preset.name}
-                              </button>
-                            ))}
+                        {/* Billboard Media Mode Toggle */}
+                        <div className="col-span-2 bg-[#1A222B] p-3 rounded-2xl border border-brand-green/20">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-2">Billboard Media Type</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setBannerMediaType('image')}
+                              className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                                bannerMediaType === 'image'
+                                  ? 'bg-brand-green/20 text-brand-green border-brand-green font-black shadow-xs'
+                                  : 'bg-[#141A22] text-gray-400 border-white/10'
+                              }`}
+                            >
+                              <span>📷 Standard Image Billboard</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBannerMediaType('video')}
+                              className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                                bannerMediaType === 'video'
+                                  ? 'bg-brand-orange/20 text-brand-orange border-brand-orange font-black shadow-xs'
+                                  : 'bg-[#141A22] text-gray-400 border-white/10'
+                              }`}
+                            >
+                              <span>🎥 Video Billboard (Clean Mode)</span>
+                            </button>
                           </div>
+
+                          {bannerMediaType === 'video' ? (
+                            <div className="mt-3 space-y-2.5 pt-2 border-t border-white/10">
+                              <div className="p-2.5 rounded-xl bg-brand-orange/10 border border-brand-orange/30 text-[11px] text-brand-orange leading-relaxed">
+                                <span className="font-bold">🎬 Clean Video Billboard Mode:</span> As requested, video billboards run on a continuous silent loop without any overlay buttons or tags. A single tap anywhere on the video directly opens the assigned redirect link!
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Looping Video URL (.mp4 / .webm) *</label>
+                                <input
+                                  type="url"
+                                  required={bannerMediaType === 'video'}
+                                  value={bannerVideoUrl}
+                                  onChange={(e) => setBannerVideoUrl(e.target.value)}
+                                  placeholder="https://assets.mixkit.co/.../video.mp4"
+                                  className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-mono"
+                                />
+                              </div>
+
+                              {/* Looping Food Video Preset Chips */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                <span className="text-[9px] text-gray-500 uppercase font-mono">Video Presets:</span>
+                                {[
+                                  { name: '🔥 Sizzling Vegetables & Paneer', url: 'https://assets.mixkit.co/videos/preview/mixkit-vegetables-sizzling-in-a-pan-43097-large.mp4' },
+                                  { name: '🍗 Tandoori Chicken Grill', url: 'https://assets.mixkit.co/videos/preview/mixkit-chicken-meat-cooked-in-pan-43099-large.mp4' },
+                                  { name: '🍲 Slow-Cooked Handi Gravy', url: 'https://assets.mixkit.co/videos/preview/mixkit-fresh-spicy-food-dish-slow-cooked-in-pan-43098-large.mp4' }
+                                ].map((preset) => (
+                                  <button
+                                    key={preset.name}
+                                    type="button"
+                                    onClick={() => setBannerVideoUrl(preset.url)}
+                                    className="text-[9px] bg-[#141A22] hover:bg-[#242F3C] text-gray-300 px-2 py-0.5 rounded-md border border-white/10 cursor-pointer"
+                                  >
+                                    {preset.name}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Aspect Ratio selector */}
+                              <div className="pt-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Aspect Ratio Format</label>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {[
+                                    { id: '16:9', label: '16:9 Widescreen (Standard)' },
+                                    { id: '21:9', label: '21:9 Ultra-Wide Cinema' },
+                                    { id: 'auto', label: 'Auto Responsive' },
+                                  ].map((ar) => (
+                                    <button
+                                      key={ar.id}
+                                      type="button"
+                                      onClick={() => setBannerAspectRatio(ar.id as any)}
+                                      className={`py-1.5 px-2 text-[10px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
+                                        bannerAspectRatio === ar.id
+                                          ? 'bg-white/15 text-white border-white/40'
+                                          : 'bg-[#141A22] text-gray-500 border-white/5'
+                                      }`}
+                                    >
+                                      {ar.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Live video preview */}
+                              {bannerVideoUrl && (
+                                <div className="rounded-xl overflow-hidden border border-brand-orange/30 aspect-video max-h-36 bg-black relative">
+                                  <video
+                                    src={bannerVideoUrl}
+                                    autoPlay
+                                    loop
+                                    muted
+                                    playsInline
+                                    className="w-full h-full object-cover pointer-events-none"
+                                  />
+                                  <div className="absolute top-2 left-2 bg-black/70 text-white text-[9px] font-mono px-2 py-0.5 rounded-full border border-white/20">
+                                    🎥 LIVE VIDEO PREVIEW (CLICK OPENS ASSIGNED LINK)
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="mt-3 space-y-2 pt-2 border-t border-white/10">
+                              <label className="text-[10px] font-bold text-gray-400 uppercase block">Banner Image URL</label>
+                              <input
+                                type="url"
+                                required={bannerMediaType === 'image'}
+                                value={bannerImage}
+                                onChange={(e) => setBannerImage(e.target.value)}
+                                placeholder="https://images.unsplash.com/..."
+                                className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-mono"
+                              />
+                              {/* Image Preset Chips */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                <span className="text-[9px] text-gray-500 uppercase font-mono">Image Presets:</span>
+                                {[
+                                  { name: '🔥 BBQ Bhatti', url: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop&q=80' },
+                                  { name: '🥗 Protein Bowl', url: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=80' },
+                                  { name: '🍱 Party Platter', url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80' }
+                                ].map((preset) => (
+                                  <button
+                                    key={preset.name}
+                                    type="button"
+                                    onClick={() => setBannerImage(preset.url)}
+                                    className="text-[9px] bg-[#141A22] hover:bg-[#242F3C] text-gray-300 px-2 py-0.5 rounded-md border border-white/10 cursor-pointer"
+                                  >
+                                    {preset.name}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
+
+                        {bannerMediaType === 'image' && (
+                          <>
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Badge Pill Text</label>
+                              <input
+                                type="text"
+                                value={bannerBadge}
+                                onChange={(e) => setBannerBadge(e.target.value)}
+                                placeholder="e.g. 🔥 CATERING SPECIAL"
+                                className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-brand-orange font-black focus:outline-none focus:border-brand-green"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Button Label</label>
+                              <input
+                                type="text"
+                                value={bannerButtonText}
+                                onChange={(e) => setBannerButtonText(e.target.value)}
+                                placeholder="e.g. Order Catering ➜"
+                                className="w-full bg-[#141A22] border border-brand-green/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none focus:border-brand-green"
+                              />
+                            </div>
+                          </>
+                        )}
 
                         <div className="col-span-2 space-y-1.5">
                           <label className="text-[10px] font-bold text-gray-400 uppercase block">Redirect Link Target / Tab ID</label>

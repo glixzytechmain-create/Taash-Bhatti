@@ -18,11 +18,25 @@ export interface MealReview {
   verifiedOrder?: boolean;
 }
 
+export interface MealMediaItem {
+  id: string;
+  type: 'image' | 'video';
+  url: string;
+  thumbnailUrl?: string; // poster for video or preview
+  caption?: string;
+}
+
 export interface Meal {
   id: string;
   name: string;
   description: string;
-  image: string;
+  image: string; // primary fallback image
+  video?: string; // looping video URL (MP4 / WebM)
+  gallery?: MealMediaItem[]; // complete visual lineup (images + videos)
+  showcaseMediaType?: 'image' | 'video'; // card thumbnail showcase type
+  showcaseMediaId?: string; // specific gallery item selected for card
+  aspectRatio?: '4:3' | '16:9' | '1:1'; // card aspect ratio framing
+  focalPoint?: 'center' | 'top' | 'bottom'; // CSS object-position
   price: number;
   calories?: number;
   protein?: number;
@@ -1071,6 +1085,9 @@ export interface HeroBanner {
   subtitle: string;
   badge?: string;
   image?: string;
+  videoUrl?: string; // Looping video URL (MP4 / WebM)
+  mediaType?: 'image' | 'video'; // Toggle between image banner and clean video billboard
+  aspectRatio?: '16:9' | '21:9' | 'auto'; // Aspect ratio preset
   linkUrl?: string; // internal tab e.g. 'menu', 'catering', 'coach' or external URL
   buttonText?: string;
   bgGradient?: string;
