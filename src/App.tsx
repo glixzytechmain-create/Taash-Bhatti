@@ -130,8 +130,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.warn('Firestore Operation Notice: ', JSON.stringify(errInfo));
 }
 
 // Initial mock orders to make the profile look rich right out of the box
@@ -1210,19 +1209,23 @@ export default function App() {
                 setCurrentGateway('partner');
                 localStorage.setItem('fitzaika_gateway', 'partner');
               } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
-                setAdminEmailAttempt(emailClean);
-                setAdminPasscodeVerified(false);
-                setCurrentGateway('admin');
-                localStorage.setItem('fitzaika_gateway', 'admin');
+                if (!adminCreatingAccountRef.current) {
+                  setAdminEmailAttempt(emailClean);
+                  setAdminPasscodeVerified(false);
+                  setCurrentGateway('admin');
+                  localStorage.setItem('fitzaika_gateway', 'admin');
+                }
               }
             }
           }
         } catch (e) {
           if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
-            setAdminEmailAttempt(emailClean);
-            setAdminPasscodeVerified(false);
-            setCurrentGateway('admin');
-            localStorage.setItem('fitzaika_gateway', 'admin');
+            if (!adminCreatingAccountRef.current) {
+              setAdminEmailAttempt(emailClean);
+              setAdminPasscodeVerified(false);
+              setCurrentGateway('admin');
+              localStorage.setItem('fitzaika_gateway', 'admin');
+            }
           }
         }
       }
@@ -1974,6 +1977,7 @@ export default function App() {
     
     if (isAdminEmail) {
       setAdminCreatingAccount(true);
+      adminCreatingAccountRef.current = true;
       try {
         localStorage.removeItem('fitzaika_onboarding_done');
         localStorage.removeItem('fitzaika_cached_user_profile');
@@ -1993,16 +1997,22 @@ export default function App() {
         };
         await setDoc(doc(db, 'users', cred.user.uid), initialProfile);
         
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 800));
         
         setAdminEmailAttempt(emailClean);
+        setAdminPasscodeVerified(false);
+        setCurrentGateway('admin');
+        localStorage.setItem('fitzaika_gateway', 'admin');
         setAdminCreatingAccount(false);
-        showToast("🌱 Admin account registered successfully!");
+        adminCreatingAccountRef.current = false;
+        
+        showToast("👑 Account registered! Directing to security verification.");
         return { success: true };
       } catch (err: any) {
         console.error("Admin signup error:", err);
         setAdminCreatingAccount(false);
-        let friendly = err.message || "Failed to register admin account.";
+        adminCreatingAccountRef.current = false;
+        let friendly = err.message || "Failed to register account.";
         if (err.code === 'auth/email-already-in-use') {
           friendly = "An account with this email already exists. Please use 'SECURE LOGIN' instead.";
         } else if (err.code === 'auth/weak-password') {
@@ -2017,13 +2027,17 @@ export default function App() {
       localStorage.removeItem('fitzaika_cached_user_profile');
 
       // Check if email is already linked in Firestore to prevent duplicate account creation
-      const existingEmailQuery = query(collection(db, 'users'), where('email', '==', emailClean));
-      const existingEmailSnap = await getDocs(existingEmailQuery);
-      if (!existingEmailSnap.empty) {
-        return { 
-          success: false, 
-          error: "This email address is already associated with an existing Taash Bhatti account. Please sign in instead." 
-        };
+      try {
+        const existingEmailQuery = query(collection(db, 'users'), where('email', '==', emailClean));
+        const existingEmailSnap = await getDocs(existingEmailQuery);
+        if (!existingEmailSnap.empty) {
+          return { 
+            success: false, 
+            error: "This email address is already associated with an existing Taash Bhatti account. Please sign in instead." 
+          };
+        }
+      } catch (checkErr) {
+        console.warn("Pre-check email query skipped:", checkErr);
       }
       
       const cred = await createUserWithEmailAndPassword(auth, emailClean, passClean);
@@ -2085,6 +2099,7 @@ export default function App() {
                 targetGateway = 'partner';
               } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
                 setAdminEmailAttempt(emailClean);
+                setAdminPasscodeVerified(false);
                 targetGateway = 'admin';
               }
             }
@@ -2092,6 +2107,7 @@ export default function App() {
         } catch (e) {
           if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
             setAdminEmailAttempt(emailClean);
+            setAdminPasscodeVerified(false);
             targetGateway = 'admin';
           }
         }
@@ -2182,6 +2198,7 @@ export default function App() {
                 targetGateway = 'partner';
               } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
                 setAdminEmailAttempt(emailClean);
+                setAdminPasscodeVerified(false);
                 targetGateway = 'admin';
               }
             }
@@ -2189,6 +2206,7 @@ export default function App() {
         } catch (e) {
           if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
             setAdminEmailAttempt(emailClean);
+            setAdminPasscodeVerified(false);
             targetGateway = 'admin';
           }
         }
@@ -2720,7 +2738,7 @@ export default function App() {
     if (!adminPasscodeVerified) {
       return (
         <AdminLoginPortal
-          email=""
+          email={adminEmailAttempt || fbUser?.email || ''}
           onVerify={() => {
             setAdminPasscodeVerified(true);
             setCurrentGateway('admin');

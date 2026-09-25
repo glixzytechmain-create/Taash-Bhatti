@@ -210,6 +210,10 @@ export default function PhoneAuthComponent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullE164Phone, channel }),
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('OTP gateway service not responding as JSON.');
+      }
       const data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -520,6 +524,10 @@ export default function PhoneAuthComponent({
             channel: activeDeliveryChannel,
           }),
         });
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('Verification gateway unavailable.');
+        }
         const data = await res.json();
 
         if (!res.ok || !data.success) {

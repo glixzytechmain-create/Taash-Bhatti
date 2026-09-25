@@ -28,14 +28,13 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Unhandled UI Exception caught by RootErrorBoundary:', error, errorInfo);
 
-    // Auto-recover from stale chunks / redeployment bundle mismatches
+    // Auto-recover ONLY from genuine stale chunk / redeployment bundle mismatches
     const msg = error?.message || '';
     const isChunkError =
       msg.includes('dynamically imported module') ||
-      msg.includes('Loading chunk') ||
-      msg.includes('MIME type') ||
-      msg.includes('Unexpected token') ||
-      msg.includes('Failed to fetch');
+      msg.includes('Failed to load module script') ||
+      msg.includes('error loading dynamically imported module') ||
+      msg.includes('Importing a module script failed');
 
     if (isChunkError && typeof window !== 'undefined') {
       const alreadyReloaded = sessionStorage.getItem('tb_chunk_reloaded');

@@ -200,6 +200,10 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullE164Phone, channel }),
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('OTP gateway service not responding as JSON.');
+      }
       const data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -224,9 +228,10 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
       setTimeout(() => {
         inputRefs.current[0]?.focus();
       }, 300);
+      return true;
     } catch (err: any) {
-      console.error('2Factor dispatch error:', err);
-      setErrorMessage(err.message || 'Failed to dispatch verification code. Please try again.');
+      console.warn('2Factor dispatch note:', err?.message);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -238,10 +243,11 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
     setErrorMessage(null);
     setInfoMessage(null);
 
-    // If it's an Indian mobile number (+91), prioritize 2Factor directly to guarantee delivery & avoid invalid-app-credential
+    // If it's an Indian mobile number (+91), try 2Factor first. If that fails (e.g. static hosting), smoothly proceed to Firebase cellular SMS
     if (selectedCountry.code === '+91') {
-      await dispatchTwoFactorOtp(selectedChannel || preferredChannel);
-      return;
+      const dispatched = await dispatchTwoFactorOtp(selectedChannel || preferredChannel);
+      if (dispatched) return;
+      console.warn("2Factor dispatch unavailable, falling back to Firebase Auth cellular SMS...");
     }
 
     try {
@@ -549,6 +555,10 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
             channel: activeDeliveryChannel,
           }),
         });
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('Verification gateway unavailable.');
+        }
         const data = await res.json();
 
         if (!res.ok || !data.success) {
