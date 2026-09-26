@@ -580,17 +580,31 @@ export default function MenuTab({
                   >
                     {meal.showcaseMediaType === 'video' && meal.video ? (
                       <video
-                        src={meal.video}
+                        ref={(el) => {
+                          if (el) {
+                            el.defaultMuted = true;
+                            el.muted = true;
+                            el.playsInline = true;
+                          }
+                        }}
                         poster={meal.image && !meal.image.includes('unsplash.com') ? meal.image : undefined}
                         autoPlay
                         loop
                         muted
                         playsInline
                         preload="metadata"
+                        onLoadedData={(e) => {
+                          const v = e.currentTarget;
+                          if (v.paused && v.currentTime === 0) {
+                            v.currentTime = 0.05;
+                          }
+                        }}
                         className={`w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover/card:scale-105 ${
                           meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
                         } ${soldOutInfo.isSoldOut ? 'grayscale contrast-75 opacity-70' : ''}`}
-                      />
+                      >
+                        <source src={meal.video} type="video/mp4" />
+                      </video>
                     ) : (
                       <img
                         src={meal.image}

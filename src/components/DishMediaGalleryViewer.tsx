@@ -125,13 +125,24 @@ export default function DishMediaGalleryViewer({
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play()
+    const v = videoRef.current;
+    if (!v) return;
+    v.defaultMuted = isMuted;
+    v.muted = isMuted;
+    v.playsInline = true;
+
+    if (v.paused) {
+      v.play()
         .then(() => setIsPlaying(true))
-        .catch(() => {});
+        .catch((err) => {
+          console.warn('Playback deferred, retrying muted:', err);
+          v.muted = true;
+          v.defaultMuted = true;
+          setIsMuted(true);
+          v.play().then(() => setIsPlaying(true)).catch(console.error);
+        });
     } else {
-      videoRef.current.pause();
+      v.pause();
       setIsPlaying(false);
     }
   };
@@ -221,19 +232,33 @@ export default function DishMediaGalleryViewer({
         {activeItem.type === 'video' ? (
           <div className="relative w-full h-full cursor-pointer group/video" onClick={togglePlay}>
             <video
-              ref={videoRef}
+              ref={(el) => {
+                (videoRef as any).current = el;
+                if (el) {
+                  el.defaultMuted = isMuted;
+                  el.muted = isMuted;
+                  el.playsInline = true;
+                }
+              }}
               key={activeItem.url}
-              src={activeItem.url}
               poster={safePoster}
               autoPlay
               loop
               muted={isMuted}
               playsInline
               preload="auto"
+              onLoadedData={(e) => {
+                const v = e.currentTarget;
+                if (v.paused && v.currentTime === 0) {
+                  v.currentTime = 0.05;
+                }
+              }}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               className={`w-full h-full object-cover transition-opacity duration-300 ${focalClass}`}
-            />
+            >
+              <source src={activeItem.url} type="video/mp4" />
+            </video>
 
             {/* Play Button Overlay when paused */}
             {!isPlaying && (

@@ -89,15 +89,29 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
 
   // Toggle video playback in admin preview box
   const togglePreviewPlayback = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (!previewVideoRef.current) return;
-    if (previewVideoRef.current.paused) {
-      previewVideoRef.current
-        .play()
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const v = previewVideoRef.current;
+    if (!v) return;
+
+    v.defaultMuted = previewIsMuted;
+    v.muted = previewIsMuted;
+    v.playsInline = true;
+
+    if (v.paused) {
+      v.play()
         .then(() => setPreviewIsPlaying(true))
-        .catch(console.warn);
+        .catch((err) => {
+          console.warn('Playback deferred, retrying muted:', err);
+          v.muted = true;
+          v.defaultMuted = true;
+          setPreviewIsMuted(true);
+          v.play().then(() => setPreviewIsPlaying(true)).catch(console.error);
+        });
     } else {
-      previewVideoRef.current.pause();
+      v.pause();
       setPreviewIsPlaying(false);
     }
   };
@@ -141,9 +155,12 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
   // Reliable HTML5 autoplay trigger on video selection
   useEffect(() => {
     if (showcaseMediaType === 'video' && primaryVideo && previewVideoRef.current) {
-      previewVideoRef.current.currentTime = 0;
-      previewVideoRef.current
-        .play()
+      const v = previewVideoRef.current;
+      v.defaultMuted = true;
+      v.muted = true;
+      v.playsInline = true;
+      v.currentTime = 0.01;
+      v.play()
         .then(() => setPreviewIsPlaying(true))
         .catch((err) => {
           console.warn('Admin preview auto-play deferred by browser policy:', err);
@@ -348,7 +365,9 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
     ? primaryVideo 
     : (primaryImage && !isStockPlaceholder(primaryImage) ? primaryImage : (primaryVideo || ''));
   const hasCoverMedia = Boolean(activeCoverSrc && activeCoverSrc.trim());
-  const safePreviewPoster = (primaryImage && !isStockPlaceholder(primaryImage)) ? primaryImage : undefined;
+  const safePreviewPoster = (primaryImage && !isStockPlaceholder(primaryImage)) 
+    ? primaryImage 
+    : (gallery.find(g => g.thumbnailUrl && !isStockPlaceholder(g.thumbnailUrl))?.thumbnailUrl || undefined);
 
   return (
     <div className="bg-[#141A22] border border-brand-green/25 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
@@ -422,37 +441,49 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
             >
               {hasCoverMedia ? (
                 showcaseMediaType === 'video' && primaryVideo ? (
-                  <div
-                    className="relative w-full h-full cursor-pointer group/preview"
-                    onClick={togglePreviewPlayback}
-                  >
+                  <div className="relative w-full h-full select-none group/preview">
                     <video
-                      ref={previewVideoRef}
+                      ref={(el) => {
+                        (previewVideoRef as any).current = el;
+                        if (el) {
+                          el.defaultMuted = previewIsMuted;
+                          el.muted = previewIsMuted;
+                          el.playsInline = true;
+                        }
+                      }}
                       key={primaryVideo}
-                      src={primaryVideo}
                       poster={safePreviewPoster}
                       autoPlay
                       loop
                       muted={previewIsMuted}
                       playsInline
                       preload="auto"
+                      onLoadedData={(e) => {
+                        const v = e.currentTarget;
+                        if (v.paused && v.currentTime === 0) {
+                          v.currentTime = 0.05;
+                        }
+                      }}
                       onPlay={() => setPreviewIsPlaying(true)}
                       onPause={() => setPreviewIsPlaying(false)}
-                      className={`w-full h-full object-cover ${
+                      onClick={togglePreviewPlayback}
+                      className={`w-full h-full object-cover cursor-pointer ${
                         focalPoint === 'top' ? 'object-top' : focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
                       }`}
-                    />
+                    >
+                      <source src={primaryVideo} type="video/mp4" />
+                    </video>
 
                     {/* Centered Play Button Overlay if Paused */}
                     {!previewIsPlaying && (
-                      <div className="absolute inset-0 bg-black/45 flex items-center justify-center animate-in fade-in">
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none animate-in fade-in">
                         <button
                           type="button"
                           onClick={togglePreviewPlayback}
-                          className="w-12 h-12 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+                          className="pointer-events-auto w-14 h-14 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all cursor-pointer border-2 border-white/40"
                           title="Click to Play"
                         >
-                          <Play className="w-6 h-6 fill-white text-white ml-0.5" />
+                          <Play className="w-7 h-7 fill-white text-white ml-1" />
                         </button>
                       </div>
                     )}
@@ -463,17 +494,22 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setPreviewIsMuted(!previewIsMuted);
+                          const nextMute = !previewIsMuted;
+                          setPreviewIsMuted(nextMute);
+                          if (previewVideoRef.current) {
+                            previewVideoRef.current.muted = nextMute;
+                            previewVideoRef.current.defaultMuted = nextMute;
+                          }
                         }}
-                        className="bg-black/80 hover:bg-black text-white p-1 rounded-full text-xs transition-colors border border-white/20 shadow-md cursor-pointer"
+                        className="bg-black/80 hover:bg-black text-white p-1.5 rounded-full text-xs transition-colors border border-white/20 shadow-md cursor-pointer"
                         title={previewIsMuted ? 'Unmute Audio' : 'Mute Audio'}
                       >
-                        {previewIsMuted ? <VolumeX className="w-3 h-3 text-gray-300" /> : <Volume2 className="w-3 h-3 text-brand-orange" />}
+                        {previewIsMuted ? <VolumeX className="w-3.5 h-3.5 text-gray-300" /> : <Volume2 className="w-3.5 h-3.5 text-brand-orange" />}
                       </button>
                       <button
                         type="button"
                         onClick={togglePreviewPlayback}
-                        className="bg-black/80 backdrop-blur-xs px-2 py-0.5 rounded-full text-[9px] font-mono text-white flex items-center gap-1 shadow-md hover:bg-black/95 transition-all cursor-pointer"
+                        className="bg-black/80 backdrop-blur-xs px-2.5 py-0.5 rounded-full text-[9px] font-mono text-white flex items-center gap-1 shadow-md hover:bg-black/95 transition-all cursor-pointer border border-white/10"
                       >
                         {previewIsPlaying ? (
                           <>
@@ -726,17 +762,31 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
                     {item.type === 'video' ? (
                       <>
                         <video
-                          src={item.url}
-                          poster={item.thumbnailUrl || (!isStockPlaceholder(primaryImage) ? primaryImage : undefined)}
+                          ref={(el) => {
+                            if (el) {
+                              el.defaultMuted = true;
+                              el.muted = true;
+                              el.playsInline = true;
+                            }
+                          }}
+                          poster={item.thumbnailUrl || safePreviewPoster}
                           autoPlay
                           loop
                           muted
                           playsInline
                           preload="metadata"
+                          onLoadedData={(e) => {
+                            const v = e.currentTarget;
+                            if (v.paused && v.currentTime === 0) {
+                              v.currentTime = 0.05;
+                            }
+                          }}
                           className={`w-full h-full object-cover ${
                             focalPoint === 'top' ? 'object-top' : focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
                           }`}
-                        />
+                        >
+                          <source src={item.url} type="video/mp4" />
+                        </video>
                         <div className="absolute bottom-1.5 right-1.5 bg-black/75 px-1.5 py-0.5 rounded text-[8px] font-mono text-white/90 flex items-center gap-1">
                           <Play className="w-2.5 h-2.5 fill-white" /> LOOP
                         </div>

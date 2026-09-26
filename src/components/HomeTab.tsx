@@ -676,17 +676,31 @@ export default function HomeTab({
               <div className="relative rounded-2xl overflow-hidden h-44 border border-brand-green/10">
                 {meal.showcaseMediaType === 'video' && meal.video ? (
                   <video
-                    src={meal.video}
+                    ref={(el) => {
+                      if (el) {
+                        el.defaultMuted = true;
+                        el.muted = true;
+                        el.playsInline = true;
+                      }
+                    }}
                     poster={meal.image && !meal.image.includes('unsplash.com') ? meal.image : undefined}
                     autoPlay
                     loop
                     muted
                     playsInline
                     preload="metadata"
+                    onLoadedData={(e) => {
+                      const v = e.currentTarget;
+                      if (v.paused && v.currentTime === 0) {
+                        v.currentTime = 0.05;
+                      }
+                    }}
                     className={`w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500 ${
                       meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
                     }`}
-                  />
+                  >
+                    <source src={meal.video} type="video/mp4" />
+                  </video>
                 ) : (
                   <img
                     src={meal.image}

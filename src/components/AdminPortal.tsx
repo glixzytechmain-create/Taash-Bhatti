@@ -6178,15 +6178,29 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                               {m.video && (m.showcaseMediaType === 'video' || !m.image || m.image.includes('images.unsplash.com')) ? (
                                 <>
                                   <video
-                                    src={m.video}
+                                    ref={(el) => {
+                                      if (el) {
+                                        el.defaultMuted = true;
+                                        el.muted = true;
+                                        el.playsInline = true;
+                                      }
+                                    }}
                                     poster={m.image && !m.image.includes('images.unsplash.com') ? m.image : undefined}
                                     muted
                                     playsInline
                                     loop
                                     autoPlay
                                     preload="metadata"
+                                    onLoadedData={(e) => {
+                                      const v = e.currentTarget;
+                                      if (v.paused && v.currentTime === 0) {
+                                        v.currentTime = 0.05;
+                                      }
+                                    }}
                                     className={`w-full h-full object-cover ${isSoldOut ? 'grayscale' : ''}`}
-                                  />
+                                  >
+                                    <source src={m.video} type="video/mp4" />
+                                  </video>
                                   <div className="absolute bottom-0.5 right-0.5 bg-black/80 px-1 py-0.2 rounded text-[7px] font-mono text-white pointer-events-none">
                                     ▶ VID
                                   </div>
