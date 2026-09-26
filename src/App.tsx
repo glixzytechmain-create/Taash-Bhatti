@@ -60,6 +60,7 @@ import SupportMailboxModal from './components/SupportMailboxModal';
 import TaashOpeningSplash from './components/TaashOpeningSplash';
 import NaanEscape404 from './components/NaanEscape404';
 import FirstTimeAppTour from './components/FirstTimeAppTour';
+import { hasSeenTourOnDevice, markTourCompletedOnDevice } from './lib/tourPersistence';
 import CityGeofenceSelectorModal from './components/CityGeofenceSelectorModal';
 import NotificationPromptModal from './components/NotificationPromptModal';
 import SelectDeliveryAddressModal from './components/SelectDeliveryAddressModal';
@@ -1066,7 +1067,11 @@ export default function App() {
   // - Highlights buttons one-by-one with live in-app navigation
   // - ONLY for unauthenticated guests (!authChecking && !fbUser && !auth.currentUser)
   // - ONLY in customer gateway (!is404Route)
-  // - Automatically triggers ONCE per device (persisted in localStorage under 'tb_guided_tour_completed_v1')
+  // Interactive Guided App Tour:
+  // - Highlights buttons one-by-one with live in-app navigation
+  // - ONLY for unauthenticated guests (!authChecking && !fbUser && !auth.currentUser)
+  // - ONLY in customer gateway (!is404Route)
+  // - Automatically triggers STRICTLY ONCE per device (persisted in device localStorage + cookies)
   // - Replayable anytime via the Account/Profile tab
   useEffect(() => {
     if (authChecking) return;
@@ -1076,8 +1081,11 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined') {
-        const hasSeenTour = localStorage.getItem('tb_guided_tour_completed_v1');
+        const hasSeenTour = hasSeenTourOnDevice();
         if (!hasSeenTour) {
+          // Immediately mark as completed on this device so that closing or refreshing the app
+          // before finishing NEVER triggers the tour a second time!
+          markTourCompletedOnDevice();
           const timer = setTimeout(() => {
             if (!auth.currentUser && !fbUser) {
               setShowFirstTimeTour(true);
@@ -1094,9 +1102,7 @@ export default function App() {
     setCartOpen(false);
     setActiveTab('home');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    try {
-      localStorage.setItem('tb_guided_tour_completed_v1', 'true');
-    } catch (e) {}
+    markTourCompletedOnDevice();
   };
 
   const handleEnsureCartDemoItem = () => {

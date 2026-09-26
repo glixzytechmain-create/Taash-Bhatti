@@ -15,6 +15,7 @@ import {
   User
 } from 'lucide-react';
 import { TabType } from './BottomNav';
+import { markTourCompletedOnDevice } from '../lib/tourPersistence';
 
 export interface FirstTimeAppTourProps {
   isOpen: boolean;
@@ -172,9 +173,7 @@ export default function FirstTimeAppTour({
     if (isCartOpen) onCloseCart();
     onSelectTab('home');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    try {
-      localStorage.setItem('tb_guided_tour_completed_v1', 'true');
-    } catch (e) {}
+    markTourCompletedOnDevice();
     onClose();
   }, [isCartOpen, onCloseCart, onSelectTab, onClose]);
 
@@ -225,12 +224,25 @@ export default function FirstTimeAppTour({
     };
   }, [isOpen, currentStepIndex]);
 
-  // Reset to first step on new open
+  // Reset to first step on open & immediately mark completed on device
   useEffect(() => {
     if (isOpen) {
       setCurrentStepIndex(0);
+      markTourCompletedOnDevice();
     }
   }, [isOpen]);
+
+  // Support ESC key to dismiss tour
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCompleteTour();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleCompleteTour]);
 
   const handleNext = () => {
     if (isLastStep) {
@@ -265,7 +277,10 @@ export default function FirstTimeAppTour({
       <div className="fixed inset-0 z-[120] select-none font-sans pointer-events-auto">
         
         {/* UNMISSABLE FLOATING SKIP BUTTON AT TOP-LEFT */}
-        <div className="fixed top-3 left-3 sm:top-4 sm:left-4 z-[135]">
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          className="fixed top-3 left-3 sm:top-4 sm:left-4 z-[135]"
+        >
           <button
             type="button"
             onClick={handleCompleteTour}
@@ -277,9 +292,12 @@ export default function FirstTimeAppTour({
           </button>
         </div>
 
-        {/* SVG SPOTLIGHT CUTOUT BACKDROP */}
+        {/* SVG SPOTLIGHT CUTOUT BACKDROP - Tap anywhere outside to dismiss and finish tour */}
         {targetRect ? (
-          <svg className="fixed inset-0 w-full h-full pointer-events-none z-[121]">
+          <svg 
+            onClick={handleCompleteTour}
+            className="fixed inset-0 w-full h-full pointer-events-auto z-[121] cursor-pointer"
+          >
             <defs>
               <mask id="spotlight-hole-mask">
                 <rect width="100%" height="100%" fill="white" />
@@ -301,7 +319,10 @@ export default function FirstTimeAppTour({
             />
           </svg>
         ) : (
-          <div className="fixed inset-0 bg-black/75 backdrop-blur-xs pointer-events-none z-[121]" />
+          <div 
+            onClick={handleCompleteTour}
+            className="fixed inset-0 bg-black/75 backdrop-blur-xs pointer-events-auto z-[121] cursor-pointer" 
+          />
         )}
 
         {/* GLOWING SPOTLIGHT BEACON RING OVER TARGET ELEMENT */}
@@ -336,6 +357,7 @@ export default function FirstTimeAppTour({
 
         {/* INSTRUCTION CARD: GUARANTEED ZERO OVERLAP WITH TARGET BUTTON */}
         <div 
+          onClick={(e) => e.stopPropagation()}
           className="fixed left-4 right-4 max-w-md mx-auto z-[128] transition-all duration-300"
           style={{ top: `${cardTopPosition}px` }}
         >
