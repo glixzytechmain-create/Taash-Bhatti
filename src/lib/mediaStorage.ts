@@ -112,33 +112,23 @@ export async function uploadDishVideo(
         sizeBytes: file.size,
       };
     } catch (storageErr: any) {
-      console.warn('[MediaStorage] Firebase Storage upload unready, checking fallback:', storageErr);
-      const isNotReady =
-        storageErr?.code === 'storage/bucket-not-found' ||
-        storageErr?.code === 'storage/project-not-found' ||
-        storageErr?.code === 'storage/unauthorized' ||
-        storageErr?.message?.includes('not been set up');
-
-      if (isNotReady) {
-        // If file is very small (<= 1.2MB), allow direct data URL
-        if (file.size <= 1.2 * 1024 * 1024) {
-          onProgress?.(90, 'Reading small video clip...');
-          const dataUrl = await readFileAsDataUrl(file);
-          return {
-            url: dataUrl,
-            thumbnailUrl: thumbnailUrl || '',
-            storageType: 'data_url',
-            fileName: file.name,
-            sizeBytes: file.size,
-          };
-        }
-
-        throw new Error(
-          `Firebase Storage is not enabled on your project yet. Go to https://console.firebase.google.com/project/taash-bhatti/storage and click 'Get Started' to upload HD videos, or paste an external video link.`
-        );
+      console.error('[MediaStorage] Firebase Storage upload error:', storageErr);
+      
+      // If file is very small (<= 1.5MB), safely fallback to direct data URL for immediate testing
+      if (file.size <= 1.5 * 1024 * 1024) {
+        onProgress?.(90, 'Reading small video clip...');
+        const dataUrl = await readFileAsDataUrl(file);
+        return {
+          url: dataUrl,
+          thumbnailUrl: thumbnailUrl || '',
+          storageType: 'data_url',
+          fileName: file.name,
+          sizeBytes: file.size,
+        };
       }
 
-      throw storageErr;
+      const friendlyMsg = storageErr?.message || storageErr?.code || 'Failed to upload video to Firebase Storage.';
+      throw new Error(`Video upload error: ${friendlyMsg}`);
     }
   }
 

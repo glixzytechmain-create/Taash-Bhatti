@@ -489,7 +489,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           className="px-4 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md transition-all active:scale-95 disabled:opacity-50"
         >
           <Upload className="w-4 h-4 stroke-[3]" />
-          <span>+ Add Photos (Firestore)</span>
+          <span>+ Add Photos</span>
         </button>
 
         <button
@@ -499,7 +499,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           className="px-4 py-2.5 bg-brand-orange hover:bg-brand-orange/90 text-brand-charcoal font-black rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md transition-all active:scale-95 disabled:opacity-50"
         >
           <Film className="w-4 h-4 stroke-[3]" />
-          <span>+ Add Video (Firebase Storage)</span>
+          <span>+ Add Video (.mp4, .webm, .mov)</span>
         </button>
 
         <button
