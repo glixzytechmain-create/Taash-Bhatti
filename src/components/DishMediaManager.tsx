@@ -25,11 +25,13 @@ import {
   Check, 
   X, 
   Sparkles,
-  Play
+  Play,
+  Eye,
+  RefreshCw,
+  Sliders
 } from 'lucide-react';
 import { MealMediaItem } from '../types';
-import { compressImageFile } from '../lib/imageUpload';
-import { processVideoFile } from '../lib/videoUpload';
+import { uploadDishImageToFirestore, uploadDishVideo } from '../lib/mediaStorage';
 
 interface DishMediaManagerProps {
   gallery: MealMediaItem[];
@@ -62,6 +64,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [manualUrl, setManualUrl] = useState('');
@@ -97,21 +100,27 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
     }
   }, []);
 
+  // Helper to determine if an existing image is an Unsplash stock placeholder
+  const isStockPlaceholder = (url: string) => {
+    return url.includes('images.unsplash.com');
+  };
+
   // Handle uploading multiple photos from device
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setIsProcessing(true);
+    setUploadPercent(null);
     setErrorMsg(null);
-    setProcessingStatus(`Optimizing ${files.length} photo${files.length > 1 ? 's' : ''}...`);
+    setProcessingStatus(`Optimizing ${files.length} photo${files.length > 1 ? 's' : ''} for instant mobile loading...`);
 
     try {
       const newItems: MealMediaItem[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (!file.type.startsWith('image/')) continue;
-        const compressedDataUrl = await compressImageFile(file, 900);
+        const compressedDataUrl = await uploadDishImageToFirestore(file);
         newItems.push({
           id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           type: 'image',
@@ -121,13 +130,14 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
       }
 
       if (newItems.length > 0) {
-        const updated = [...gallery, ...newItems];
+        // Automatically purge stock Unsplash placeholders when real photos are added
+        const cleanedExisting = gallery.filter((it) => !isStockPlaceholder(it.url));
+        const updated = [...cleanedExisting, ...newItems];
         onChangeGallery(updated);
-        // If there was no primary image, set the first new photo as primary
-        if (!primaryImage || !primaryImage.trim()) {
-          onChangePrimaryImage(newItems[0].url);
-          onChangeShowcaseMediaType('image');
-        }
+
+        // Always set the newly uploaded photo as active card cover
+        onChangePrimaryImage(newItems[0].url);
+        onChangeShowcaseMediaType('image');
       }
     } catch (err: any) {
       console.error('Photo upload error:', err);
@@ -135,37 +145,46 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
     } finally {
       setIsProcessing(false);
       setProcessingStatus('');
+      setUploadPercent(null);
       e.target.value = '';
     }
   };
 
-  // Handle uploading a video from device
+  // Handle uploading a video from device (Firebase Storage CDN or fast loop)
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const file = files[0];
 
     setIsProcessing(true);
+    setUploadPercent(0);
     setErrorMsg(null);
-    setProcessingStatus('Processing video clip...');
+    setProcessingStatus('Connecting to Firebase Storage...');
 
     try {
-      const result = await processVideoFile(file, 4, 480, (status) => {
+      const result = await uploadDishVideo(file, (percent, status) => {
+        setUploadPercent(percent);
         setProcessingStatus(status);
       });
 
       const newItem: MealMediaItem = {
         id: `vid_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         type: 'video',
-        url: result.dataUrl,
+        url: result.url,
         thumbnailUrl: result.thumbnailUrl,
         caption: file.name.replace(/\.[^/.]+$/, ''),
       };
 
-      const updated = [...gallery, newItem];
+      // Clean out stock placeholders when genuine dish video is uploaded
+      const cleanedExisting = gallery.filter((it) => !isStockPlaceholder(it.url));
+      const updated = [...cleanedExisting, newItem];
       onChangeGallery(updated);
-      // Auto-set as primary video and showcase as video
-      onChangePrimaryVideo(result.dataUrl);
+
+      // Auto-set as primary video and card showcase
+      onChangePrimaryVideo(result.url);
+      if (result.thumbnailUrl) {
+        onChangePrimaryImage(result.thumbnailUrl);
+      }
       onChangeShowcaseMediaType('video');
     } catch (err: any) {
       console.error('Video upload error:', err);
@@ -173,6 +192,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
     } finally {
       setIsProcessing(false);
       setProcessingStatus('');
+      setUploadPercent(null);
       e.target.value = '';
     }
   };
@@ -181,6 +201,9 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
   const handleSetCover = (item: MealMediaItem) => {
     if (item.type === 'video') {
       onChangePrimaryVideo(item.url);
+      if (item.thumbnailUrl) {
+        onChangePrimaryImage(item.thumbnailUrl);
+      }
       onChangeShowcaseMediaType('video');
     } else {
       onChangePrimaryImage(item.url);
@@ -196,11 +219,11 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
 
     // If we deleted the active showcase item, reassign cover to the next available item
     if (itemToDelete.type === 'video' && showcaseMediaType === 'video' && primaryVideo === itemToDelete.url) {
-      const nextVideo = updated.find(it => it.type === 'video');
+      const nextVideo = updated.find((it) => it.type === 'video');
       if (nextVideo) {
         onChangePrimaryVideo(nextVideo.url);
       } else {
-        const nextImage = updated.find(it => it.type === 'image');
+        const nextImage = updated.find((it) => it.type === 'image');
         if (nextImage) {
           onChangePrimaryImage(nextImage.url);
           onChangeShowcaseMediaType('image');
@@ -209,8 +232,12 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           onChangeShowcaseMediaType('image');
         }
       }
-    } else if (itemToDelete.type === 'image' && (showcaseMediaType === 'image' || !primaryImage) && primaryImage === itemToDelete.url) {
-      const nextImage = updated.find(it => it.type === 'image');
+    } else if (
+      itemToDelete.type === 'image' &&
+      (showcaseMediaType === 'image' || !primaryImage) &&
+      primaryImage === itemToDelete.url
+    ) {
+      const nextImage = updated.find((it) => it.type === 'image');
       if (nextImage) {
         onChangePrimaryImage(nextImage.url);
       } else {
@@ -239,13 +266,14 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
       url,
       caption: manualCaption.trim() || undefined,
     };
-    const updated = [...gallery, newItem];
+    const cleanedExisting = gallery.filter((it) => !isStockPlaceholder(it.url));
+    const updated = [...cleanedExisting, newItem];
     onChangeGallery(updated);
 
-    if (manualType === 'video' && (!primaryVideo || showcaseMediaType === 'video')) {
+    if (manualType === 'video') {
       onChangePrimaryVideo(url);
       onChangeShowcaseMediaType('video');
-    } else if (manualType === 'image' && (!primaryImage || !primaryImage.trim())) {
+    } else {
       onChangePrimaryImage(url);
       onChangeShowcaseMediaType('image');
     }
@@ -266,6 +294,10 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
     return false;
   };
 
+  // Determine active cover media source for the Live Preview Box
+  const activeCoverSrc = showcaseMediaType === 'video' && primaryVideo ? primaryVideo : primaryImage;
+  const hasCoverMedia = Boolean(activeCoverSrc && activeCoverSrc.trim());
+
   return (
     <div className="bg-[#141A22] border border-brand-green/25 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
       {/* Hidden File Inputs */}
@@ -285,63 +317,166 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
         onChange={handleVideoUpload}
       />
 
-      {/* Header Bar: Title + Aspect Ratio */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3.5">
-        <div>
+      {/* TOP: LIVE CUSTOMER CARD PREVIEW STUDIO */}
+      <div className="bg-[#0D1218] border border-brand-green/20 rounded-2xl p-3 sm:p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black uppercase text-brand-orange tracking-wider flex items-center gap-1.5">
-              📸 & 🎥 Dish Visual Media & Gallery
+            <span className="text-xs font-black uppercase text-brand-orange tracking-wider flex items-center gap-1.5">
+              <Eye className="w-3.5 h-3.5 text-brand-orange" /> Live Menu Card Preview
             </span>
-            <span className="text-[9px] bg-brand-charcoal text-gray-300 px-2 py-0.5 rounded-full border border-white/10 font-bold">
-              {gallery.length} item{gallery.length === 1 ? '' : 's'}
+            <span className="text-[9px] bg-brand-green/20 text-brand-green px-2 py-0.5 rounded-full border border-brand-green/30 font-bold uppercase">
+              Diner View
             </span>
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            Add multiple photos & videos. Click <b className="text-amber-400">⭐ Set as Card Cover</b> on whichever one you want diners to see on the menu card.
-          </p>
-        </div>
 
-        {/* Aspect Ratio & Focal Point Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Aspect Ratio Selector */}
-          <div className="flex items-center gap-1 bg-[#10161D] p-1 rounded-xl border border-white/10 shrink-0">
-            <span className="text-[9px] text-gray-400 uppercase font-mono px-2">Aspect:</span>
-            {(['4:3', '16:9', '1:1'] as const).map((ar) => (
+          {/* Quick Toggle between Photo or Video cover if both exist */}
+          {primaryVideo && primaryImage && (
+            <div className="flex items-center gap-1 bg-[#18202A] p-0.5 rounded-xl border border-white/10 shrink-0">
               <button
-                key={ar}
                 type="button"
-                onClick={() => onChangeAspectRatio(ar)}
+                onClick={() => onChangeShowcaseMediaType('image')}
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
-                  aspectRatio === ar
+                  showcaseMediaType === 'image'
                     ? 'bg-brand-green text-brand-charcoal shadow-xs'
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
-                {ar === '4:3' ? '4:3 Menu' : ar === '16:9' ? '16:9 Cinema' : '1:1 Square'}
+                📷 Show Photo
               </button>
-            ))}
-          </div>
-
-          {/* Focal Point Selector (Optional) */}
-          {onChangeFocalPoint && (
-            <div className="flex items-center gap-1 bg-[#10161D] p-1 rounded-xl border border-white/10 shrink-0">
-              <span className="text-[9px] text-gray-400 uppercase font-mono px-2">Focus:</span>
-              {(['center', 'top', 'bottom'] as const).map((fp) => (
-                <button
-                  key={fp}
-                  type="button"
-                  onClick={() => onChangeFocalPoint(fp)}
-                  className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
-                    focalPoint === fp
-                      ? 'bg-amber-400 text-stone-950 shadow-xs'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {fp}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => onChangeShowcaseMediaType('video')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                  showcaseMediaType === 'video'
+                    ? 'bg-brand-orange text-brand-charcoal shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                🎥 Show Looping Video
+              </button>
             </div>
           )}
+        </div>
+
+        {/* Live Preview Display Box */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+          <div className="sm:col-span-6 md:col-span-5">
+            <div
+              className={`relative rounded-xl overflow-hidden bg-black w-full border-2 ${
+                showcaseMediaType === 'video' ? 'border-brand-orange/60' : 'border-brand-green/60'
+              } shadow-lg ${
+                aspectRatio === '16:9' ? 'aspect-[16/9]' : aspectRatio === '1:1' ? 'aspect-square' : 'aspect-[4/3]'
+              }`}
+            >
+              {hasCoverMedia ? (
+                showcaseMediaType === 'video' && primaryVideo ? (
+                  <>
+                    <video
+                      key={primaryVideo}
+                      src={primaryVideo}
+                      poster={primaryImage}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className={`w-full h-full object-cover ${
+                        focalPoint === 'top' ? 'object-top' : focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                      }`}
+                    />
+                    <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-xs px-2 py-0.5 rounded-full text-[9px] font-mono text-white flex items-center gap-1 shadow-md">
+                      <Play className="w-2.5 h-2.5 fill-white text-white" /> LOOPING
+                    </div>
+                  </>
+                ) : (
+                  <img
+                    key={primaryImage}
+                    src={primaryImage}
+                    alt="Active dish cover"
+                    className={`w-full h-full object-cover ${
+                      focalPoint === 'top' ? 'object-top' : focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                    }`}
+                    referrerPolicy="no-referrer"
+                  />
+                )
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 bg-brand-charcoal/50 text-gray-400">
+                  <Eye className="w-8 h-8 opacity-40 mb-1" />
+                  <span className="text-[11px] font-bold">No cover media selected</span>
+                  <span className="text-[9px] text-gray-500">Upload photos or video below</span>
+                </div>
+              )}
+
+              {/* Status Badge in corner */}
+              {hasCoverMedia && (
+                <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-xs text-white text-[9px] font-black px-2.5 py-1 rounded-full border border-white/20 flex items-center gap-1.5 shadow-md">
+                  {showcaseMediaType === 'video' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-brand-orange animate-ping" />
+                      <span className="text-brand-orange">🎥 VIDEO CARD COVER</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-brand-green" />
+                      <span className="text-brand-green">📷 PHOTO CARD COVER</span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Controls beside the preview */}
+          <div className="sm:col-span-6 md:col-span-7 space-y-3 text-xs">
+            <div>
+              <p className="text-gray-300 font-bold leading-snug">
+                This is the exact card format diners see on their mobile menu feed.
+              </p>
+              <p className="text-gray-400 text-[11px] mt-0.5">
+                Upload your dish photos or looping video below. Tap <b className="text-amber-400">⭐ Set as Card Cover</b> on any item to instantly switch.
+              </p>
+            </div>
+
+            {/* Aspect Ratio & Focal Point Controls */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <div className="flex items-center gap-1 bg-[#18202A] p-1 rounded-xl border border-white/10 shrink-0">
+                <span className="text-[9px] text-gray-400 uppercase font-mono px-1.5">Aspect:</span>
+                {(['4:3', '16:9', '1:1'] as const).map((ar) => (
+                  <button
+                    key={ar}
+                    type="button"
+                    onClick={() => onChangeAspectRatio(ar)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                      aspectRatio === ar
+                        ? 'bg-brand-green text-brand-charcoal shadow-xs'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {ar === '4:3' ? '4:3 Menu' : ar === '16:9' ? '16:9 Cinema' : '1:1 Square'}
+                  </button>
+                ))}
+              </div>
+
+              {onChangeFocalPoint && (
+                <div className="flex items-center gap-1 bg-[#18202A] p-1 rounded-xl border border-white/10 shrink-0">
+                  <span className="text-[9px] text-gray-400 uppercase font-mono px-1.5">Focus:</span>
+                  {(['center', 'top', 'bottom'] as const).map((fp) => (
+                    <button
+                      key={fp}
+                      type="button"
+                      onClick={() => onChangeFocalPoint(fp)}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        focalPoint === fp
+                          ? 'bg-amber-400 text-stone-950 shadow-xs'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {fp}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -354,7 +489,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           className="px-4 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md transition-all active:scale-95 disabled:opacity-50"
         >
           <Upload className="w-4 h-4 stroke-[3]" />
-          <span>+ Add Photos from Device</span>
+          <span>+ Add Photos (Firestore)</span>
         </button>
 
         <button
@@ -364,7 +499,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           className="px-4 py-2.5 bg-brand-orange hover:bg-brand-orange/90 text-brand-charcoal font-black rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-md transition-all active:scale-95 disabled:opacity-50"
         >
           <Film className="w-4 h-4 stroke-[3]" />
-          <span>+ Add Video from Device</span>
+          <span>+ Add Video (Firebase Storage)</span>
         </button>
 
         <button
@@ -373,21 +508,34 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           className="px-3.5 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 rounded-xl text-xs font-bold uppercase flex items-center gap-1.5 cursor-pointer transition-all"
         >
           <LinkIcon className="w-3.5 h-3.5" />
-          <span>Or Paste Link</span>
+          <span>Paste Video/Photo URL</span>
         </button>
       </div>
 
-      {/* Processing Loader */}
+      {/* Processing Loader with upload percentage */}
       {isProcessing && (
-        <div className="flex items-center gap-2.5 p-3 rounded-xl bg-brand-green/10 border border-brand-green/30 text-brand-green text-xs font-bold animate-pulse">
-          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-          <span>{processingStatus || 'Optimizing media for instant mobile viewing...'}</span>
+        <div className="p-3 rounded-xl bg-brand-green/10 border border-brand-green/30 space-y-1.5 animate-pulse">
+          <div className="flex items-center justify-between text-brand-green text-xs font-bold">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span>{processingStatus || 'Uploading media...'}</span>
+            </div>
+            {uploadPercent !== null && <span>{uploadPercent}%</span>}
+          </div>
+          {uploadPercent !== null && (
+            <div className="w-full bg-brand-charcoal h-1.5 rounded-full overflow-hidden">
+              <div
+                className="bg-brand-orange h-full transition-all duration-300 rounded-full"
+                style={{ width: `${uploadPercent}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
       {/* Error Message */}
       {errorMsg && (
-        <div className="flex items-center justify-between p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-rose-300 text-xs font-mono">
+        <div className="flex items-center justify-between p-3.5 rounded-xl bg-red-950/50 border border-red-500/40 text-rose-300 text-xs font-mono">
           <div className="flex items-center gap-2">
             <X className="w-4 h-4 shrink-0 text-red-400" />
             <span>{errorMsg}</span>
@@ -395,7 +543,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           <button
             type="button"
             onClick={() => setErrorMsg(null)}
-            className="text-gray-400 hover:text-white cursor-pointer"
+            className="text-gray-400 hover:text-white cursor-pointer px-1"
           >
             ✕
           </button>
@@ -406,7 +554,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
       {showUrlModal && (
         <div className="p-3.5 rounded-xl bg-[#10161D] border border-brand-green/20 space-y-2.5 animate-in fade-in">
           <span className="text-[10px] font-bold text-gray-300 uppercase block">
-            Add Image or Video via URL
+            Add Image or Video via URL (Cloudinary, YouTube, Firebase Storage, direct link)
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
             <div className="sm:col-span-3">
@@ -453,8 +601,8 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
       {gallery.length > 0 ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[10px] text-gray-400 font-mono uppercase">
-            <span>Visual Media Lineup ({gallery.length}):</span>
-            <span>⭐ Star = Active Menu Card Cover</span>
+            <span>Visual Media Lineup ({gallery.length} item{gallery.length === 1 ? '' : 's'}):</span>
+            <span className="text-amber-400 font-bold">⭐ Star = Active Menu Card Cover</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -470,13 +618,16 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
                   } flex flex-col justify-between p-2.5 space-y-2.5 shadow-md`}
                 >
                   {/* Media Preview Box with live aspect ratio and focal point calibration */}
-                  <div className={`relative rounded-xl overflow-hidden bg-black w-full border border-white/10 ${
-                    aspectRatio === '16:9' ? 'aspect-[16/9]' : aspectRatio === '1:1' ? 'aspect-square' : 'aspect-[4/3]'
-                  }`}>
+                  <div
+                    className={`relative rounded-xl overflow-hidden bg-black w-full border border-white/10 ${
+                      aspectRatio === '16:9' ? 'aspect-[16/9]' : aspectRatio === '1:1' ? 'aspect-square' : 'aspect-[4/3]'
+                    }`}
+                  >
                     {item.type === 'video' ? (
                       <>
                         <video
                           src={item.url}
+                          poster={item.thumbnailUrl || primaryImage}
                           autoPlay
                           loop
                           muted
@@ -534,7 +685,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
                         newGallery[idx] = { ...newGallery[idx], caption: e.target.value };
                         onChangeGallery(newGallery);
                       }}
-                      placeholder="Caption (e.g. Sizzling Skewer)"
+                      placeholder="Caption (e.g. Sizzling Charcoal Tikka)"
                       className="w-full bg-[#18202A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder-gray-600 focus:outline-none focus:border-brand-green"
                     />
                   </div>
@@ -595,7 +746,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
         </div>
       ) : (
         /* Empty State */
-        <div 
+        <div
           onClick={() => photoInputRef.current?.click()}
           className="border-2 border-dashed border-brand-green/20 hover:border-brand-green/40 rounded-2xl p-6 text-center transition-all cursor-pointer bg-[#10161D]/50 space-y-3"
         >
@@ -604,7 +755,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           </div>
           <div>
             <p className="text-sm font-bold text-white">No photos or videos added to this dish yet</p>
-            <p className="text-xs text-gray-400 mt-0.5">Click above or drag & drop dish media files here</p>
+            <p className="text-xs text-gray-400 mt-0.5">Click buttons above to upload photos or videos</p>
           </div>
           <div className="flex items-center justify-center gap-2 pt-1">
             <button
@@ -613,7 +764,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
                 e.stopPropagation();
                 photoInputRef.current?.click();
               }}
-              className="px-4 py-2 bg-brand-green text-brand-charcoal font-black rounded-xl text-xs uppercase"
+              className="px-4 py-2 bg-brand-green text-brand-charcoal font-black rounded-xl text-xs uppercase cursor-pointer"
             >
               Upload Photos
             </button>
@@ -623,7 +774,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
                 e.stopPropagation();
                 videoInputRef.current?.click();
               }}
-              className="px-4 py-2 bg-brand-orange text-brand-charcoal font-black rounded-xl text-xs uppercase"
+              className="px-4 py-2 bg-brand-orange text-brand-charcoal font-black rounded-xl text-xs uppercase cursor-pointer"
             >
               Upload Video
             </button>
@@ -633,3 +784,4 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
     </div>
   );
 };
+

@@ -581,6 +581,7 @@ export default function MenuTab({
                     {meal.showcaseMediaType === 'video' && meal.video ? (
                       <video
                         src={meal.video}
+                        poster={meal.image}
                         autoPlay
                         loop
                         muted

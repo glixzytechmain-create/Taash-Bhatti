@@ -4,6 +4,7 @@
  */
 
 import { initializeApp } from 'firebase/app';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -19,6 +20,14 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
+// Initialize Firebase Storage safely for file and video hosting
+let storage: FirebaseStorage | null = null;
+try {
+  storage = getStorage(app);
+} catch (storageErr) {
+  console.warn('[Firebase] Firebase Storage initialization fallback:', storageErr);
+}
 
 // Initialize Firebase Analytics safely for browser environments
 let analytics: Analytics | null = null;
@@ -181,4 +190,4 @@ async function testConnection() {
 }
 testConnection();
 
-export { app, auth, db, googleProvider, appleProvider, analytics, firebaseConfig };
+export { app, auth, db, storage, googleProvider, appleProvider, analytics, firebaseConfig };

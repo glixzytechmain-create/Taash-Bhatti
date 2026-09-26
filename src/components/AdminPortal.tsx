@@ -1826,13 +1826,29 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     if (!formName.trim() || !formDescription.trim()) return;
 
     const mealId = editingMeal ? editingMeal.id : 'm_' + Date.now();
-    const targetImage = formImage.trim() || 
+
+    // Prioritize genuine user media over stock Unsplash placeholders
+    const userPhoto = formGallery.find(g => g.type === 'image' && !g.url.includes('images.unsplash.com'));
+    const cleanFormImage = (formImage && !formImage.includes('images.unsplash.com'))
+      ? formImage.trim()
+      : (userPhoto ? userPhoto.url : formImage.trim());
+
+    const targetImage = cleanFormImage || 
       formGallery.find(g => g.type === 'image')?.url ||
       formGallery.find(g => g.thumbnailUrl)?.thumbnailUrl ||
       'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80';
+
     const targetVideo = formVideo.trim() || 
       formGallery.find(g => g.type === 'video')?.url || 
       undefined;
+
+    // Filter out stock Unsplash placeholders from the saved gallery if real media exists
+    const cleanedGallery = formGallery.filter(item => {
+      if (item.url.includes('images.unsplash.com') && formGallery.some(it => !it.url.includes('images.unsplash.com'))) {
+        return false;
+      }
+      return true;
+    });
     
     const parseIngredients = (text: string): { name: string; grams: number }[] => {
       if (!text || !text.trim()) return [];
@@ -1854,7 +1870,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       showcaseMediaType: formShowcaseMediaType,
       aspectRatio: formAspectRatio,
       focalPoint: formFocalPoint,
-      gallery: formGallery.length > 0 ? formGallery : undefined,
+      gallery: cleanedGallery.length > 0 ? cleanedGallery : undefined,
       price: Number(formPrice),
       calories: Number(formCalories),
       protein: Number(formProtein),

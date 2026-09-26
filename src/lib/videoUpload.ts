@@ -107,7 +107,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 export function captureVideoPoster(src: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const video = document.createElement('video');
     video.preload = 'auto';
     video.muted = true;
@@ -117,37 +117,63 @@ export function captureVideoPoster(src: string): Promise<string> {
       video.crossOrigin = 'anonymous';
     }
 
-    const timer = setTimeout(() => {
-      video.remove();
-      reject(new Error('Poster capture timeout'));
-    }, 5000);
+    let finished = false;
+    const finish = (result: string) => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timer);
+        video.onloadeddata = null;
+        video.onseeked = null;
+        video.onerror = null;
+        video.remove();
+        resolve(result);
+      }
+    };
 
+    const timer = setTimeout(() => {
+      finish('');
+    }, 4500);
+
+    const tryDraw = () => {
+      try {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          const canvas = document.createElement('canvas');
+          const maxDim = 640;
+          let w = video.videoWidth;
+          let h = video.videoHeight;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, w, h);
+            const thumb = canvas.toDataURL('image/jpeg', 0.70);
+            finish(thumb);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Canvas poster capture exception:', e);
+      }
+    };
+
+    video.onseeked = tryDraw;
     video.onloadeddata = () => {
       try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 480;
-        canvas.height = video.videoHeight || 360;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const thumb = canvas.toDataURL('image/jpeg', 0.65);
-          clearTimeout(timer);
-          video.remove();
-          resolve(thumb);
-          return;
-        }
-      } catch (_) {}
-      clearTimeout(timer);
-      video.remove();
-      reject(new Error('Failed to capture frame'));
+        video.currentTime = Math.min(0.2, (video.duration || 1) / 2);
+      } catch (_) {
+        tryDraw();
+      }
     };
-
-    video.onerror = () => {
-      clearTimeout(timer);
-      video.remove();
-      reject(new Error('Failed to load video for poster'));
-    };
-
+    video.onerror = () => finish('');
     video.src = src;
   });
 }

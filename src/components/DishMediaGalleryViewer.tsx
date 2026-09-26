@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, X, Play } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronLeft, ChevronRight, X, Play, Film, Image as ImageIcon } from 'lucide-react';
 import { Meal, MealMediaItem } from '../types';
 
 interface DishMediaGalleryViewerProps {
@@ -60,11 +60,25 @@ export default function DishMediaGalleryViewer({
   }, [meal]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const touchStartXRef = useRef<number | null>(null);
 
   // Reset to first item when meal changes
   useEffect(() => {
     setActiveIndex(0);
   }, [meal.id]);
+
+  // Auto-scroll selected thumbnail into center of horizontal reel
+  useEffect(() => {
+    if (itemRefs.current[activeIndex]) {
+      itemRefs.current[activeIndex]?.scrollIntoView({
+        behavior: 'smooth',
+        inline: 'center',
+        block: 'nearest',
+      });
+    }
+  }, [activeIndex]);
 
   const activeItem = mediaList[activeIndex] || mediaList[0] || {
     id: 'fallback',
@@ -72,14 +86,33 @@ export default function DishMediaGalleryViewer({
     url: meal.image,
   };
 
-  const handlePrev = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handlePrev = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setActiveIndex((prev) => (prev === 0 ? mediaList.length - 1 : prev - 1));
   };
 
-  const handleNext = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleNext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setActiveIndex((prev) => (prev === mediaList.length - 1 ? 0 : prev + 1));
+  };
+
+  // Touch Swipe Handlers for mobile navigation on the main picture
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchEndX - touchStartXRef.current;
+    if (Math.abs(diff) > 40) {
+      if (diff < 0) {
+        handleNext();
+      } else {
+        handlePrev();
+      }
+    }
+    touchStartXRef.current = null;
   };
 
   // Determine fixed aspect ratio container style
@@ -110,143 +143,178 @@ export default function DishMediaGalleryViewer({
   const focalClass = getFocalPointClass();
 
   return (
-    <div
-      className={`relative w-full overflow-hidden bg-black select-none shrink-0 ${getAspectRatioClasses()}`}
-    >
-      {/* Active Visual Media: Embedded Looping Video or High-Res Photo */}
-      {activeItem.type === 'video' ? (
-        <video
-          key={activeItem.url}
-          src={activeItem.url}
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          className={`w-full h-full object-cover pointer-events-none transition-opacity duration-300 ${focalClass}`}
-        />
-      ) : (
-        <img
-          key={activeItem.url}
-          src={activeItem.url}
-          alt={activeItem.caption || meal.name}
-          className={`w-full h-full object-cover transition-opacity duration-300 ${focalClass}`}
-          referrerPolicy="no-referrer"
-        />
-      )}
+    <div className="w-full flex flex-col shrink-0 select-none bg-black">
+      {/* 1. Main Visual Player (Cinematic Video or Photo) */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className={`relative w-full overflow-hidden bg-black ${getAspectRatioClasses()}`}
+      >
+        {/* Active Visual Media */}
+        {activeItem.type === 'video' ? (
+          <video
+            key={activeItem.url}
+            src={activeItem.url}
+            poster={activeItem.thumbnailUrl || meal.image}
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            className={`w-full h-full object-cover pointer-events-none transition-opacity duration-300 ${focalClass}`}
+          />
+        ) : (
+          <img
+            key={activeItem.url}
+            src={activeItem.url}
+            alt={activeItem.caption || meal.name}
+            className={`w-full h-full object-cover transition-opacity duration-300 ${focalClass}`}
+            referrerPolicy="no-referrer"
+          />
+        )}
 
-      {/* Subtle vignette gradient for readable controls and indicators */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/40 pointer-events-none" />
+        {/* Subtle vignette gradient for readable controls and indicators */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/40 pointer-events-none" />
 
-      {/* Top Left: Media Type & Counter Indicator */}
-      <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-1.5">
-        <div className="bg-black/65 backdrop-blur-md text-white font-mono text-[9px] font-black px-2.5 py-1 rounded-full border border-white/15 flex items-center gap-1.5 shadow-md">
-          <span>{activeItem.type === 'video' ? '🎥 VIDEO' : '📷 PHOTO'}</span>
-          {mediaList.length > 1 && (
-            <span className="text-white/70">
-              ({activeIndex + 1}/{mediaList.length})
-            </span>
+        {/* Top Left: Media Type & Counter Indicator */}
+        <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-1.5">
+          <div className="bg-black/75 backdrop-blur-md text-white font-mono text-[9px] font-black px-2.5 py-1 rounded-full border border-white/15 flex items-center gap-1.5 shadow-md">
+            <span>{activeItem.type === 'video' ? '🎥 VIDEO' : '📷 PHOTO'}</span>
+            {mediaList.length > 1 && (
+              <span className="text-white/70">
+                ({activeIndex + 1}/{mediaList.length})
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Top Right: Badges and Close Button */}
+        <div className="absolute top-3.5 right-3.5 z-20 flex items-center gap-2">
+          {topRightBadge}
+          {showCloseButton && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close dialog"
+              className="p-2 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-md active:scale-95"
+            >
+              <X className="w-4 h-4" />
+            </button>
           )}
         </div>
-      </div>
 
-      {/* Top Right: Badges and Close Button */}
-      <div className="absolute top-3.5 right-3.5 z-20 flex items-center gap-2">
-        {topRightBadge}
-        {showCloseButton && onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="p-2 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-md active:scale-95"
-          >
-            <X className="w-4 h-4" />
-          </button>
+        {/* Left / Right Carousel Navigation (visible when dish has multiple media items) */}
+        {mediaList.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={(e) => handlePrev(e)}
+              aria-label="Previous visual"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/55 hover:bg-black/85 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-lg active:scale-90"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => handleNext(e)}
+              aria-label="Next visual"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/55 hover:bg-black/85 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-lg active:scale-90"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </>
+        )}
+
+        {/* Bottom Area: Optional caption, bottom-left badge, bottom-right action */}
+        <div className="absolute bottom-3 left-4 right-4 z-20 pointer-events-none flex items-center justify-between">
+          {bottomLeftBadge && <div className="pointer-events-auto">{bottomLeftBadge}</div>}
+          {bottomRightAction && <div className="pointer-events-auto ml-auto">{bottomRightAction}</div>}
+        </div>
+
+        {/* Active Media Caption (if present) */}
+        {activeItem.caption && (
+          <div className="absolute bottom-11 left-1/2 -translate-x-1/2 z-15 pointer-events-none max-w-[85%] text-center">
+            <span className="text-[10px] font-medium text-white/90 bg-black/70 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/10 truncate inline-block">
+              {activeItem.caption}
+            </span>
+          </div>
         )}
       </div>
 
-      {/* Left / Right Carousel Navigation (visible when dish has multiple media items) */}
+      {/* 2. DEDICATED HORIZONTAL SCROLL GALLERY REEL (Images & Videos) */}
       {mediaList.length > 1 && (
-        <>
-          <button
-            type="button"
-            onClick={handlePrev}
-            aria-label="Previous visual"
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/55 hover:bg-black/85 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-lg active:scale-90"
+        <div className="w-full bg-[#10161D] border-b border-brand-green/15 px-3.5 py-2.5 space-y-1.5 shadow-inner">
+          <div className="flex items-center justify-between text-[10px] uppercase font-bold text-gray-400">
+            <span className="text-brand-orange flex items-center gap-1">
+              <Film className="w-3 h-3" /> Dish Media Gallery ({mediaList.length})
+            </span>
+            <span className="text-[9px] font-mono text-gray-400">← Swipe / Tap to switch →</span>
+          </div>
+
+          <div
+            ref={scrollContainerRef}
+            className="flex items-center gap-2.5 overflow-x-auto snap-x scrollbar-thin scrollbar-thumb-white/20 pb-1 pt-0.5 scroll-smooth"
+            style={{ WebkitOverflowScrolling: 'touch' }}
           >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleNext}
-            aria-label="Next visual"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/55 hover:bg-black/85 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-lg active:scale-90"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </>
-      )}
-
-      {/* Bottom Area: Optional caption, bottom-left badge, bottom-right action */}
-      <div className="absolute bottom-12 left-4 right-4 z-20 pointer-events-none flex items-center justify-between">
-        {bottomLeftBadge && <div className="pointer-events-auto">{bottomLeftBadge}</div>}
-        {bottomRightAction && <div className="pointer-events-auto ml-auto">{bottomRightAction}</div>}
-      </div>
-
-      {/* Active Media Caption (if present) */}
-      {activeItem.caption && (
-        <div className="absolute bottom-11 left-1/2 -translate-x-1/2 z-15 pointer-events-none max-w-[85%] text-center">
-          <span className="text-[10px] font-medium text-white/90 bg-black/60 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/10 truncate inline-block">
-            {activeItem.caption}
-          </span>
-        </div>
-      )}
-
-      {/* Bottom Multi-Media Thumbnail Lineup Selector */}
-      {mediaList.length > 1 && (
-        <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-black/65 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 max-w-[92%] overflow-x-auto shadow-xl">
-          {mediaList.map((item, idx) => {
-            const isSelected = idx === activeIndex;
-            return (
-              <button
-                key={item.id || idx}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveIndex(idx);
-                }}
-                title={item.caption || (item.type === 'video' ? 'Video Preview' : `Photo ${idx + 1}`)}
-                className={`relative w-8 h-8 rounded-lg overflow-hidden border transition-all shrink-0 cursor-pointer ${
-                  isSelected
-                    ? 'border-brand-orange scale-110 shadow-md shadow-brand-orange/50 ring-2 ring-white/60'
-                    : 'border-white/30 opacity-70 hover:opacity-100 hover:border-white/60'
-                }`}
-              >
-                {item.type === 'video' ? (
-                  <div className="w-full h-full bg-stone-900 relative">
-                    <img
-                      src={item.thumbnailUrl || meal.image}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
-                      <Play className="w-3 h-3 text-white fill-white" />
+            {mediaList.map((item, idx) => {
+              const isSelected = idx === activeIndex;
+              return (
+                <button
+                  key={item.id || idx}
+                  ref={(el) => {
+                    itemRefs.current[idx] = el;
+                  }}
+                  type="button"
+                  onClick={() => setActiveIndex(idx)}
+                  className={`relative w-20 h-16 sm:w-24 sm:h-18 rounded-xl overflow-hidden snap-start shrink-0 cursor-pointer transition-all border text-left ${
+                    isSelected
+                      ? 'border-brand-orange ring-2 ring-brand-orange/90 shadow-lg scale-102'
+                      : 'border-white/15 opacity-65 hover:opacity-100 hover:border-white/40'
+                  }`}
+                >
+                  {/* Thumbnail Visual */}
+                  {item.type === 'video' ? (
+                    <div className="w-full h-full bg-stone-900 relative">
+                      <img
+                        src={item.thumbnailUrl || meal.image}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-brand-orange/90 flex items-center justify-center shadow-md">
+                          <Play className="w-3 h-3 text-stone-950 fill-stone-950 ml-0.5" />
+                        </div>
+                      </div>
+                      <div className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[7px] font-mono text-white">
+                        VIDEO
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <img
-                    src={item.thumbnailUrl || item.url}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                )}
-              </button>
-            );
-          })}
+                  ) : (
+                    <div className="w-full h-full bg-stone-900 relative">
+                      <img
+                        src={item.url}
+                        alt={item.caption || `Photo ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[7px] font-mono text-white">
+                        PHOTO
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Active selection dot */}
+                  {isSelected && (
+                    <div className="absolute top-1 left-1 w-2 h-2 rounded-full bg-brand-orange shadow-xs" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
+

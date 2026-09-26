@@ -677,18 +677,23 @@ export default function HomeTab({
                 {meal.showcaseMediaType === 'video' && meal.video ? (
                   <video
                     src={meal.video}
+                    poster={meal.image}
                     autoPlay
                     loop
                     muted
                     playsInline
                     preload="metadata"
-                    className="w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500"
+                    className={`w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500 ${
+                      meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                    }`}
                   />
                 ) : (
                   <img
                     src={meal.image}
                     alt={meal.name}
-                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${meal.isAvailable === false ? 'grayscale contrast-75 opacity-70' : ''}`}
+                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${
+                      meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
+                    } ${meal.isAvailable === false ? 'grayscale contrast-75 opacity-70' : ''}`}
                     referrerPolicy="no-referrer"
                   />
                 )}
