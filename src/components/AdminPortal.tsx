@@ -92,6 +92,7 @@ import InAppDeliveryMap from './InAppDeliveryMap';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 import { ImageUploader } from './ImageUploader';
 import { VideoUploader, DEFAULT_FOOD_VIDEO_PRESETS } from './VideoUploader';
+import { DishMediaManager } from './DishMediaManager';
 import { processVideoFile } from '../lib/videoUpload';
 import { compressImageFile } from '../lib/imageUpload';
 import { DeveloperMenuModal } from './DeveloperMenuModal';
@@ -1173,11 +1174,6 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [formAspectRatio, setFormAspectRatio] = useState<'4:3' | '16:9' | '1:1'>('4:3');
   const [formFocalPoint, setFormFocalPoint] = useState<'center' | 'top' | 'bottom'>('center');
   const [formGallery, setFormGallery] = useState<MealMediaItem[]>([]);
-  const [newGalleryUrl, setNewGalleryUrl] = useState('');
-  const [newGalleryType, setNewGalleryType] = useState<'image' | 'video'>('image');
-  const [newGalleryCaption, setNewGalleryCaption] = useState('');
-  const lineupFileInputRef = useRef<HTMLInputElement>(null);
-  const [isProcessingLineup, setIsProcessingLineup] = useState(false);
   const [formPrice, setFormPrice] = useState(300);
   const [formCalories, setFormCalories] = useState(400);
   const [formProtein, setFormProtein] = useState(30);
@@ -1762,9 +1758,6 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormAspectRatio('4:3');
     setFormFocalPoint('center');
     setFormGallery([]);
-    setNewGalleryUrl('');
-    setNewGalleryType('image');
-    setNewGalleryCaption('');
     setFormPrice(299);
     setFormCalories(450);
     setFormProtein(30);
@@ -1795,10 +1788,18 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormShowcaseMediaType(meal.showcaseMediaType || (meal.video ? 'video' : 'image'));
     setFormAspectRatio(meal.aspectRatio || '4:3');
     setFormFocalPoint(meal.focalPoint || 'center');
-    setFormGallery(meal.gallery || []);
-    setNewGalleryUrl('');
-    setNewGalleryType('image');
-    setNewGalleryCaption('');
+    const initialGallery = (meal.gallery && meal.gallery.length > 0)
+      ? [...meal.gallery]
+      : [];
+    if (initialGallery.length === 0) {
+      if (meal.image && meal.image.trim()) {
+        initialGallery.push({ id: `img_${Date.now()}`, type: 'image', url: meal.image.trim(), caption: 'Main Recipe Photo' });
+      }
+      if (meal.video && meal.video.trim()) {
+        initialGallery.push({ id: `vid_${Date.now() + 1}`, type: 'video', url: meal.video.trim(), caption: 'Looping Preview' });
+      }
+    }
+    setFormGallery(initialGallery);
     setFormPrice(meal.price);
     setFormCalories(meal.calories);
     setFormProtein(meal.protein);
@@ -1819,60 +1820,19 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setShowFormModal(true);
   };
 
-  // Meal Gallery Lineup Item Handlers
-  const handleAddGalleryItem = () => {
-    if (!newGalleryUrl.trim()) return;
-    const newItem: MealMediaItem = {
-      id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      type: newGalleryType,
-      url: newGalleryUrl.trim(),
-      caption: newGalleryCaption.trim() || undefined,
-    };
-    setFormGallery((prev) => [...prev, newItem]);
-    setNewGalleryUrl('');
-    setNewGalleryCaption('');
-  };
-
-  const handleRemoveGalleryItem = (index: number) => {
-    setFormGallery((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleLineupFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    setIsProcessingLineup(true);
-    try {
-      if (file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mov)$/i)) {
-        setNewGalleryType('video');
-        const res = await processVideoFile(file);
-        setNewGalleryUrl(res.dataUrl);
-        if (!newGalleryCaption.trim()) {
-          setNewGalleryCaption(file.name.replace(/\.[^/.]+$/, ''));
-        }
-      } else {
-        setNewGalleryType('image');
-        const dataUrl = await compressImageFile(file, 800);
-        setNewGalleryUrl(dataUrl);
-        if (!newGalleryCaption.trim()) {
-          setNewGalleryCaption(file.name.replace(/\.[^/.]+$/, ''));
-        }
-      }
-    } catch (err: any) {
-      alert(err.message || 'Failed to process file');
-    } finally {
-      setIsProcessingLineup(false);
-      e.target.value = '';
-    }
-  };
-
   // Save Meal (Add or Update)
   const handleSaveMeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formDescription.trim()) return;
 
     const mealId = editingMeal ? editingMeal.id : 'm_' + Date.now();
-    const targetImage = formImage.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80';
+    const targetImage = formImage.trim() || 
+      formGallery.find(g => g.type === 'image')?.url ||
+      formGallery.find(g => g.thumbnailUrl)?.thumbnailUrl ||
+      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80';
+    const targetVideo = formVideo.trim() || 
+      formGallery.find(g => g.type === 'video')?.url || 
+      undefined;
     
     const parseIngredients = (text: string): { name: string; grams: number }[] => {
       if (!text || !text.trim()) return [];
@@ -1890,16 +1850,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       name: formName.trim(),
       description: formDescription.trim(),
       image: targetImage,
-      video: formVideo.trim() || undefined,
+      video: targetVideo,
       showcaseMediaType: formShowcaseMediaType,
       aspectRatio: formAspectRatio,
       focalPoint: formFocalPoint,
-      gallery: formGallery.length > 0 
-        ? formGallery 
-        : (formVideo.trim() ? [
-            { id: `${mealId}-vid`, type: 'video', url: formVideo.trim(), caption: 'Looping Preview' },
-            { id: `${mealId}-img`, type: 'image', url: targetImage, caption: formName.trim() }
-          ] : undefined),
+      gallery: formGallery.length > 0 ? formGallery : undefined,
       price: Number(formPrice),
       calories: Number(formCalories),
       protein: Number(formProtein),
@@ -12039,28 +11994,16 @@ Free express delivery directly to trainer desks"
 
                     <form onSubmit={handleSaveMeal} className="space-y-4">
                       {/* Section A: Text Specs */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Meal Name *</label>
-                          <input
-                            required
-                            type="text"
-                            value={formName}
-                            onChange={(e) => setFormName(e.target.value)}
-                            className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-brand-green/70"
-                            placeholder="e.g. Muscle Double-Chicken Rice"
-                          />
-                        </div>
-
-                        <div>
-                          <ImageUploader
-                            value={formImage}
-                            onChange={setFormImage}
-                            label="Meal Recipe Photo"
-                            placeholder="Upload meal photo from gallery, take photo, or paste image link"
-                            compact
-                          />
-                        </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Meal Name *</label>
+                        <input
+                          required
+                          type="text"
+                          value={formName}
+                          onChange={(e) => setFormName(e.target.value)}
+                          className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-brand-green/70"
+                          placeholder="e.g. Muscle Double-Chicken Rice"
+                        />
                       </div>
 
                       <div>
@@ -12089,296 +12032,21 @@ Free express delivery directly to trainer desks"
                         </span>
                       </div>
 
-                      {/* Section: Dish Visual Studio (Looping Video + Multi-Image Lineup + Aspect Ratio Framing) */}
-                      <div className="bg-[#141A22] border border-brand-green/20 rounded-2xl p-4 space-y-4">
-                        <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-                          <div>
-                            <span className="text-[9px] font-black uppercase text-brand-orange tracking-wider flex items-center gap-1.5">
-                              🎥 & 📸 DISH VISUAL STUDIO & FRAMING CALIBRATOR
-                            </span>
-                            <p className="text-[11px] text-gray-400 mt-0.5">
-                              Configure multi-image lineup, silent looping video showcase, and cross-screen aspect ratio calibration.
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Looping Video - Upload from Device or Paste URL / Presets */}
-                        <VideoUploader
-                          value={formVideo}
-                          onChange={(val) => {
-                            setFormVideo(val);
-                            if (val && formShowcaseMediaType !== 'video') {
-                              setFormShowcaseMediaType('video');
-                            }
-                          }}
-                          label="Looping Dish Video (Upload from Device or Paste URL)"
-                        />
-
-                        {/* Dual Controls: Card Showcase Media & Aspect Ratio Selection */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                          {/* Showcase Media Selector */}
-                          <div className="bg-brand-charcoal/60 p-3 rounded-xl border border-white/5 space-y-2">
-                            <label className="text-[10px] font-bold text-gray-300 uppercase block">
-                              Dish Card Showcase Thumbnail
-                            </label>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setFormShowcaseMediaType('image')}
-                                className={`py-2 px-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
-                                  formShowcaseMediaType === 'image'
-                                    ? 'bg-brand-green/20 text-brand-green border-brand-green font-black shadow-xs'
-                                    : 'bg-brand-charcoal text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
-                                }`}
-                              >
-                                <span>📷 Photo</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFormShowcaseMediaType('video');
-                                  if (!formVideo.trim()) {
-                                    setFormVideo(DEFAULT_FOOD_VIDEO_PRESETS[0].url);
-                                  }
-                                }}
-                                className={`py-2 px-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
-                                  formShowcaseMediaType === 'video'
-                                    ? 'bg-brand-orange/20 text-brand-orange border-brand-orange font-black shadow-xs'
-                                    : 'bg-brand-charcoal text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
-                                }`}
-                              >
-                                <span>🎥 Looping Video</span>
-                              </button>
-                            </div>
-                            <span className="text-[9px] text-gray-500 block leading-tight">
-                              Card shows this media. Opening the dish reveals the full visual lineup.
-                            </span>
-                          </div>
-
-                          {/* Fixed Aspect Ratio Preset Selection */}
-                          <div className="bg-brand-charcoal/60 p-3 rounded-xl border border-white/5 space-y-2">
-                            <label className="text-[10px] font-bold text-gray-300 uppercase block">
-                              Display Aspect Ratio (Fixed Format)
-                            </label>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              {[
-                                { id: '4:3', label: '4:3 Menu' },
-                                { id: '16:9', label: '16:9 Cinema' },
-                                { id: '1:1', label: '1:1 Square' },
-                              ].map((ar) => (
-                                <button
-                                  key={ar.id}
-                                  type="button"
-                                  onClick={() => setFormAspectRatio(ar.id as any)}
-                                  className={`py-2 px-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
-                                    formAspectRatio === ar.id
-                                      ? 'bg-white/20 text-white border-white/40 font-black'
-                                      : 'bg-brand-charcoal text-gray-400 border-white/10'
-                                  }`}
-                                >
-                                  {ar.label}
-                                </button>
-                              ))}
-                            </div>
-                            {/* Focal Point Anchor */}
-                            <div className="flex items-center gap-1.5 pt-1">
-                              <span className="text-[9px] text-gray-500 uppercase font-mono">Focal Focus:</span>
-                              {(['center', 'top', 'bottom'] as const).map((fp) => (
-                                <button
-                                  key={fp}
-                                  type="button"
-                                  onClick={() => setFormFocalPoint(fp)}
-                                  className={`text-[9px] px-2 py-0.5 rounded capitalize border cursor-pointer ${
-                                    formFocalPoint === fp
-                                      ? 'bg-brand-green/20 text-brand-green border-brand-green/40 font-bold'
-                                      : 'bg-brand-charcoal text-gray-400 border-white/10'
-                                  }`}
-                                >
-                                  {fp}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Live Visual Framing Preview */}
-                        {(formImage || formVideo) && (
-                          <div className="bg-black/50 p-3 rounded-xl border border-white/10">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-[9px] font-mono text-gray-400 uppercase">
-                                Live Frame Preview ({formAspectRatio} • {formFocalPoint} focus • showing {formShowcaseMediaType}):
-                              </span>
-                              <span className="text-[9px] font-mono text-brand-green bg-brand-green/10 px-2 py-0.5 rounded border border-brand-green/20">
-                                Seamless Zero-Audio Loop
-                              </span>
-                            </div>
-                            <div className="flex justify-center">
-                              <div
-                                className={`relative overflow-hidden rounded-xl border border-white/20 bg-black ${
-                                  formAspectRatio === '16:9'
-                                    ? 'aspect-[16/9] w-full max-w-[280px]'
-                                    : formAspectRatio === '1:1'
-                                    ? 'aspect-square w-full max-w-[200px]'
-                                    : 'aspect-[4/3] w-full max-w-[240px]'
-                                }`}
-                              >
-                                {formShowcaseMediaType === 'video' && formVideo ? (
-                                  <video
-                                    src={formVideo}
-                                    autoPlay
-                                    loop
-                                    muted
-                                    playsInline
-                                    className={`w-full h-full object-cover pointer-events-none ${
-                                      formFocalPoint === 'top' ? 'object-top' : formFocalPoint === 'bottom' ? 'object-bottom' : 'object-center'
-                                    }`}
-                                  />
-                                ) : (
-                                  <img
-                                    src={formImage || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80'}
-                                    alt="Preview"
-                                    className={`w-full h-full object-cover ${
-                                      formFocalPoint === 'top' ? 'object-top' : formFocalPoint === 'bottom' ? 'object-bottom' : 'object-center'
-                                    }`}
-                                    referrerPolicy="no-referrer"
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Multi-Media Gallery Lineup Builder */}
-                        <div className="border-t border-white/10 pt-3 space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-gray-300 uppercase">
-                              Total Visual Lineup ({formGallery.length} additional media items)
-                            </span>
-                            <span className="text-[9px] text-gray-500">
-                              Diners can browse this lineup in the quick-view modal
-                            </span>
-                          </div>
-
-                          {/* Existing Gallery Items */}
-                          {formGallery.length > 0 && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {formGallery.map((item, idx) => (
-                                <div
-                                  key={item.id || idx}
-                                  className="flex items-center gap-2 bg-brand-charcoal p-2 rounded-xl border border-white/10 text-xs"
-                                >
-                                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 relative">
-                                    {item.type === 'video' ? (
-                                      <div className="w-full h-full bg-stone-900 flex items-center justify-center text-white text-[9px]">
-                                        🎥
-                                      </div>
-                                    ) : (
-                                      <img
-                                        src={item.url}
-                                        alt=""
-                                        className="w-full h-full object-cover"
-                                        referrerPolicy="no-referrer"
-                                      />
-                                    )}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-[9px] font-mono font-bold text-brand-orange uppercase block">
-                                      {item.type === 'video' ? '🎥 Looping Video' : '📷 Image'}
-                                    </span>
-                                    <p className="text-[10px] text-white/90 truncate">
-                                      {item.caption || item.url}
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveGalleryItem(idx)}
-                                    className="p-1 hover:bg-red-500/20 text-red-400 rounded-lg cursor-pointer transition-colors"
-                                    title="Remove from lineup"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Add New Lineup Item Row */}
-                          <div className="bg-brand-charcoal/50 p-2.5 rounded-xl border border-white/5 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[9px] font-bold text-gray-400 uppercase block">
-                                + Add Photo or Video to Lineup
-                              </span>
-                              <input
-                                type="file"
-                                ref={lineupFileInputRef}
-                                accept="image/*,video/mp4,video/webm,video/quicktime,video/*"
-                                className="hidden"
-                                onChange={handleLineupFileChange}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => lineupFileInputRef.current?.click()}
-                                disabled={isProcessingLineup}
-                                className="text-[10px] font-bold text-brand-green hover:underline cursor-pointer bg-transparent border-none p-0 flex items-center gap-1 disabled:opacity-50"
-                              >
-                                {isProcessingLineup ? (
-                                  <>
-                                    <Loader2 className="w-3 h-3 animate-spin" /> Processing Media...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Upload className="w-3 h-3" /> Upload File from Device
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                              <div className="sm:col-span-3">
-                                <select
-                                  value={newGalleryType}
-                                  onChange={(e) => setNewGalleryType(e.target.value as any)}
-                                  className="w-full bg-[#141A22] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white"
-                                >
-                                  <option value="image">📷 Photo</option>
-                                  <option value="video">🎥 Video</option>
-                                </select>
-                              </div>
-                              <div className="sm:col-span-5">
-                                <input
-                                  type="text"
-                                  value={newGalleryUrl}
-                                  onChange={(e) => setNewGalleryUrl(e.target.value)}
-                                  placeholder="Media URL or click upload above"
-                                  className="w-full bg-[#141A22] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 font-mono"
-                                />
-                              </div>
-                              <div className="sm:col-span-4">
-                                <input
-                                  type="text"
-                                  value={newGalleryCaption}
-                                  onChange={(e) => setNewGalleryCaption(e.target.value)}
-                                  placeholder="Caption (e.g. Sizzling Platter)"
-                                  className="w-full bg-[#141A22] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600"
-                                />
-                              </div>
-                            </div>
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={handleAddGalleryItem}
-                                disabled={!newGalleryUrl.trim()}
-                                className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
-                                  newGalleryUrl.trim()
-                                    ? 'bg-brand-green text-white border-brand-green/40 hover:bg-brand-green/80 cursor-pointer shadow-xs'
-                                    : 'opacity-40 cursor-not-allowed bg-gray-800 text-gray-500 border-white/5'
-                                }`}
-                              >
-                                Add to Lineup
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      {/* Section: Unified Dish Visual Media & Gallery Studio */}
+                      <DishMediaManager
+                        gallery={formGallery}
+                        onChangeGallery={setFormGallery}
+                        showcaseMediaType={formShowcaseMediaType}
+                        onChangeShowcaseMediaType={setFormShowcaseMediaType}
+                        primaryImage={formImage}
+                        onChangePrimaryImage={setFormImage}
+                        primaryVideo={formVideo}
+                        onChangePrimaryVideo={setFormVideo}
+                        aspectRatio={formAspectRatio}
+                        onChangeAspectRatio={setFormAspectRatio}
+                        focalPoint={formFocalPoint}
+                        onChangeFocalPoint={setFormFocalPoint}
+                      />
 
                       {/* Section B: Price & Macro Targets */}
                       <div className="bg-brand-charcoal/20 border border-brand-green/5 p-3.5 rounded-2xl grid grid-cols-2 sm:grid-cols-5 gap-3">

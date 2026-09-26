@@ -6,10 +6,12 @@
  * - Reads video files (.mp4, .webm, .mov) directly from user devices
  * - Auto-optimizes long/heavy videos into lightweight silent food loops
  * - Supports direct Data URLs and URL fallbacks
+ * - Zero CORS / decode issues (no crossOrigin on blob: URLs)
  */
 
 export interface VideoProcessingResult {
   dataUrl: string;
+  thumbnailUrl?: string;
   duration: number;
   width: number;
   height: number;
@@ -18,7 +20,7 @@ export interface VideoProcessingResult {
 
 /**
  * Reads a video file from device into a Base64 Data URL.
- * If the file is small (<= 1.2MB), reads it directly.
+ * If the file is small (<= 2.5MB), reads it directly as Data URL for instant, 100% reliable playback.
  * If larger, attempts client-side canvas loop recording (first 4 seconds, silent, 480p)
  * to keep payload within Firestore and browser performance thresholds.
  */
@@ -28,17 +30,19 @@ export async function processVideoFile(
   maxDimension: number = 480,
   onProgress?: (status: string) => void
 ): Promise<VideoProcessingResult> {
-  if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|ogg|m4v)$/i)) {
+  if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|ogg|m4v|mkv)$/i)) {
     throw new Error('Please select a valid video file (.mp4, .webm, or .mov).');
   }
 
-  // 1. If video is already very lightweight (under 1.2 MB), read directly as Data URL
-  if (file.size <= 1.2 * 1024 * 1024) {
-    onProgress?.('Reading lightweight video clip...');
+  // 1. If video is already lightweight (under 2.5 MB), read directly as Data URL
+  if (file.size <= 2.5 * 1024 * 1024) {
+    onProgress?.('Reading video clip from device...');
     const dataUrl = await readFileAsDataUrl(file);
     const meta = await getVideoMetadata(dataUrl);
+    const thumb = await captureVideoPoster(dataUrl).catch(() => undefined);
     return {
       dataUrl,
+      thumbnailUrl: thumb,
       duration: meta.duration,
       width: meta.width,
       height: meta.height,
@@ -52,24 +56,45 @@ export async function processVideoFile(
     typeof HTMLCanvasElement.prototype.captureStream === 'function';
 
   if (!canCompress) {
-    // If MediaRecorder is unsupported and file is under 3MB, fallback to direct reading
-    if (file.size <= 3 * 1024 * 1024) {
+    // If MediaRecorder is unsupported and file is under 4MB, fallback to direct reading
+    if (file.size <= 4 * 1024 * 1024) {
       const dataUrl = await readFileAsDataUrl(file);
       const meta = await getVideoMetadata(dataUrl);
+      const thumb = await captureVideoPoster(dataUrl).catch(() => undefined);
       return {
         dataUrl,
+        thumbnailUrl: thumb,
         duration: meta.duration,
         width: meta.width,
         height: meta.height,
         sizeBytes: file.size,
       };
     }
-    throw new Error(`Video file is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Please choose a clip under 3MB or paste a video URL.`);
+    throw new Error(`Video file is ${(file.size / (1024 * 1024)).toFixed(1)}MB. To keep dish cards fast on mobile, please choose a clip under 4MB or paste a video URL.`);
   }
 
   // 3. Compress video into a silent, high-efficiency 4-second loop
-  onProgress?.('Extracting silent looping preview...');
-  return compressVideoToLoop(file, maxDurationSec, maxDimension, onProgress);
+  onProgress?.('Optimizing video loop for mobile...');
+  try {
+    return await compressVideoToLoop(file, maxDurationSec, maxDimension, onProgress);
+  } catch (compressErr) {
+    console.warn('Canvas video loop compression failed, trying direct read fallback:', compressErr);
+    // If compression failed but file is under 4MB, safely fallback to direct read
+    if (file.size <= 4 * 1024 * 1024) {
+      const dataUrl = await readFileAsDataUrl(file);
+      const meta = await getVideoMetadata(dataUrl);
+      const thumb = await captureVideoPoster(dataUrl).catch(() => undefined);
+      return {
+        dataUrl,
+        thumbnailUrl: thumb,
+        duration: meta.duration,
+        width: meta.width,
+        height: meta.height,
+        sizeBytes: file.size,
+      };
+    }
+    throw new Error(`Could not optimize ${(file.size / (1024 * 1024)).toFixed(1)}MB video. Please choose a shorter clip under 4MB or paste an external video URL.`);
+  }
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -81,12 +106,62 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+export function captureVideoPoster(src: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
+    // CRITICAL: NEVER set crossOrigin on blob: or data: URLs
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      video.crossOrigin = 'anonymous';
+    }
+
+    const timer = setTimeout(() => {
+      video.remove();
+      reject(new Error('Poster capture timeout'));
+    }, 5000);
+
+    video.onloadeddata = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 480;
+        canvas.height = video.videoHeight || 360;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const thumb = canvas.toDataURL('image/jpeg', 0.65);
+          clearTimeout(timer);
+          video.remove();
+          resolve(thumb);
+          return;
+        }
+      } catch (_) {}
+      clearTimeout(timer);
+      video.remove();
+      reject(new Error('Failed to capture frame'));
+    };
+
+    video.onerror = () => {
+      clearTimeout(timer);
+      video.remove();
+      reject(new Error('Failed to load video for poster'));
+    };
+
+    video.src = src;
+  });
+}
+
 function getVideoMetadata(src: string): Promise<{ duration: number; width: number; height: number }> {
   return new Promise((resolve) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
     video.muted = true;
     video.playsInline = true;
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      video.crossOrigin = 'anonymous';
+    }
+
     video.onloadedmetadata = () => {
       resolve({
         duration: video.duration || 0,
@@ -112,36 +187,42 @@ async function compressVideoToLoop(
   return new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(file);
     const video = document.createElement('video');
-    video.src = blobUrl;
     video.muted = true;
     video.playsInline = true;
-    video.crossOrigin = 'anonymous';
+    video.preload = 'auto';
+    video.style.position = 'fixed';
+    video.style.top = '-9999px';
+    video.style.left = '-9999px';
+    video.style.opacity = '0';
+    video.style.pointerEvents = 'none';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.appendChild(video);
+    }
 
     let timeoutId: NodeJS.Timeout;
+    let animationFrameId: number;
 
     const cleanup = () => {
       clearTimeout(timeoutId);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
       URL.revokeObjectURL(blobUrl);
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-      video.remove();
+      try {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      } catch (_) {}
+      if (video.parentNode) {
+        video.parentNode.removeChild(video);
+      }
     };
 
     // Safety timeout after 15 seconds
     timeoutId = setTimeout(() => {
       cleanup();
-      // If compression timed out, try falling back to direct read if under 3MB
-      if (file.size <= 3 * 1024 * 1024) {
-        readFileAsDataUrl(file)
-          .then((dataUrl) => resolve({ dataUrl, duration: 0, width: 480, height: 360, sizeBytes: file.size }))
-          .catch(reject);
-      } else {
-        reject(new Error('Video processing timed out. Please select a shorter clip or paste a video URL.'));
-      }
+      reject(new Error('Video processing timed out.'));
     }, 15000);
 
-    video.onloadedmetadata = async () => {
+    video.onloadeddata = async () => {
       try {
         let width = video.videoWidth || 640;
         let height = video.videoHeight || 480;
@@ -172,10 +253,26 @@ async function compressVideoToLoop(
           return;
         }
 
+        // Capture first frame as thumbnail
+        ctx.drawImage(video, 0, 0, width, height);
+        const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.65);
+
         // Determine supported recording mimeType
         let mimeType = 'video/webm;codecs=vp8';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+        if (typeof MediaRecorder !== 'undefined') {
+          const candidates = [
+            'video/mp4;codecs=avc1',
+            'video/mp4',
+            'video/webm;codecs=vp9',
+            'video/webm;codecs=vp8',
+            'video/webm',
+          ];
+          for (const cand of candidates) {
+            if (MediaRecorder.isTypeSupported(cand)) {
+              mimeType = cand;
+              break;
+            }
+          }
         }
 
         const stream = canvas.captureStream(24);
@@ -183,7 +280,7 @@ async function compressVideoToLoop(
         try {
           recorder = new MediaRecorder(stream, {
             mimeType,
-            videoBitsPerSecond: 600_000, // 600 kbps for ~300KB 4s clip
+            videoBitsPerSecond: 500_000, // 500 kbps for ~250KB 4s clip
           });
         } catch (_) {
           recorder = new MediaRecorder(stream);
@@ -196,11 +293,12 @@ async function compressVideoToLoop(
           }
         };
 
-        const targetDuration = Math.min(video.duration || maxDurationSec, maxDurationSec);
-        let animationFrameId: number;
+        const rawDuration = video.duration;
+        const targetDuration = (rawDuration && !isNaN(rawDuration) && isFinite(rawDuration) && rawDuration > 0)
+          ? Math.min(rawDuration, maxDurationSec)
+          : maxDurationSec;
 
         recorder.onstop = async () => {
-          cancelAnimationFrame(animationFrameId);
           cleanup();
 
           const recordedBlob = new Blob(recordedChunks, { type: mimeType });
@@ -209,6 +307,7 @@ async function compressVideoToLoop(
             const dataUrl = reader.result as string;
             resolve({
               dataUrl,
+              thumbnailUrl,
               duration: targetDuration,
               width,
               height,
@@ -234,24 +333,22 @@ async function compressVideoToLoop(
 
         recorder.start(100);
         video.currentTime = 0;
-        await video.play();
+        try {
+          await video.play();
+        } catch (_) {}
         renderFrame();
       } catch (procErr: any) {
         cleanup();
-        console.warn('Video loop compression exception:', procErr);
-        // Fallback to direct file read if under 3MB
-        if (file.size <= 3 * 1024 * 1024) {
-          const directDataUrl = await readFileAsDataUrl(file);
-          resolve({ dataUrl: directDataUrl, duration: 0, width: 480, height: 360, sizeBytes: file.size });
-        } else {
-          reject(procErr);
-        }
+        reject(procErr);
       }
     };
 
     video.onerror = () => {
       cleanup();
-      reject(new Error('Could not decode video file. Please ensure it is a valid MP4 or WebM video.'));
+      reject(new Error('Could not read video file.'));
     };
+
+    // Set src AFTER listeners are registered
+    video.src = blobUrl;
   });
 }
