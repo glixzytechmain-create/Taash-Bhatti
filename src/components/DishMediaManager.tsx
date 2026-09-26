@@ -26,6 +26,9 @@ import {
   X, 
   Sparkles,
   Play,
+  Pause,
+  Volume2,
+  VolumeX,
   Eye,
   RefreshCw,
   Sliders
@@ -73,12 +76,47 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+
+  const [previewIsPlaying, setPreviewIsPlaying] = useState(true);
+  const [previewIsMuted, setPreviewIsMuted] = useState(true);
+
+  // Helper to determine if an existing image is an Unsplash stock placeholder
+  const isStockPlaceholder = (url?: string) => {
+    if (!url) return false;
+    return url.includes('images.unsplash.com');
+  };
+
+  // Toggle video playback in admin preview box
+  const togglePreviewPlayback = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!previewVideoRef.current) return;
+    if (previewVideoRef.current.paused) {
+      previewVideoRef.current
+        .play()
+        .then(() => setPreviewIsPlaying(true))
+        .catch(console.warn);
+    } else {
+      previewVideoRef.current.pause();
+      setPreviewIsPlaying(false);
+    }
+  };
 
   // Synchronize initial primary image & video into gallery if gallery is empty
   useEffect(() => {
-    if (gallery.length === 0) {
+    const hasRealVideo = Boolean(primaryVideo && primaryVideo.trim());
+    const isUnsplash = Boolean(primaryImage && isStockPlaceholder(primaryImage));
+
+    // If primaryImage was previously polluted with an Unsplash placeholder and dish has video, clear it
+    if (isUnsplash && hasRealVideo) {
+      onChangePrimaryImage('');
+    }
+
+    if (!gallery || gallery.length === 0) {
       const initialItems: MealMediaItem[] = [];
-      if (primaryImage && primaryImage.trim()) {
+
+      // Only push primary photo if it is NOT an Unsplash placeholder when video exists
+      if (primaryImage && primaryImage.trim() && (!hasRealVideo || !isUnsplash)) {
         initialItems.push({
           id: `img_${Date.now()}`,
           type: 'image',
@@ -100,10 +138,19 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
     }
   }, []);
 
-  // Helper to determine if an existing image is an Unsplash stock placeholder
-  const isStockPlaceholder = (url: string) => {
-    return url.includes('images.unsplash.com');
-  };
+  // Reliable HTML5 autoplay trigger on video selection
+  useEffect(() => {
+    if (showcaseMediaType === 'video' && primaryVideo && previewVideoRef.current) {
+      previewVideoRef.current.currentTime = 0;
+      previewVideoRef.current
+        .play()
+        .then(() => setPreviewIsPlaying(true))
+        .catch((err) => {
+          console.warn('Admin preview auto-play deferred by browser policy:', err);
+          setPreviewIsPlaying(false);
+        });
+    }
+  }, [showcaseMediaType, primaryVideo]);
 
   // Handle uploading multiple photos from device
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,6 +231,8 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
       onChangePrimaryVideo(result.url);
       if (result.thumbnailUrl) {
         onChangePrimaryImage(result.thumbnailUrl);
+      } else if (isStockPlaceholder(primaryImage)) {
+        onChangePrimaryImage('');
       }
       onChangeShowcaseMediaType('video');
     } catch (err: any) {
@@ -295,8 +344,11 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
   };
 
   // Determine active cover media source for the Live Preview Box
-  const activeCoverSrc = showcaseMediaType === 'video' && primaryVideo ? primaryVideo : primaryImage;
+  const activeCoverSrc = showcaseMediaType === 'video' && primaryVideo 
+    ? primaryVideo 
+    : (primaryImage && !isStockPlaceholder(primaryImage) ? primaryImage : (primaryVideo || ''));
   const hasCoverMedia = Boolean(activeCoverSrc && activeCoverSrc.trim());
+  const safePreviewPoster = (primaryImage && !isStockPlaceholder(primaryImage)) ? primaryImage : undefined;
 
   return (
     <div className="bg-[#141A22] border border-brand-green/25 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
@@ -330,7 +382,7 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
           </div>
 
           {/* Quick Toggle between Photo or Video cover if both exist */}
-          {primaryVideo && primaryImage && (
+          {primaryVideo && primaryImage && !isStockPlaceholder(primaryImage) && (
             <div className="flex items-center gap-1 bg-[#18202A] p-0.5 rounded-xl border border-white/10 shrink-0">
               <button
                 type="button"
@@ -370,23 +422,71 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
             >
               {hasCoverMedia ? (
                 showcaseMediaType === 'video' && primaryVideo ? (
-                  <>
+                  <div
+                    className="relative w-full h-full cursor-pointer group/preview"
+                    onClick={togglePreviewPlayback}
+                  >
                     <video
+                      ref={previewVideoRef}
                       key={primaryVideo}
                       src={primaryVideo}
-                      poster={primaryImage}
+                      poster={safePreviewPoster}
                       autoPlay
                       loop
-                      muted
+                      muted={previewIsMuted}
                       playsInline
+                      preload="auto"
+                      onPlay={() => setPreviewIsPlaying(true)}
+                      onPause={() => setPreviewIsPlaying(false)}
                       className={`w-full h-full object-cover ${
                         focalPoint === 'top' ? 'object-top' : focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
                       }`}
                     />
-                    <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-xs px-2 py-0.5 rounded-full text-[9px] font-mono text-white flex items-center gap-1 shadow-md">
-                      <Play className="w-2.5 h-2.5 fill-white text-white" /> LOOPING
+
+                    {/* Centered Play Button Overlay if Paused */}
+                    {!previewIsPlaying && (
+                      <div className="absolute inset-0 bg-black/45 flex items-center justify-center animate-in fade-in">
+                        <button
+                          type="button"
+                          onClick={togglePreviewPlayback}
+                          className="w-12 h-12 rounded-full bg-brand-orange text-white flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+                          title="Click to Play"
+                        >
+                          <Play className="w-6 h-6 fill-white text-white ml-0.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bottom Controls: Audio Mute/Unmute + Play/Pause State */}
+                    <div className="absolute bottom-2 right-2 flex items-center gap-1.5 z-10">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewIsMuted(!previewIsMuted);
+                        }}
+                        className="bg-black/80 hover:bg-black text-white p-1 rounded-full text-xs transition-colors border border-white/20 shadow-md cursor-pointer"
+                        title={previewIsMuted ? 'Unmute Audio' : 'Mute Audio'}
+                      >
+                        {previewIsMuted ? <VolumeX className="w-3 h-3 text-gray-300" /> : <Volume2 className="w-3 h-3 text-brand-orange" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={togglePreviewPlayback}
+                        className="bg-black/80 backdrop-blur-xs px-2 py-0.5 rounded-full text-[9px] font-mono text-white flex items-center gap-1 shadow-md hover:bg-black/95 transition-all cursor-pointer"
+                      >
+                        {previewIsPlaying ? (
+                          <>
+                            <Pause className="w-2.5 h-2.5 fill-white text-white" /> LOOPING
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-2.5 h-2.5 fill-white text-white" /> PAUSED
+                          </>
+                        )}
+                      </button>
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <img
                     key={primaryImage}
@@ -627,11 +727,12 @@ export const DishMediaManager: React.FC<DishMediaManagerProps> = ({
                       <>
                         <video
                           src={item.url}
-                          poster={item.thumbnailUrl || primaryImage}
+                          poster={item.thumbnailUrl || (!isStockPlaceholder(primaryImage) ? primaryImage : undefined)}
                           autoPlay
                           loop
                           muted
                           playsInline
+                          preload="metadata"
                           className={`w-full h-full object-cover ${
                             focalPoint === 'top' ? 'object-top' : focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
                           }`}

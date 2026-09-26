@@ -581,7 +581,7 @@ export default function MenuTab({
                     {meal.showcaseMediaType === 'video' && meal.video ? (
                       <video
                         src={meal.video}
-                        poster={meal.image}
+                        poster={meal.image && !meal.image.includes('unsplash.com') ? meal.image : undefined}
                         autoPlay
                         loop
                         muted

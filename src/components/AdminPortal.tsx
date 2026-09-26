@@ -1783,16 +1783,28 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setEditingMeal(meal);
     setFormName(meal.name);
     setFormDescription(meal.description);
-    setFormImage(meal.image);
+
+    const hasVideo = Boolean(meal.video && meal.video.trim());
+    const isImageUnsplash = Boolean(meal.image && meal.image.includes('images.unsplash.com'));
+
+    // If dish has video and image is an Unsplash placeholder, do not keep the mock image
+    setFormImage(hasVideo && isImageUnsplash ? '' : (meal.image || ''));
     setFormVideo(meal.video || '');
-    setFormShowcaseMediaType(meal.showcaseMediaType || (meal.video ? 'video' : 'image'));
+    setFormShowcaseMediaType(meal.showcaseMediaType || (hasVideo ? 'video' : 'image'));
     setFormAspectRatio(meal.aspectRatio || '4:3');
     setFormFocalPoint(meal.focalPoint || 'center');
-    const initialGallery = (meal.gallery && meal.gallery.length > 0)
-      ? [...meal.gallery]
-      : [];
+
+    const rawGallery = Array.isArray(meal.gallery) ? [...meal.gallery] : [];
+    const initialGallery = rawGallery.filter(item => {
+      // Purge Unsplash mock items if video or real user media exists
+      if (item.url?.includes('images.unsplash.com') && (hasVideo || rawGallery.some(g => !g.url?.includes('images.unsplash.com')))) {
+        return false;
+      }
+      return true;
+    });
+
     if (initialGallery.length === 0) {
-      if (meal.image && meal.image.trim()) {
+      if (meal.image && meal.image.trim() && (!hasVideo || !isImageUnsplash)) {
         initialGallery.push({ id: `img_${Date.now()}`, type: 'image', url: meal.image.trim(), caption: 'Main Recipe Photo' });
       }
       if (meal.video && meal.video.trim()) {
@@ -1827,24 +1839,27 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
 
     const mealId = editingMeal ? editingMeal.id : 'm_' + Date.now();
 
-    // Prioritize genuine user media over stock Unsplash placeholders
-    const userPhoto = formGallery.find(g => g.type === 'image' && !g.url.includes('images.unsplash.com'));
-    const cleanFormImage = (formImage && !formImage.includes('images.unsplash.com'))
-      ? formImage.trim()
-      : (userPhoto ? userPhoto.url : formImage.trim());
-
-    const targetImage = cleanFormImage || 
-      formGallery.find(g => g.type === 'image')?.url ||
-      formGallery.find(g => g.thumbnailUrl)?.thumbnailUrl ||
-      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80';
-
     const targetVideo = formVideo.trim() || 
       formGallery.find(g => g.type === 'video')?.url || 
       undefined;
 
+    // Prioritize genuine user media over stock Unsplash placeholders
+    const userPhoto = formGallery.find(g => g.type === 'image' && !g.url.includes('images.unsplash.com'));
+    const cleanFormImage = (formImage && !formImage.includes('images.unsplash.com'))
+      ? formImage.trim()
+      : (userPhoto ? userPhoto.url : '');
+
+    const targetThumbnail = formGallery.find(g => g.thumbnailUrl && !g.thumbnailUrl.includes('images.unsplash.com'))?.thumbnailUrl;
+
+    // If targetVideo exists, NEVER fall back to the Unsplash salad bowl!
+    const targetImage = cleanFormImage || 
+      userPhoto?.url ||
+      targetThumbnail ||
+      (targetVideo ? '' : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80');
+
     // Filter out stock Unsplash placeholders from the saved gallery if real media exists
     const cleanedGallery = formGallery.filter(item => {
-      if (item.url.includes('images.unsplash.com') && formGallery.some(it => !it.url.includes('images.unsplash.com'))) {
+      if (item.url.includes('images.unsplash.com') && (Boolean(targetVideo) || formGallery.some(it => !it.url.includes('images.unsplash.com')))) {
         return false;
       }
       return true;
@@ -6159,12 +6174,34 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                         >
                           {/* Left: Info details */}
                           <div className="flex gap-4 items-start md:items-center">
-                            <img
-                              src={m.image}
-                              alt={m.name}
-                              className={`w-14 h-14 rounded-xl object-cover border border-brand-green/10 shrink-0 ${isSoldOut ? 'grayscale' : ''}`}
-                              referrerPolicy="no-referrer"
-                            />
+                            <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-brand-green/10 shrink-0 bg-black flex items-center justify-center">
+                              {m.video && (m.showcaseMediaType === 'video' || !m.image || m.image.includes('images.unsplash.com')) ? (
+                                <>
+                                  <video
+                                    src={m.video}
+                                    poster={m.image && !m.image.includes('images.unsplash.com') ? m.image : undefined}
+                                    muted
+                                    playsInline
+                                    loop
+                                    autoPlay
+                                    preload="metadata"
+                                    className={`w-full h-full object-cover ${isSoldOut ? 'grayscale' : ''}`}
+                                  />
+                                  <div className="absolute bottom-0.5 right-0.5 bg-black/80 px-1 py-0.2 rounded text-[7px] font-mono text-white pointer-events-none">
+                                    ▶ VID
+                                  </div>
+                                </>
+                              ) : m.image ? (
+                                <img
+                                  src={m.image}
+                                  alt={m.name}
+                                  className={`w-full h-full object-cover ${isSoldOut ? 'grayscale' : ''}`}
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <span className="text-xl">🍲</span>
+                              )}
+                            </div>
                             <div className="space-y-1.5 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="text-xs font-black text-white">{m.name}</h3>

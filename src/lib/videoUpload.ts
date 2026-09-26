@@ -124,8 +124,17 @@ export function captureVideoPoster(src: string): Promise<string> {
         clearTimeout(timer);
         video.onloadeddata = null;
         video.onseeked = null;
+        video.oncanplay = null;
+        video.onloadedmetadata = null;
         video.onerror = null;
-        video.remove();
+        try {
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        } catch (_) {}
+        if (video.parentNode) {
+          video.parentNode.removeChild(video);
+        }
         resolve(result);
       }
     };
@@ -157,23 +166,44 @@ export function captureVideoPoster(src: string): Promise<string> {
             ctx.drawImage(video, 0, 0, w, h);
             const thumb = canvas.toDataURL('image/jpeg', 0.70);
             finish(thumb);
-            return;
+            return true;
           }
         }
       } catch (e) {
         console.warn('Canvas poster capture exception:', e);
       }
+      return false;
     };
 
-    video.onseeked = tryDraw;
+    video.onseeked = () => {
+      tryDraw();
+    };
+
     video.onloadeddata = () => {
-      try {
-        video.currentTime = Math.min(0.2, (video.duration || 1) / 2);
-      } catch (_) {
-        tryDraw();
+      if (!tryDraw()) {
+        try {
+          video.currentTime = Math.min(0.2, (video.duration || 1) / 2);
+        } catch (_) {
+          tryDraw();
+        }
       }
     };
+
+    video.oncanplay = () => {
+      tryDraw();
+    };
+
     video.onerror = () => finish('');
+
+    video.style.position = 'fixed';
+    video.style.top = '-9999px';
+    video.style.left = '-9999px';
+    video.style.opacity = '0';
+    video.style.pointerEvents = 'none';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.appendChild(video);
+    }
+
     video.src = src;
   });
 }

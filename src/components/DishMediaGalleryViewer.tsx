@@ -4,7 +4,17 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight, X, Play, Film, Image as ImageIcon } from 'lucide-react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  X, 
+  Play, 
+  Pause,
+  Film, 
+  Image as ImageIcon,
+  Volume2,
+  VolumeX
+} from 'lucide-react';
 import { Meal, MealMediaItem } from '../types';
 
 interface DishMediaGalleryViewerProps {
@@ -35,11 +45,11 @@ export default function DishMediaGalleryViewer({
         id: `${meal.id}-video`,
         type: 'video',
         url: meal.video,
-        thumbnailUrl: meal.image,
+        thumbnailUrl: (meal.image && !meal.image.includes('images.unsplash.com')) ? meal.image : undefined,
         caption: 'Chef Looping Video Preview',
       });
     }
-    if (meal.image) {
+    if (meal.image && !meal.image.includes('images.unsplash.com')) {
       items.push({
         id: `${meal.id}-img-main`,
         type: 'image',
@@ -52,7 +62,7 @@ export default function DishMediaGalleryViewer({
         id: `${meal.id}-video`,
         type: 'video',
         url: meal.video,
-        thumbnailUrl: meal.image,
+        thumbnailUrl: (meal.image && !meal.image.includes('images.unsplash.com')) ? meal.image : undefined,
         caption: 'Chef Looping Video Preview',
       });
     }
@@ -60,9 +70,12 @@ export default function DishMediaGalleryViewer({
   }, [meal]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const touchStartXRef = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Reset to first item when meal changes
   useEffect(() => {
@@ -84,6 +97,51 @@ export default function DishMediaGalleryViewer({
     id: 'fallback',
     type: 'image' as const,
     url: meal.image,
+  };
+
+  // Safe poster: strictly ignore hardcoded Unsplash salad bowl images
+  const safePoster = (activeItem.thumbnailUrl && !activeItem.thumbnailUrl.includes('images.unsplash.com'))
+    ? activeItem.thumbnailUrl
+    : (meal.image && !meal.image.includes('images.unsplash.com') ? meal.image : undefined);
+
+  // Trigger reliable HTML5 video play whenever active video changes
+  useEffect(() => {
+    if (activeItem.type === 'video' && videoRef.current) {
+      const v = videoRef.current;
+      v.defaultMuted = isMuted;
+      v.muted = isMuted;
+      v.playsInline = true;
+      const playPromise = v.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => setIsPlaying(true))
+          .catch((err) => {
+            console.warn('Browser paused video autoplay, awaiting user touch:', err);
+            setIsPlaying(false);
+          });
+      }
+    }
+  }, [activeIndex, activeItem.url, isMuted]);
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {});
+    } else {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    videoRef.current.muted = nextMuted;
   };
 
   const handlePrev = (e?: React.MouseEvent) => {
@@ -142,6 +200,15 @@ export default function DishMediaGalleryViewer({
 
   const focalClass = getFocalPointClass();
 
+  // Filter out raw numerical filenames like "32762" from the user-facing caption pill
+  const isMeaningfulCaption = Boolean(
+    activeItem.caption &&
+    activeItem.caption.trim().length > 1 &&
+    !/^\d+$/.test(activeItem.caption.trim()) &&
+    !activeItem.caption.includes('vid_') &&
+    !activeItem.caption.includes('img_')
+  );
+
   return (
     <div className="w-full flex flex-col shrink-0 select-none bg-black">
       {/* 1. Main Visual Player (Cinematic Video or Photo) */}
@@ -152,17 +219,41 @@ export default function DishMediaGalleryViewer({
       >
         {/* Active Visual Media */}
         {activeItem.type === 'video' ? (
-          <video
-            key={activeItem.url}
-            src={activeItem.url}
-            poster={activeItem.thumbnailUrl || meal.image}
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="auto"
-            className={`w-full h-full object-cover pointer-events-none transition-opacity duration-300 ${focalClass}`}
-          />
+          <div className="relative w-full h-full cursor-pointer group/video" onClick={togglePlay}>
+            <video
+              ref={videoRef}
+              key={activeItem.url}
+              src={activeItem.url}
+              poster={safePoster}
+              autoPlay
+              loop
+              muted={isMuted}
+              playsInline
+              preload="auto"
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              className={`w-full h-full object-cover transition-opacity duration-300 ${focalClass}`}
+            />
+
+            {/* Play Button Overlay when paused */}
+            {!isPlaying && (
+              <div className="absolute inset-0 bg-black/45 flex items-center justify-center pointer-events-none animate-in fade-in">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-brand-orange text-stone-950 flex items-center justify-center shadow-2xl transition-transform group-hover/video:scale-110">
+                  <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-stone-950 ml-1" />
+                </div>
+              </div>
+            )}
+
+            {/* Sound Toggle Button (Bottom-Right) */}
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="absolute bottom-3 right-3 z-30 p-2 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-md active:scale-90"
+              title={isMuted ? 'Unmute video audio' : 'Mute video audio'}
+            >
+              {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-brand-green" />}
+            </button>
+          </div>
         ) : (
           <img
             key={activeItem.url}
@@ -177,7 +268,7 @@ export default function DishMediaGalleryViewer({
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/40 pointer-events-none" />
 
         {/* Top Left: Media Type & Counter Indicator */}
-        <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-1.5">
+        <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-1.5 pointer-events-none">
           <div className="bg-black/75 backdrop-blur-md text-white font-mono text-[9px] font-black px-2.5 py-1 rounded-full border border-white/15 flex items-center gap-1.5 shadow-md">
             <span>{activeItem.type === 'video' ? '🎥 VIDEO' : '📷 PHOTO'}</span>
             {mediaList.length > 1 && (
@@ -225,15 +316,15 @@ export default function DishMediaGalleryViewer({
           </>
         )}
 
-        {/* Bottom Area: Optional caption, bottom-left badge, bottom-right action */}
-        <div className="absolute bottom-3 left-4 right-4 z-20 pointer-events-none flex items-center justify-between">
+        {/* Bottom Area: Optional bottom-left badge, bottom-right action */}
+        <div className="absolute bottom-3 left-4 right-14 z-20 pointer-events-none flex items-center justify-between">
           {bottomLeftBadge && <div className="pointer-events-auto">{bottomLeftBadge}</div>}
           {bottomRightAction && <div className="pointer-events-auto ml-auto">{bottomRightAction}</div>}
         </div>
 
-        {/* Active Media Caption (if present) */}
-        {activeItem.caption && (
-          <div className="absolute bottom-11 left-1/2 -translate-x-1/2 z-15 pointer-events-none max-w-[85%] text-center">
+        {/* Active Media Caption (strictly only if meaningful) */}
+        {isMeaningfulCaption && (
+          <div className="absolute bottom-11 left-1/2 -translate-x-1/2 z-15 pointer-events-none max-w-[80%] text-center">
             <span className="text-[10px] font-medium text-white/90 bg-black/70 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/10 truncate inline-block">
               {activeItem.caption}
             </span>
