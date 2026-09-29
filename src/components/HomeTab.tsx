@@ -44,6 +44,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import GoesWellWithExtension from './GoesWellWithExtension';
 import CartQuantityButton from './CartQuantityButton';
+import DishShowcaseMedia from './DishShowcaseMedia';
 
 interface HomeTabProps {
   onSelectGoal?: (goal: any) => void;
@@ -674,52 +675,12 @@ export default function HomeTab({
               className="w-72 sm:w-80 bg-white rounded-3xl border border-brand-green/15 p-4 shadow-sm hover:shadow-xl transition-all shrink-0 snap-start flex flex-col justify-between space-y-3 relative group"
             >
               <div className="relative rounded-2xl overflow-hidden h-44 border border-brand-green/10">
-                {meal.showcaseMediaType === 'video' && meal.video ? (
-                  <video
-                    ref={(el) => {
-                      if (el) {
-                        el.defaultMuted = true;
-                        el.muted = true;
-                        el.playsInline = true;
-                        el.setAttribute('muted', '');
-                        el.setAttribute('playsinline', '');
-                        el.setAttribute('webkit-playsinline', 'true');
-                        const p = el.play();
-                        if (p !== undefined) {
-                          p.catch(() => {
-                            el.muted = true;
-                            el.play().catch(() => {});
-                          });
-                        }
-                      }
-                    }}
-                    key={meal.video}
-                    src={meal.video}
-                    poster={meal.image && !meal.image.includes('unsplash.com') ? meal.image : undefined}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="auto"
-                    onCanPlay={(e) => {
-                      e.currentTarget.play().catch(() => {});
-                    }}
-                    className={`w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500 ${
-                      meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
-                    }`}
-                  >
-                    <source src={meal.video} type="video/mp4" />
-                  </video>
-                ) : (
-                  <img
-                    src={meal.image}
-                    alt={meal.name}
-                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${
-                      meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
-                    } ${meal.isAvailable === false ? 'grayscale contrast-75 opacity-70' : ''}`}
-                    referrerPolicy="no-referrer"
-                  />
-                )}
+                <DishShowcaseMedia
+                  meal={meal}
+                  imgClassName="group-hover:scale-105 transition-transform duration-500"
+                  videoClassName="group-hover:scale-105 transition-transform duration-500"
+                  onQuickView={onQuickView}
+                />
 
                 {/* Multi-Media Lineup Count Badge */}
                 {meal.gallery && meal.gallery.length > 1 && (

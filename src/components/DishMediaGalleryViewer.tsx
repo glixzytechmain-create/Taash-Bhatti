@@ -58,7 +58,7 @@ export default function DishMediaGalleryViewer({
         id: `${meal.id}-video`,
         type: 'video',
         url: meal.video,
-        thumbnailUrl: (meal.image && !meal.image.includes('images.unsplash.com')) ? meal.image : undefined,
+        thumbnailUrl: meal.image || (meal.gallery && meal.gallery[0]?.thumbnailUrl),
         caption: 'Chef Looping Video Preview',
       });
     }
@@ -66,6 +66,7 @@ export default function DishMediaGalleryViewer({
   }, [meal]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const touchStartXRef = useRef<number | null>(null);
@@ -74,10 +75,12 @@ export default function DishMediaGalleryViewer({
   // Reset to first item when meal changes
   useEffect(() => {
     setActiveIndex(0);
+    setIsPlayingVideo(false);
   }, [meal.id]);
 
   // Auto-scroll selected thumbnail into center of horizontal reel
   useEffect(() => {
+    setIsPlayingVideo(false);
     if (itemRefs.current[activeIndex]) {
       itemRefs.current[activeIndex]?.scrollIntoView({
         behavior: 'smooth',
@@ -93,10 +96,8 @@ export default function DishMediaGalleryViewer({
     url: meal.image,
   };
 
-  // Safe poster: strictly ignore hardcoded Unsplash salad bowl images
-  const safePoster = (activeItem.thumbnailUrl && !activeItem.thumbnailUrl.includes('images.unsplash.com'))
-    ? activeItem.thumbnailUrl
-    : (meal.image && !meal.image.includes('images.unsplash.com') ? meal.image : undefined);
+  // Reliable poster: dish photo or gallery thumbnail
+  const safePoster = activeItem.thumbnailUrl || meal.image || (meal.gallery && meal.gallery[0]?.thumbnailUrl);
 
   // Trigger reliable HTML5 video play whenever active video changes
   useEffect(() => {
@@ -110,9 +111,9 @@ export default function DishMediaGalleryViewer({
       v.setAttribute('webkit-playsinline', 'true');
       const playPromise = v.play();
       if (playPromise !== undefined) {
-        playPromise.catch(() => {
+        playPromise.then(() => setIsPlayingVideo(true)).catch(() => {
           v.muted = true;
-          v.play().catch(() => {});
+          v.play().then(() => setIsPlayingVideo(true)).catch(() => {});
         });
       }
     }
@@ -194,6 +195,14 @@ export default function DishMediaGalleryViewer({
         {/* Active Visual Media */}
         {activeItem.type === 'video' ? (
           <div className="relative w-full h-full pointer-events-none">
+            {safePoster && (
+              <img
+                src={safePoster}
+                alt={activeItem.caption || meal.name}
+                className={`absolute inset-0 w-full h-full object-cover ${focalClass}`}
+                referrerPolicy="no-referrer"
+              />
+            )}
             <video
               ref={(el) => {
                 (videoRef as any).current = el;
@@ -206,25 +215,32 @@ export default function DishMediaGalleryViewer({
                   el.setAttribute('webkit-playsinline', 'true');
                   const p = el.play();
                   if (p !== undefined) {
-                    p.catch(() => {
+                    p.then(() => setIsPlayingVideo(true)).catch(() => {
                       el.muted = true;
-                      el.play().catch(() => {});
+                      el.play().then(() => setIsPlayingVideo(true)).catch(() => {});
                     });
                   }
                 }
               }}
               key={activeItem.url}
               src={activeItem.url}
-              poster={safePoster}
               autoPlay
               loop
               muted
               playsInline
               preload="auto"
-              onCanPlay={(e) => {
-                e.currentTarget.play().catch(() => {});
+              onPlaying={() => setIsPlayingVideo(true)}
+              onTimeUpdate={(e) => {
+                if (e.currentTarget.currentTime > 0) setIsPlayingVideo(true);
               }}
-              className={`w-full h-full object-cover transition-opacity duration-300 ${focalClass}`}
+              onPause={() => setIsPlayingVideo(false)}
+              onError={() => setIsPlayingVideo(false)}
+              onCanPlay={(e) => {
+                e.currentTarget.play().then(() => setIsPlayingVideo(true)).catch(() => {});
+              }}
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${focalClass} ${
+                isPlayingVideo ? 'opacity-100' : 'opacity-0'
+              }`}
             >
               <source src={activeItem.url} type="video/mp4" />
             </video>

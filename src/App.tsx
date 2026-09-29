@@ -346,13 +346,11 @@ export default function App() {
       });
     };
     kickstartVideos();
-    window.addEventListener('touchstart', kickstartVideos, { passive: true });
-    window.addEventListener('click', kickstartVideos, { passive: true });
-    window.addEventListener('scroll', kickstartVideos, { passive: true });
+    window.addEventListener('touchstart', kickstartVideos, { passive: true, once: true });
+    window.addEventListener('click', kickstartVideos, { passive: true, once: true });
     return () => {
       window.removeEventListener('touchstart', kickstartVideos);
       window.removeEventListener('click', kickstartVideos);
-      window.removeEventListener('scroll', kickstartVideos);
     };
   }, []);
 

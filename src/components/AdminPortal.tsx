@@ -6175,7 +6175,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                           {/* Left: Info details */}
                           <div className="flex gap-4 items-start md:items-center">
                             <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-brand-green/10 shrink-0 bg-black flex items-center justify-center">
-                              {m.video && (m.showcaseMediaType === 'video' || !m.image || m.image.includes('images.unsplash.com')) ? (
+                              {m.video && (m.showcaseMediaType === 'video' || !m.image) ? (
                                 <>
                                   <video
                                     ref={(el) => {
@@ -6185,7 +6185,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                         el.playsInline = true;
                                       }
                                     }}
-                                    poster={m.image && !m.image.includes('images.unsplash.com') ? m.image : undefined}
+                                    poster={m.image || undefined}
                                     muted
                                     playsInline
                                     loop
