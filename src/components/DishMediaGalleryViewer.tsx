@@ -8,14 +8,8 @@ import {
   ChevronLeft, 
   ChevronRight, 
   X, 
-  Play, 
-  Pause,
   Film, 
-  Image as ImageIcon,
-  Volume2,
-  VolumeX,
-  Maximize,
-  RotateCcw
+  Image as ImageIcon
 } from 'lucide-react';
 import { Meal, MealMediaItem } from '../types';
 
@@ -72,10 +66,6 @@ export default function DishMediaGalleryViewer({
   }, [meal]);
 
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const touchStartXRef = useRef<number | null>(null);
@@ -84,8 +74,6 @@ export default function DishMediaGalleryViewer({
   // Reset to first item when meal changes
   useEffect(() => {
     setActiveIndex(0);
-    setCurrentTime(0);
-    setDuration(0);
   }, [meal.id]);
 
   // Auto-scroll selected thumbnail into center of horizontal reel
@@ -112,87 +100,23 @@ export default function DishMediaGalleryViewer({
 
   // Trigger reliable HTML5 video play whenever active video changes
   useEffect(() => {
-    setCurrentTime(0);
-    setDuration(0);
     if (activeItem.type === 'video' && videoRef.current) {
       const v = videoRef.current;
-      v.defaultMuted = isMuted;
-      v.muted = isMuted;
+      v.defaultMuted = true;
+      v.muted = true;
       v.playsInline = true;
+      v.setAttribute('muted', '');
+      v.setAttribute('playsinline', '');
+      v.setAttribute('webkit-playsinline', 'true');
       const playPromise = v.play();
       if (playPromise !== undefined) {
-        playPromise
-          .then(() => setIsPlaying(true))
-          .catch((err) => {
-            console.warn('Browser paused video autoplay, awaiting user touch:', err);
-            setIsPlaying(false);
-          });
-      }
-    } else {
-      setIsPlaying(false);
-    }
-  }, [activeIndex, activeItem.url, isMuted]);
-
-  const togglePlay = (e?: React.MouseEvent | React.TouchEvent) => {
-    e?.stopPropagation();
-    const v = videoRef.current;
-    if (!v) return;
-    v.defaultMuted = isMuted;
-    v.muted = isMuted;
-    v.playsInline = true;
-
-    if (v.paused) {
-      v.play()
-        .then(() => setIsPlaying(true))
-        .catch((err) => {
-          console.warn('Playback deferred, retrying muted:', err);
+        playPromise.catch(() => {
           v.muted = true;
-          v.defaultMuted = true;
-          setIsMuted(true);
-          v.play().then(() => setIsPlaying(true)).catch(console.error);
+          v.play().catch(() => {});
         });
-    } else {
-      v.pause();
-      setIsPlaying(false);
+      }
     }
-  };
-
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!videoRef.current) return;
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-    videoRef.current.muted = nextMuted;
-  };
-
-  const formatTime = (seconds: number) => {
-    if (isNaN(seconds) || seconds < 0) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
-
-  const handleScrubberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.stopPropagation();
-    const newTime = parseFloat(e.target.value);
-    setCurrentTime(newTime);
-    if (videoRef.current) {
-      videoRef.current.currentTime = newTime;
-    }
-  };
-
-  const toggleFullscreen = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const v = videoRef.current;
-    if (!v) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(console.error);
-    } else if (v.requestFullscreen) {
-      v.requestFullscreen().catch(console.error);
-    } else if ((v as any).webkitEnterFullscreen) {
-      (v as any).webkitEnterFullscreen();
-    }
-  };
+  }, [activeIndex, activeItem.url]);
 
   const handlePrev = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -269,14 +193,24 @@ export default function DishMediaGalleryViewer({
       >
         {/* Active Visual Media */}
         {activeItem.type === 'video' ? (
-          <div className="relative w-full h-full cursor-pointer group/video" onClick={togglePlay}>
+          <div className="relative w-full h-full pointer-events-none">
             <video
               ref={(el) => {
                 (videoRef as any).current = el;
                 if (el) {
-                  el.defaultMuted = isMuted;
-                  el.muted = isMuted;
+                  el.defaultMuted = true;
+                  el.muted = true;
                   el.playsInline = true;
+                  el.setAttribute('muted', '');
+                  el.setAttribute('playsinline', '');
+                  el.setAttribute('webkit-playsinline', 'true');
+                  const p = el.play();
+                  if (p !== undefined) {
+                    p.catch(() => {
+                      el.muted = true;
+                      el.play().catch(() => {});
+                    });
+                  }
                 }
               }}
               key={activeItem.url}
@@ -284,119 +218,16 @@ export default function DishMediaGalleryViewer({
               poster={safePoster}
               autoPlay
               loop
-              muted={isMuted}
+              muted
               playsInline
               preload="auto"
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onTimeUpdate={(e) => {
-                const v = e.currentTarget;
-                setCurrentTime(v.currentTime);
-                if (v.duration && !isNaN(v.duration) && v.duration !== duration) {
-                  setDuration(v.duration);
-                }
-              }}
-              onLoadedMetadata={(e) => {
-                const v = e.currentTarget;
-                if (v.duration && !isNaN(v.duration)) {
-                  setDuration(v.duration);
-                }
-              }}
-              onDurationChange={(e) => {
-                const v = e.currentTarget;
-                if (v.duration && !isNaN(v.duration)) {
-                  setDuration(v.duration);
-                }
+              onCanPlay={(e) => {
+                e.currentTarget.play().catch(() => {});
               }}
               className={`w-full h-full object-cover transition-opacity duration-300 ${focalClass}`}
             >
               <source src={activeItem.url} type="video/mp4" />
             </video>
-
-            {/* Play / Resume Button Overlay when paused */}
-            {!isPlaying && (
-              <div 
-                className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center cursor-pointer z-20 transition-all animate-in fade-in"
-                onClick={togglePlay}
-              >
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  className="w-16 h-16 sm:w-18 sm:h-18 rounded-full bg-brand-orange text-stone-950 flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all border-2 border-white/80 cursor-pointer"
-                  aria-label={currentTime > 0 ? "Resume video" : "Play video"}
-                >
-                  <Play className="w-8 h-8 fill-stone-950 ml-1" />
-                </button>
-                <span className="mt-2.5 text-xs font-black tracking-wider uppercase text-white bg-black/80 px-3 py-1 rounded-full border border-white/20 shadow-lg pointer-events-none">
-                  {currentTime > 0 ? '▶ Resume Video' : '▶ Play Video'}
-                </span>
-              </div>
-            )}
-
-            {/* Prominent Video Player Control Bar (Visible whenever video is active) */}
-            <div 
-              className="absolute bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-black via-black/85 to-transparent pt-6 pb-2.5 px-3 flex items-center gap-2"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Play / Pause Toggle Button */}
-              <button
-                type="button"
-                onClick={togglePlay}
-                className="px-2.5 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-orange/90 text-stone-950 font-black text-[11px] uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 shrink-0 cursor-pointer border border-amber-300/40"
-                title={isPlaying ? "Pause video" : currentTime > 0 ? "Resume video" : "Play video"}
-              >
-                {isPlaying ? (
-                  <>
-                    <Pause className="w-3.5 h-3.5 fill-stone-950" />
-                    <span>Pause</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-stone-950" />
-                    <span>{currentTime > 0 ? 'Resume' : 'Play'}</span>
-                  </>
-                )}
-              </button>
-
-              {/* Scrubber Progress Slider */}
-              <div className="flex-1 relative flex items-center group/scrub">
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 1}
-                  step={0.01}
-                  value={currentTime}
-                  onChange={handleScrubberChange}
-                  className="w-full h-1.5 bg-white/25 hover:bg-white/40 rounded-full appearance-none cursor-pointer accent-brand-orange transition-all"
-                  title="Seek video position"
-                />
-              </div>
-
-              {/* Time Counter */}
-              <span className="font-mono text-[10px] font-bold text-white/90 shrink-0">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
-
-              {/* Audio Mute/Unmute */}
-              <button
-                type="button"
-                onClick={toggleMute}
-                className="p-1.5 rounded-lg bg-black/60 hover:bg-black/90 text-white border border-white/20 transition-all shrink-0 cursor-pointer shadow-xs active:scale-95"
-                title={isMuted ? 'Unmute video audio' : 'Mute video audio'}
-              >
-                {isMuted ? <VolumeX className="w-3.5 h-3.5 text-gray-400" /> : <Volume2 className="w-3.5 h-3.5 text-brand-green" />}
-              </button>
-
-              {/* Fullscreen Button */}
-              <button
-                type="button"
-                onClick={toggleFullscreen}
-                className="p-1.5 rounded-lg bg-black/60 hover:bg-black/90 text-white border border-white/20 transition-all shrink-0 cursor-pointer shadow-xs active:scale-95"
-                title="Fullscreen video"
-              >
-                <Maximize className="w-3.5 h-3.5 text-white/90" />
-              </button>
-            </div>
           </div>
         ) : (
           <img
@@ -461,18 +292,14 @@ export default function DishMediaGalleryViewer({
         )}
 
         {/* Bottom Area: Optional bottom-left badge, bottom-right action */}
-        <div className={`absolute left-4 right-4 z-20 pointer-events-none flex items-center justify-between ${
-          activeItem.type === 'video' ? 'bottom-13' : 'bottom-3'
-        }`}>
+        <div className="absolute bottom-3 left-4 right-4 z-20 pointer-events-none flex items-center justify-between">
           {bottomLeftBadge && <div className="pointer-events-auto">{bottomLeftBadge}</div>}
           {bottomRightAction && <div className="pointer-events-auto ml-auto">{bottomRightAction}</div>}
         </div>
 
         {/* Active Media Caption (strictly only if meaningful) */}
         {isMeaningfulCaption && (
-          <div className={`absolute left-1/2 -translate-x-1/2 z-15 pointer-events-none max-w-[80%] text-center ${
-            activeItem.type === 'video' ? 'bottom-20' : 'bottom-11'
-          }`}>
+          <div className="absolute bottom-11 left-1/2 -translate-x-1/2 z-15 pointer-events-none max-w-[80%] text-center">
             <span className="text-[10px] font-medium text-white/90 bg-black/70 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/10 truncate inline-block">
               {activeItem.caption}
             </span>
@@ -522,7 +349,7 @@ export default function DishMediaGalleryViewer({
                       />
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                         <div className="w-6 h-6 rounded-full bg-brand-orange/90 flex items-center justify-center shadow-md">
-                          <Play className="w-3 h-3 text-stone-950 fill-stone-950 ml-0.5" />
+                          <Film className="w-3 h-3 text-stone-950 ml-0.5" />
                         </div>
                       </div>
                       <div className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[7px] font-mono text-white">

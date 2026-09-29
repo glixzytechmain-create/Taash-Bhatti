@@ -330,6 +330,32 @@ export default function App() {
     return false;
   });
 
+  // Global Autoplay Kickstart: Guarantees background looping videos play automatically across mobile & desktop
+  useEffect(() => {
+    const kickstartVideos = () => {
+      document.querySelectorAll('video').forEach((v) => {
+        if (v.hasAttribute('autoplay') && v.paused) {
+          v.muted = true;
+          v.defaultMuted = true;
+          v.playsInline = true;
+          v.setAttribute('muted', '');
+          v.setAttribute('playsinline', '');
+          v.setAttribute('webkit-playsinline', 'true');
+          v.play().catch(() => {});
+        }
+      });
+    };
+    kickstartVideos();
+    window.addEventListener('touchstart', kickstartVideos, { passive: true });
+    window.addEventListener('click', kickstartVideos, { passive: true });
+    window.addEventListener('scroll', kickstartVideos, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', kickstartVideos);
+      window.removeEventListener('click', kickstartVideos);
+      window.removeEventListener('scroll', kickstartVideos);
+    };
+  }, []);
+
   // Dine-In Table QR Scanner Session (?table=Table%201&bhatti=k1)
   const [dineInSession, setDineInSession] = useState<{
     tableNumber: string;

@@ -585,19 +585,28 @@ export default function MenuTab({
                             el.defaultMuted = true;
                             el.muted = true;
                             el.playsInline = true;
+                            el.setAttribute('muted', '');
+                            el.setAttribute('playsinline', '');
+                            el.setAttribute('webkit-playsinline', 'true');
+                            const p = el.play();
+                            if (p !== undefined) {
+                              p.catch(() => {
+                                el.muted = true;
+                                el.play().catch(() => {});
+                              });
+                            }
                           }
                         }}
+                        key={meal.video}
+                        src={meal.video}
                         poster={meal.image && !meal.image.includes('unsplash.com') ? meal.image : undefined}
                         autoPlay
                         loop
                         muted
                         playsInline
-                        preload="metadata"
-                        onLoadedData={(e) => {
-                          const v = e.currentTarget;
-                          if (v.paused && v.currentTime === 0) {
-                            v.currentTime = 0.05;
-                          }
+                        preload="auto"
+                        onCanPlay={(e) => {
+                          e.currentTarget.play().catch(() => {});
                         }}
                         className={`w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover/card:scale-105 ${
                           meal.focalPoint === 'top' ? 'object-top' : meal.focalPoint === 'bottom' ? 'object-bottom' : 'object-center'
