@@ -21,7 +21,7 @@ export default function DishShowcaseMedia({
   videoClassName = '',
   onQuickView,
 }: DishShowcaseMediaProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -53,18 +53,15 @@ export default function DishShowcaseMedia({
 
     const p = v.play();
     if (p !== undefined) {
-      p.then(() => {
-        setIsPlaying(true);
-      }).catch(() => {
-        // Deferred by browser power-saving or autoplay policy;
-        // Poster remains 100% visible, smoothly playing on scroll/gesture.
+      p.catch(() => {
+        // Autoplay deferred by browser policy until interaction
       });
     }
   };
 
-  // Autoplay attempt on mount / meal change
+  // Attempt silent autoplay on mount / meal change
   useEffect(() => {
-    setIsPlaying(false);
+    setHasError(false);
     if (!isVideo) return;
     playVideo();
   }, [meal.id, meal.video, isVideo]);
@@ -78,13 +75,7 @@ export default function DishShowcaseMedia({
           const v = videoRef.current;
           if (!v) return;
           if (entry.isIntersecting) {
-            v.muted = true;
-            v.defaultMuted = true;
-            v.playsInline = true;
-            v.setAttribute('muted', '');
-            v.setAttribute('playsinline', '');
-            v.setAttribute('webkit-playsinline', 'true');
-            v.play().then(() => setIsPlaying(true)).catch(() => {});
+            playVideo();
           } else {
             if (!v.paused) {
               v.pause();
@@ -115,7 +106,7 @@ export default function DishShowcaseMedia({
         if (onQuickView) onQuickView(meal);
       }}
     >
-      {/* 1. Permanent High-Res Poster Image: ALWAYS visible, never black */}
+      {/* 1. Permanent High-Res Poster Image: ALWAYS visible behind the video */}
       {posterUrl ? (
         <img
           src={posterUrl}
@@ -130,28 +121,34 @@ export default function DishShowcaseMedia({
         </div>
       )}
 
-      {/* 2. Seamless Looping Video: plays on top and smoothly fades in when active */}
-      {isVideo && (
+      {/* 2. Seamless Looping Video: plays on top with zero controls */}
+      {isVideo && !hasError && (
         <video
-          ref={videoRef}
+          ref={(el) => {
+            (videoRef as any).current = el;
+            if (el) {
+              el.defaultMuted = true;
+              el.muted = true;
+              el.playsInline = true;
+              el.setAttribute('muted', '');
+              el.setAttribute('playsinline', '');
+              el.setAttribute('webkit-playsinline', 'true');
+            }
+          }}
           key={meal.video}
           src={meal.video}
+          poster={posterUrl}
           autoPlay
           loop
           muted
           playsInline
           preload="auto"
-          onPlaying={() => setIsPlaying(true)}
-          onTimeUpdate={(e) => {
-            if (e.currentTarget.currentTime > 0 && !isPlaying) {
-              setIsPlaying(true);
-            }
+          onCanPlay={(e) => {
+            const p = e.currentTarget.play();
+            if (p !== undefined) p.catch(() => {});
           }}
-          onPause={() => setIsPlaying(false)}
-          onError={() => setIsPlaying(false)}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 pointer-events-none ${focalPointClass} ${
-            isPlaying ? 'opacity-100' : 'opacity-0'
-          } ${videoClassName}`}
+          onError={() => setHasError(true)}
+          className={`absolute inset-0 w-full h-full object-cover pointer-events-none ${focalPointClass} ${videoClassName}`}
         >
           <source src={meal.video} type="video/mp4" />
         </video>

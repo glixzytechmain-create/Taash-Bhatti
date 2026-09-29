@@ -9,8 +9,8 @@ export const DEFAULT_TERMS_AND_CONDITIONS: LegalDocument = {
   summary:
     'These Terms & Conditions govern your access to and use of TAASH BHATTI culinary services, online ordering platform, takeaway counters, and food delivery fulfillment. By accessing our services, creating an account, or placing an order, you agree to be bound by these culinary terms.',
   contactEmail: 'support@taashbhatti.com',
-  contactPhone: '+91 91234 56789',
-  contactAddress: 'TAASH BHATTI Central Cloud Kitchens & Royal Hearth, Muzaffarpur, Bihar 842001, India',
+  contactPhone: '+91 7004729479',
+  contactAddress: 'IBL ENTERPRISES, NA NA SADBHANA, MUSHHARI, NAYA TOLA, MUZAFFARPUR, NEAR THAKUR NURSING HOME, MUZAFFARPUR, BIHAR, INDIA 842001',
   sections: [
     {
       id: 'agreement',
@@ -134,8 +134,8 @@ export const DEFAULT_PRIVACY_POLICY: LegalDocument = {
   summary:
     'At TAASH BHATTI, we respect your privacy and are committed to complete transparency regarding how your personal information is gathered, managed, and safeguarded. This Privacy Policy details our data governance practices across all digital ordering and culinary delivery services.',
   contactEmail: 'privacy@taashbhatti.com',
-  contactPhone: '+91 91234 56789',
-  contactAddress: 'TAASH BHATTI Data Governance & Grievance Cell, Muzaffarpur, Bihar 842001, India',
+  contactPhone: '+91 7004729479',
+  contactAddress: 'IBL ENTERPRISES, NA NA SADBHANA, MUSHHARI, NAYA TOLA, MUZAFFARPUR, NEAR THAKUR NURSING HOME, MUZAFFARPUR, BIHAR, INDIA 842001',
   sections: [
     {
       id: 'commitment',

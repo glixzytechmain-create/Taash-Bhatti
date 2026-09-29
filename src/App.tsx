@@ -347,10 +347,14 @@ export default function App() {
     };
     kickstartVideos();
     window.addEventListener('touchstart', kickstartVideos, { passive: true, once: true });
+    window.addEventListener('pointerdown', kickstartVideos, { passive: true, once: true });
     window.addEventListener('click', kickstartVideos, { passive: true, once: true });
+    window.addEventListener('scroll', kickstartVideos, { passive: true, once: true });
     return () => {
       window.removeEventListener('touchstart', kickstartVideos);
+      window.removeEventListener('pointerdown', kickstartVideos);
       window.removeEventListener('click', kickstartVideos);
+      window.removeEventListener('scroll', kickstartVideos);
     };
   }, []);
 
@@ -3258,6 +3262,26 @@ export default function App() {
             >
               Customer Support & Grievances
             </button>
+          </div>
+
+          {/* Official Registered Office & Mobile Contact Info */}
+          <div className="max-w-2xl mx-auto p-4 rounded-2xl bg-white/70 border border-brand-green/10 shadow-xs space-y-2 text-center text-xs text-brand-charcoal/80">
+            <div className="font-extrabold text-brand-charcoal uppercase tracking-wider flex items-center justify-center gap-1.5 text-[11px]">
+              <span>🏢</span>
+              <span>OFFICE: IBL ENTERPRISES</span>
+            </div>
+            <p className="text-[11px] text-brand-charcoal/70 leading-relaxed font-medium">
+              NA NA SADBHANA MUSHHARI NAYA TOLA MUZAFFARPUR NEAR THAKUR NURSING HOME MUZAFFARPUR BIHAR INDIA 842001
+            </p>
+            <div className="pt-1 flex items-center justify-center gap-2 text-xs font-bold text-brand-charcoal">
+              <span>📱 MOBILE:</span>
+              <a
+                href="tel:7004729479"
+                className="text-brand-green hover:underline font-extrabold tracking-wide"
+              >
+                7004729479
+              </a>
+            </div>
           </div>
 
           <p className="text-[11px] text-brand-charcoal/50 max-w-xl mx-auto leading-relaxed">
