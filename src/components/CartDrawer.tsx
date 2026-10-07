@@ -45,7 +45,7 @@ import {
   HeartHandshake,
   ChefHat,
 } from 'lucide-react';
-import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder, creditGoldenEmbersForShortfall } from '../lib/walletService';
+import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder, creditGoldenEmbersForShortfall, isCashOnDeliveryOrder } from '../lib/walletService';
 import { doc, getDoc, updateDoc, collection, onSnapshot, query, where, getDocs, increment } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupon, CouponEvaluationContext, SmartCouponRedemptionRecord } from '../types';
@@ -1431,8 +1431,9 @@ export default function CartDrawer({
       standardEmbersUsed: emberCheckout.standardDeduction,
       walletUsedAmount: emberCheckout.totalEmberDiscount,
       address: finalAddress,
+      isCOD: isCashOnDeliveryOrder({ paymentMethod: selectedPayment }),
       paymentMethod: selectedPayment,
-      paymentStatus: (selectedPayment.toLowerCase().includes('cash') || selectedPayment.toLowerCase().includes('cod')) ? 'unpaid' : 'paid',
+      paymentStatus: isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) ? 'unpaid' : 'paid',
       trackingSteps: isTakeaway
         ? [
             { title: 'Takeaway Order Sent', description: 'Transmitted to TAASH BHATTI Cloud Kitchen Counter.', done: true },

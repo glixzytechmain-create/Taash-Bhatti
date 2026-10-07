@@ -50,6 +50,22 @@ if (typeof window !== 'undefined') {
         prevAuthFailure();
       }
     };
+
+    // Intercept Google Maps billing, auth, and referrer errors to switch cleanly to Leaflet
+    const origConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      const errStr = args.map((a) => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
+      if (
+        errStr.includes('Google Maps JavaScript API error') ||
+        errStr.includes('BillingNotEnabledMapError') ||
+        errStr.includes('ApiNotActivatedMapError') ||
+        errStr.includes('RefererNotAllowedMapError') ||
+        errStr.includes('InvalidKeyMapError')
+      ) {
+        markGoogleMapsFailed();
+      }
+      origConsoleError.apply(console, args);
+    };
   } catch (e) {}
 }
 

@@ -5,8 +5,9 @@
 
 import React from 'react';
 import { motion } from 'motion/react';
-import { X, Printer, Download, CheckCircle, ShieldCheck, Flame, MapPin, Phone, Mail, FileText, Utensils, Star, AlertTriangle } from 'lucide-react';
+import { X, Printer, Download, CheckCircle, ShieldCheck, Flame, MapPin, Phone, Mail, FileText, Utensils, Star, AlertTriangle, Banknote } from 'lucide-react';
 import { Order } from '../types';
+import { isCashOnDeliveryOrder } from '../lib/walletService';
 
 interface OrderInvoiceModalProps {
   order: Order;
@@ -236,8 +237,21 @@ export default function OrderInvoiceModal({
             {/* Payment Mode & Thermal Seal Statement */}
             <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200/80 space-y-2">
               <div className="flex items-center gap-2 text-amber-900 font-extrabold text-[11px]">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Payment Verified: {order.paymentMethod || 'Prepaid / Online UPI'}</span>
+                {isCashOnDeliveryOrder(order) ? (
+                  <>
+                    <Banknote className="w-4 h-4 text-amber-600" />
+                    <span>
+                      {order.paymentStatus === 'collected' || order.paymentStatus === 'paid'
+                        ? `Payment Collected (Cash on Delivery): ₹${order.total}`
+                        : `Payment Mode: Cash on Delivery (COD) • Pay to Rider`}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Payment Verified: {order.paymentMethod || 'Prepaid / Online UPI'}</span>
+                  </>
+                )}
               </div>
               <p className="text-[10px] text-slate-600 leading-relaxed">
                 480°C Clay Oven Smoked • Packed in certified food-grade thermal containers. Thank you for dining with Taash Bhatti!

@@ -66,7 +66,7 @@ import PhoneAuthComponent from './PhoneAuthComponent';
 import PhoneAuthModal from './PhoneAuthModal';
 import BhattiWalletSection from './BhattiWalletSection';
 import { motion, AnimatePresence } from 'motion/react';
-import { canCustomerCancelOrder, cancelOrderWithInstantWalletRefund } from '../lib/walletService';
+import { canCustomerCancelOrder, cancelOrderWithInstantWalletRefund, isCashOnDeliveryOrder, isTrulyPrepaidOrder } from '../lib/walletService';
 import { subscribeToUserWonRewards } from '../lib/gameonService';
 import { WonRewardRecord } from '../types/gameon';
 
@@ -2417,7 +2417,18 @@ export default function AccountTab({
                             </span>
                           )}
                         </div>
-                        <span className="text-sm font-black text-brand-charcoal">{order.id}</span>
+                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                          <span className="text-sm font-black text-brand-charcoal">#{order.id}</span>
+                          {isCashOnDeliveryOrder(order) ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-100 text-stone-800 border border-stone-300 font-extrabold text-[9px]">
+                              <Banknote className="w-2.5 h-2.5 text-stone-600" /> Cash on Delivery (COD)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-[9px]">
+                              <CreditCard className="w-2.5 h-2.5 text-emerald-600" /> Prepaid Online ({order.paymentMethod || 'Online'})
+                            </span>
+                          )}
+                        </div>
                         {order.isBuddyOrder && (
                           <div className="mt-1">
                             {order.senderId === (fbUser?.uid || user.id) ? (
@@ -2569,11 +2580,8 @@ export default function AccountTab({
                         </div>
                       ) : canCustomerCancelOrder(order) ? (
                         (() => {
-                          const isCod =
-                            (order.paymentMethod || '').toLowerCase() === 'cod' ||
-                            (order.paymentMethod || '').toLowerCase() === 'cash' ||
-                            (order.paymentMethod || '').toLowerCase() === 'cash_on_delivery' ||
-                            Boolean((order as any).isCOD);
+                          const isCod = isCashOnDeliveryOrder(order);
+                          const isTrulyPrepaid = isTrulyPrepaidOrder(order);
 
                           if (isCod) {
                             return (
@@ -2584,7 +2592,7 @@ export default function AccountTab({
                                     <span>Cash on Delivery (COD) • Cancellation Available</span>
                                   </div>
                                   <p className="text-[10px] text-stone-600 font-semibold">
-                                    Kitchen has not started cooking yet. Since this order is Cash on Delivery, no payment was collected upfront and ₹0 refund applies upon cancellation.
+                                    Kitchen has not started cooking yet. Since this order is Cash on Delivery, zero payment was collected upfront and ₹0 refund applies upon cancellation.
                                   </p>
                                 </div>
                                 <button
@@ -2598,23 +2606,45 @@ export default function AccountTab({
                             );
                           }
 
-                          return (
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/90 border-2 border-emerald-300 p-3.5 rounded-2xl">
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800">
-                                  <Wallet className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span>Prepaid Order • Verified Instant Wallet Refund Available</span>
+                          if (isTrulyPrepaid) {
+                            return (
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/90 border-2 border-emerald-300 p-3.5 rounded-2xl">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800">
+                                    <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Prepaid Order • Verified Instant Wallet Refund Available</span>
+                                  </div>
+                                  <p className="text-[10px] text-emerald-900/80 font-semibold">
+                                    Kitchen has not started cooking yet. Since you paid ₹{order.total} upfront, canceling now will credit 100% back to your Bhatti Wallet as Golden Ember Coins immediately.
+                                  </p>
                                 </div>
-                                <p className="text-[10px] text-emerald-900/80 font-semibold">
-                                  Kitchen has not started cooking yet. Since you paid ₹{order.total} upfront, canceling now will credit 100% back to your Bhatti Wallet as Golden Ember Coins immediately.
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelOrder(order.id)}
+                                  className="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+                                >
+                                  <span>🚫 Cancel Order (Refund ₹{order.total})</span>
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gray-50 border-2 border-gray-300 p-3.5 rounded-2xl">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1.5 text-xs font-black text-gray-800">
+                                  <span>Order Cancellation Available</span>
+                                </div>
+                                <p className="text-[10px] text-gray-600 font-semibold">
+                                  Kitchen has not started cooking yet. No upfront payment was collected, so ₹0 refund applies upon cancellation.
                                 </p>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => handleCancelOrder(order.id)}
-                                className="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+                                className="w-full sm:w-auto px-4 py-2.5 bg-gray-800 hover:bg-gray-900 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
                               >
-                                <span>🚫 Cancel Order (Refund ₹{order.total})</span>
+                                <span>🚫 Cancel Order (₹0 Refund)</span>
                               </button>
                             </div>
                           );
@@ -3808,11 +3838,8 @@ export default function AccountTab({
             </div>
 
             {(() => {
-              const isModalCod =
-                (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cod' ||
-                (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash' ||
-                (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash_on_delivery' ||
-                Boolean((orderToCancelModal as any).isCOD);
+              const isModalCod = isCashOnDeliveryOrder(orderToCancelModal);
+              const isModalPrepaid = isTrulyPrepaidOrder(orderToCancelModal);
 
               if (isModalCod) {
                 return (
@@ -3828,14 +3855,27 @@ export default function AccountTab({
                 );
               }
 
-              return (
-                <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-4 space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
-                    <Wallet className="w-4 h-4 text-emerald-600" />
-                    <span>Prepaid Order • Verified Instant Wallet Refund</span>
+              if (isModalPrepaid) {
+                return (
+                  <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-4 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
+                      <Wallet className="w-4 h-4 text-emerald-600" />
+                      <span>Prepaid Order • Verified Instant Wallet Refund</span>
+                    </div>
+                    <p className="text-xs text-emerald-950 font-medium leading-relaxed">
+                      100% of your prepaid payment (<strong className="font-black text-emerald-900">₹{orderToCancelModal.total || orderToCancelModal.totalAmount || 0}</strong>) will be credited immediately to your <span className="font-black">Bhatti Wallet as Golden Ember Coins</span> with zero wait.
+                    </p>
                   </div>
-                  <p className="text-xs text-emerald-950 font-medium leading-relaxed">
-                    100% of your prepaid payment (<strong className="font-black text-emerald-900">₹{orderToCancelModal.total || orderToCancelModal.totalAmount || 0}</strong>) will be credited immediately to your <span className="font-black">Bhatti Wallet as Golden Ember Coins</span> with zero wait.
+                );
+              }
+
+              return (
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 space-y-1.5 text-amber-900">
+                  <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider">
+                    <span>Payment Pending / Unpaid</span>
+                  </div>
+                  <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                    No upfront payment was collected for this order. Cancelling will void the order with <strong className="font-black text-red-600">₹0 refund</strong>.
                   </p>
                 </div>
               );
@@ -3875,10 +3915,7 @@ export default function AccountTab({
                 <span>
                   {isCancellingOrder
                     ? 'Cancelling...'
-                    : ((orderToCancelModal.paymentMethod || '').toLowerCase() === 'cod' ||
-                       (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash' ||
-                       (orderToCancelModal.paymentMethod || '').toLowerCase() === 'cash_on_delivery' ||
-                       Boolean((orderToCancelModal as any).isCOD))
+                    : isCashOnDeliveryOrder(orderToCancelModal) || !isTrulyPrepaidOrder(orderToCancelModal)
                     ? 'Confirm Cancel (₹0 Refund)'
                     : `Confirm Cancel & Refund ₹${orderToCancelModal.total || 0}`}
                 </span>

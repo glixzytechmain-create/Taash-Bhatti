@@ -43,6 +43,7 @@ import {
   calculateBearing,
   calculateHaversineDistanceKm,
   isGoogleMapsAuthFailed,
+  markGoogleMapsFailed,
 } from '../lib/googleMaps';
 import { LeafletMap } from './LeafletMap';
 import { ChatMessage, OrderDeliveryRating } from '../types';
@@ -156,6 +157,38 @@ export default function InAppDeliveryMap({
     window.addEventListener('fitzaika_maps_auth_failed', handleAuthFail);
     return () => window.removeEventListener('fitzaika_maps_auth_failed', handleAuthFail);
   }, []);
+
+  // Auto-detect Google Maps error dialogs or dev-only watermarks in the DOM and cleanly fallback to Leaflet
+  useEffect(() => {
+    if (useLeaflet) return;
+    const checkDomForError = () => {
+      const container = mapContainerRef.current;
+      if (!container) return;
+      const text = container.innerText || '';
+      if (
+        text.includes("can't load Google Maps correctly") ||
+        text.includes("For development purposes only") ||
+        container.querySelector('.dismissButton') ||
+        container.querySelector('.gm-err-container') ||
+        container.querySelector('.gm-err-message')
+      ) {
+        console.warn("Detected Google Maps billing/auth error popup in DOM. Auto-switching to Leaflet OpenStreetMap!");
+        markGoogleMapsFailed();
+        setUseLeaflet(true);
+      }
+    };
+
+    const container = mapContainerRef.current;
+    if (!container) return;
+    const observer = new MutationObserver(checkDomForError);
+    observer.observe(container, { childList: true, subtree: true, characterData: true });
+    const timer = setTimeout(checkDomForError, 1500);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [mapLoaded, useLeaflet]);
 
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [liveDistanceKm, setLiveDistanceKm] = useState<number>(2.4);
@@ -1076,7 +1109,7 @@ export default function InAppDeliveryMap({
             {badgeInfo.label}
           </span>
 
-          {/* Theme Toggle Button */}
+          {/* Map Style Toggle */}
           <button
             type="button"
             onClick={() => setIsDarkMode(!isDarkMode)}
@@ -1084,6 +1117,20 @@ export default function InAppDeliveryMap({
             title="Toggle Map Style"
           >
             {isDarkMode ? '☀️ Light' : '🌙 Dark'}
+          </button>
+
+          {/* Map Engine Toggle */}
+          <button
+            type="button"
+            onClick={() => setUseLeaflet((prev) => !prev)}
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+              useLeaflet
+                ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40 hover:bg-emerald-600/40'
+                : 'bg-white/10 hover:bg-white/20 border-white/15 text-gray-200'
+            }`}
+            title="Switch Map Engine"
+          >
+            {useLeaflet ? '🗺️ OpenStreetMap' : '🗺️ Google Map'}
           </button>
 
           {/* Chat with Rider Toggle Button */}

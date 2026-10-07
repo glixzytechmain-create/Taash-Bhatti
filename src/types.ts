@@ -412,6 +412,7 @@ export interface Order {
   deliveryFee: number;
   address: string;
   paymentMethod: string;
+  isCOD?: boolean;
   trackingSteps: {
     title: string;
     description: string;

@@ -8,6 +8,61 @@ import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 /**
+ * Detects if an order was placed via Cash on Delivery (COD).
+ * Robustly matches 'Cash on Delivery (COD)', 'cod', 'cash', 'cash_on_delivery', etc.
+ */
+export function isCashOnDeliveryOrder(order: { paymentMethod?: string; isCOD?: boolean; paymentStatus?: string } | null | undefined): boolean {
+  if (!order) return false;
+  if ((order as any).isCOD === true) return true;
+  const pm = (order.paymentMethod || '').toLowerCase().trim();
+  if (
+    pm.includes('cod') ||
+    pm.includes('cash') ||
+    pm.includes('pay on delivery') ||
+    pm.includes('pay at counter') ||
+    pm.includes('cash on bill')
+  ) {
+    return true;
+  }
+  if (
+    order.paymentStatus === 'unpaid' &&
+    !pm.includes('online') &&
+    !pm.includes('upi') &&
+    !pm.includes('card') &&
+    !pm.includes('netbanking') &&
+    !pm.includes('wallet') &&
+    !pm.includes('prepaid')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks if an order was genuinely prepaid and paid upfront.
+ * Cash on Delivery is strictly NEVER prepaid.
+ */
+export function isTrulyPrepaidOrder(order: { paymentMethod?: string; isCOD?: boolean; paymentStatus?: string; walletUsedAmount?: number } | null | undefined): boolean {
+  if (!order) return false;
+  // If it is Cash on Delivery, it is strictly NEVER prepaid
+  if (isCashOnDeliveryOrder(order)) return false;
+
+  const pm = (order.paymentMethod || '').toLowerCase().trim();
+  const isPaidStatus = order.paymentStatus === 'paid' || order.paymentStatus === 'collected';
+  const isPrepaidMethod =
+    pm.includes('online') ||
+    pm.includes('upi') ||
+    pm.includes('card') ||
+    pm.includes('netbanking') ||
+    pm.includes('wallet') ||
+    pm.includes('prepaid');
+  const hasWalletDeduction = Boolean(order.walletUsedAmount && order.walletUsedAmount > 0);
+
+  // Must not be explicitly unpaid, and must have verified payment status or online/wallet method
+  return order.paymentStatus !== 'unpaid' && (isPaidStatus || isPrepaidMethod || hasWalletDeduction);
+}
+
+/**
  * Checks if an order is eligible for Golden Ember token refund:
  * Rules per business requirement:
  * 1. Ember token refund ONLY applies to cancellations from the user side.
@@ -30,34 +85,19 @@ export function isOrderEligibleForEmberRefund(
     };
   }
 
-  // Rule 2: Strictly does NOT apply to COD orders
-  const pMethod = (order.paymentMethod || '').toLowerCase();
-  const isCod =
-    pMethod === 'cod' ||
-    pMethod === 'cash' ||
-    pMethod === 'cash_on_delivery' ||
-    Boolean((order as any).isCOD);
-
-  if (isCod) {
+  // Rule 2: Strictly does NOT apply to COD (Cash on Delivery) orders of any type
+  if (isCashOnDeliveryOrder(order)) {
     return {
       eligible: false,
-      reason: 'Cash on Delivery (COD) orders do not qualify for wallet refunds as no payment was collected.'
+      reason: 'Cash on Delivery (COD) orders do not qualify for wallet refunds as no upfront payment was collected.'
     };
   }
 
-  // Rule 3: Must be prepaid (online, card, upi, or wallet)
-  const isPaid =
-    order.paymentStatus === 'paid' ||
-    pMethod === 'online' ||
-    pMethod === 'upi' ||
-    pMethod === 'card' ||
-    pMethod === 'wallet' ||
-    (order.walletUsedAmount && order.walletUsedAmount > 0);
-
-  if (!isPaid) {
+  // Rule 3: Must be truly prepaid and paid (online, card, upi, or wallet)
+  if (!isTrulyPrepaidOrder(order)) {
     return {
       eligible: false,
-      reason: 'Unpaid orders do not qualify for refunds.'
+      reason: 'Unpaid or non-prepaid orders do not qualify for wallet refunds.'
     };
   }
 
