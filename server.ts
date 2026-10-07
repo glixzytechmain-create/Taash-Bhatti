@@ -653,7 +653,7 @@ app.post('/api/gemini/suggest', async (req, res) => {
 
     const fallbackResponse = {
       meals: suggestedIds,
-      coachTip: `👋 Hi! I am your FitZaika AI Master Chef. I matched these exquisite gourmet dishes for your **${isVeg ? 'Vegetarian' : 'All-round'}** dining preference. Bon appétit!`,
+      coachTip: `👋 Hi! I am your Taash Bhatti AI Master Chef. I matched these exquisite gourmet dishes for your **${isVeg ? 'Vegetarian' : 'All-round'}** dining preference. Bon appétit!`,
       summary: `Chef's Recommendation: ${suggestions.map(s => s.name).join(' & ')}.`
     };
 
@@ -662,7 +662,7 @@ app.post('/api/gemini/suggest', async (req, res) => {
 
   try {
     const prompt = `
-      You are the FitZaika AI Master Chef and Culinary Advisor. An expert culinary consultant for a fresh gourmet restaurant brand.
+      You are the Taash Bhatti AI Master Chef and Culinary Advisor. An expert culinary consultant for the Taash Bhatti authentic woodfire & clay-oven restaurant brand.
       The user is requesting culinary recommendations with the following preferences:
       - Preferred Dining Mood/Flavor: ${flavorProfile || goal || 'Any'}
       - Preferred Meal Time: ${mealTime || 'Any'}
@@ -694,7 +694,7 @@ app.post('/api/gemini/suggest', async (req, res) => {
     res.json(jsonResult);
 
   } catch (error) {
-    console.error('Error in FitZaika Gemini suggestions:', error);
+    console.error('Error in Taash Bhatti Gemini suggestions:', error);
     res.status(500).json({
       error: 'Failed to process AI recommendations.',
       details: error instanceof Error ? error.message : String(error)
@@ -750,7 +750,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FitZaika server running on http://localhost:${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+    console.log(`Taash Bhatti server running on http://localhost:${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   });
 }
 

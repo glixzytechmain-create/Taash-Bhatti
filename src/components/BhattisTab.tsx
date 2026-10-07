@@ -17,8 +17,7 @@ import {
 } from 'lucide-react';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { Kitchen } from '../types';
-import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed } from '../lib/googleMaps';
-import { LeafletMap } from './LeafletMap';
+import { GOOGLE_MAPS_API_KEY } from '../lib/googleMaps';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 
 // Default high-fidelity baseline Bhattis in Muzaffarpur, Bihar
@@ -92,13 +91,6 @@ export default function BhattisTab({
   const [filterCity, setFilterCity] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
-
-  React.useEffect(() => {
-    const handleAuthFail = () => setUseLeaflet(true);
-    window.addEventListener('fitzaika_maps_auth_failed', handleAuthFail);
-    return () => window.removeEventListener('fitzaika_maps_auth_failed', handleAuthFail);
-  }, []);
 
   const bhattisToUse: Kitchen[] = (allKitchens && allKitchens.length > 0 ? allKitchens : DEFAULT_BHATTIS).map((k, idx) => ({
     ...k,
@@ -389,104 +381,58 @@ export default function BhattisTab({
               </span>
             </div>
 
-            {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
-              <div 
-                onClick={() => setIsEnlargedMapOpen(true)}
-                className="h-80 w-full rounded-2xl border border-stone-200 overflow-hidden relative shadow-3xs cursor-pointer group"
-                title="Tap to enlarge map & search outlets"
-              >
-                <LeafletMap
+            <div 
+              onClick={() => setIsEnlargedMapOpen(true)}
+              className="h-80 w-full rounded-2xl border border-stone-200 overflow-hidden relative shadow-3xs bg-slate-50 cursor-pointer group"
+              title="Tap to enlarge map & search outlets"
+            >
+              <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
+                <GoogleMap
                   center={defaultCenter}
-                  zoom={12}
-                  interactive={true}
-                  points={filteredBhattis.filter((b) => b.lat && b.lng).map((b) => ({
-                    lat: b.lat!,
-                    lng: b.lng!,
-                    label: b.name,
-                    type: 'kitchen' as const,
-                    geofenceRadiusKm: b.geofenceRadius,
-                  }))}
-                  onPositionSelect={(coords) => {
-                    const nearest = filteredBhattis.find(
-                      (b) => b.lat && Math.abs(b.lat - coords.lat) < 0.01 && b.lng && Math.abs(b.lng - coords.lng) < 0.01
+                  defaultZoom={12}
+                  mapId="DEMO_MAP_ID"
+                  internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
+                  style={{ width: '100%', height: '100%' }}
+                >
+                  {filteredBhattis.map((bhatti) => {
+                    if (!bhatti.lat || !bhatti.lng) return null;
+                    const isSelected = activeSelected?.id === bhatti.id;
+                    return (
+                      <AdvancedMarker
+                        key={bhatti.id}
+                        position={{ lat: bhatti.lat, lng: bhatti.lng }}
+                        onClick={() => handleChooseBhatti(bhatti)}
+                      >
+                        <Pin
+                          background={isSelected ? '#FF5722' : '#143D27'}
+                          borderColor={isSelected ? '#C62828' : '#0E2B1B'}
+                          glyphColor="#fff"
+                          scale={isSelected ? 1.25 : 1.0}
+                        />
+                      </AdvancedMarker>
                     );
-                    if (nearest) handleChooseBhatti(nearest);
-                  }}
-                  className="w-full h-full"
-                />
+                  })}
+                </GoogleMap>
+              </APIProvider>
 
-                {/* Short message on map to tap to make the map bigger */}
-                <div 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsEnlargedMapOpen(true);
-                  }}
-                  className="absolute bottom-3 inset-x-3 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3 py-2 rounded-xl border border-emerald-500/30 flex items-center justify-between text-xs font-bold cursor-pointer transition-all shadow-xl group-hover:border-emerald-400"
-                >
-                  <div className="flex items-center gap-2 text-emerald-300 min-w-0">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                    <span className="truncate">✨ Tap map to view full-screen & search outlets</span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-sm">
-                    <Maximize2 className="w-3 h-3" />
-                    <span>Enlarge Map</span>
-                  </span>
-                </div>
-              </div>
-            ) : (
+              {/* Short message on map to tap to make the map bigger */}
               <div 
-                onClick={() => setIsEnlargedMapOpen(true)}
-                className="h-80 w-full rounded-2xl border border-stone-200 overflow-hidden relative shadow-3xs bg-slate-50 cursor-pointer group"
-                title="Tap to enlarge map & search outlets"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEnlargedMapOpen(true);
+                }}
+                className="absolute bottom-3 inset-x-3 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3.5 py-2 rounded-xl border border-emerald-500/30 flex items-center justify-between text-xs font-bold cursor-pointer transition-all shadow-xl group-hover:border-emerald-400"
               >
-                <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
-                  <GoogleMap
-                    center={defaultCenter}
-                    defaultZoom={12}
-                    mapId="DEMO_MAP_ID"
-                    internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
-                    style={{ width: '100%', height: '100%' }}
-                  >
-                    {filteredBhattis.map((bhatti) => {
-                      if (!bhatti.lat || !bhatti.lng) return null;
-                      const isSelected = activeSelected?.id === bhatti.id;
-                      return (
-                        <AdvancedMarker
-                          key={bhatti.id}
-                          position={{ lat: bhatti.lat, lng: bhatti.lng }}
-                          onClick={() => handleChooseBhatti(bhatti)}
-                        >
-                          <Pin
-                            background={isSelected ? '#FF5722' : '#143D27'}
-                            borderColor={isSelected ? '#C62828' : '#0E2B1B'}
-                            glyphColor="#fff"
-                            scale={isSelected ? 1.25 : 1.0}
-                          />
-                        </AdvancedMarker>
-                      );
-                    })}
-                  </GoogleMap>
-                </APIProvider>
-
-                {/* Short message on map to tap to make the map bigger */}
-                <div 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsEnlargedMapOpen(true);
-                  }}
-                  className="absolute bottom-3 inset-x-3 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3 py-2 rounded-xl border border-emerald-500/30 flex items-center justify-between text-xs font-bold cursor-pointer transition-all shadow-xl group-hover:border-emerald-400"
-                >
-                  <div className="flex items-center gap-2 text-emerald-300 min-w-0">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                    <span className="truncate">✨ Tap map to view full-screen & search outlets</span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-sm">
-                    <Maximize2 className="w-3 h-3" />
-                    <span>Enlarge Map</span>
-                  </span>
+                <div className="flex items-center gap-2 text-emerald-300 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                  <span className="truncate">✨ Tap map to view full-screen & search outlets</span>
                 </div>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-sm">
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Enlarge Map</span>
+                </span>
               </div>
-            )}
+            </div>
 
             {/* FULLSCREEN PIN & OUTLET EXPLORER MODAL */}
             {isEnlargedMapOpen && (
@@ -496,7 +442,7 @@ export default function BhattisTab({
                 initialCoords={defaultCenter}
                 initialAddress={activeSelected?.name ? `${activeSelected.name}, ${activeSelected.address || ''}` : 'Bhatti Kitchen Outlets Radar'}
                 kitchenCoords={defaultCenter}
-                kitchenName={activeSelected?.name || 'FitZaika Kitchen'}
+                kitchenName={activeSelected?.name || 'Taash Bhatti Kitchen'}
                 onConfirmPin={(coords) => {
                   const nearest = filteredBhattis.find(
                     (b) => b.lat && Math.abs(b.lat - coords.lat) < 0.02 && b.lng && Math.abs(b.lng - coords.lng) < 0.02

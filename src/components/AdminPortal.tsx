@@ -108,7 +108,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { db, auth, sanitizeForFirestore } from '../lib/firebase';
 
 function getSecondaryAuth() {
-  const name = 'FitZaikaSecondaryAuthApp';
+  const name = 'TaashBhattiSecondaryAuthApp';
   let secondaryApp = getApps().find(a => a.name === name);
   if (!secondaryApp) {
     secondaryApp = initializeApp(firebaseConfig, name);
@@ -727,7 +727,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   // Complaints & Support Workspace State
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => {
     try {
-      const cached = localStorage.getItem('fitzaika_support_tickets');
+      const cached = localStorage.getItem('taashbhatti_support_tickets');
       if (cached) {
         const parsed: SupportTicket[] = JSON.parse(cached);
         // Filter out hardcoded sample ticket IDs
@@ -801,7 +801,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
 
         // Merge local storage cached tickets (excluding samples)
         try {
-          const cached = localStorage.getItem('fitzaika_support_tickets');
+          const cached = localStorage.getItem('taashbhatti_support_tickets');
           if (cached) {
             const localList: SupportTicket[] = JSON.parse(cached);
             localList.forEach((t) => {
@@ -815,13 +815,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
         list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setSupportTickets(list);
         try {
-          localStorage.setItem('fitzaika_support_tickets', JSON.stringify(list));
+          localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(list));
         } catch (e) {}
       },
       (error) => {
         console.warn("Support tickets Firestore listener warning:", error);
         try {
-          const cached = localStorage.getItem('fitzaika_support_tickets');
+          const cached = localStorage.getItem('taashbhatti_support_tickets');
           if (cached) {
             const parsed: SupportTicket[] = JSON.parse(cached);
             const clean = parsed.filter(t => !['TKT-892410', 'TKT-741209', 'TKT-630128'].includes(t.id));
@@ -838,7 +838,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
 
   // Fleet & Delivery Partner Management State
   const [deliveryPartners, setDeliveryPartners] = useState<DeliveryPartner[]>(() => {
-    const cached = localStorage.getItem('fitzaika_delivery_fleet');
+    const cached = localStorage.getItem('taashbhatti_delivery_fleet');
     if (cached) {
       try { return JSON.parse(cached); } catch (e) {}
     }
@@ -859,7 +859,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
 
   // Support Staff Account Vault State
   const [supportAgents, setSupportAgents] = useState<SupportAgent[]>(() => {
-    const cached = localStorage.getItem('fitzaika_support_agents');
+    const cached = localStorage.getItem('taashbhatti_support_agents');
     if (cached) {
       try { return JSON.parse(cached); } catch (e) {}
     }
@@ -913,7 +913,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       });
       if (fetched.length > 0) {
         setSupportAgents(fetched);
-        localStorage.setItem('fitzaika_support_agents', JSON.stringify(fetched));
+        localStorage.setItem('taashbhatti_support_agents', JSON.stringify(fetched));
       }
     }, (err) => {
       console.warn("Firestore support_agents snapshot listener warning:", err);
@@ -923,7 +923,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
 
   // Kitchen Station Managers Account State
   const [kitchenManagers, setKitchenManagers] = useState<KitchenManager[]>(() => {
-    const cached = localStorage.getItem('fitzaika_kitchen_managers');
+    const cached = localStorage.getItem('taashbhatti_kitchen_managers');
     if (cached) {
       try { return JSON.parse(cached); } catch (e) {}
     }
@@ -950,7 +950,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       });
       if (fetched.length > 0) {
         setKitchenManagers(fetched);
-        localStorage.setItem('fitzaika_kitchen_managers', JSON.stringify(fetched));
+        localStorage.setItem('taashbhatti_kitchen_managers', JSON.stringify(fetched));
       }
     }, (err) => {
       console.warn("Firestore kitchen_managers snapshot listener warning:", err);
@@ -1057,11 +1057,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('fitzaika_delivery_fleet', JSON.stringify(deliveryPartners));
+    localStorage.setItem('taashbhatti_delivery_fleet', JSON.stringify(deliveryPartners));
   }, [deliveryPartners]);
   const [chefStation, setChefStation] = useState<'all' | 'lane_a' | 'lane_b'>('all');
   const [enableVoiceAnnounce, setEnableVoiceAnnounce] = useState<boolean>(() => {
-    return localStorage.getItem('fitzaika_kds_voice') === 'true';
+    return localStorage.getItem('taashbhatti_kds_voice') === 'true';
   });
   const [tickedPrepSteps, setTickedPrepSteps] = useState<Record<string, Record<string, boolean>>>({});
   const [expandedRecipes, setExpandedRecipes] = useState<Record<string, boolean>>({});
@@ -2173,7 +2173,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       setSupportAgents(prev => {
         const filtered = prev.filter(ag => ag.id !== agentId);
         const next = [updatedAgent, ...filtered];
-        localStorage.setItem('fitzaika_support_agents', JSON.stringify(next));
+        localStorage.setItem('taashbhatti_support_agents', JSON.stringify(next));
         return next;
       });
       setShowSupportAgentModal(false);
@@ -2236,7 +2236,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   // Real-time listen to registered Users
   useEffect(() => {
     if (!fbUser) return;
-    const isUserAdmin = fbUser.email === 'glixzytechmain@gmail.com' || fbUser.email?.endsWith('@fitzaika.com') || fbUser.email?.endsWith('@taashbhatti.com');
+    const isUserAdmin = fbUser.email === 'glixzytechmain@gmail.com' || fbUser.email?.endsWith('@taashbhatti.com') || fbUser.email?.endsWith('@taashbhatti.com');
     if (!isUserAdmin) return;
 
     const usersCol = collection(db, 'users');
@@ -2540,11 +2540,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       });
       setSupportTickets(prev => prev.map(t => t.id === ticketId ? { ...t, orderId: orderId ? orderId.trim() : undefined } : t));
       try {
-        const cached = localStorage.getItem('fitzaika_support_tickets');
+        const cached = localStorage.getItem('taashbhatti_support_tickets');
         if (cached) {
           const list: SupportTicket[] = JSON.parse(cached);
           const updated = list.map(t => t.id === ticketId ? { ...t, orderId: orderId ? orderId.trim() : undefined } : t);
-          localStorage.setItem('fitzaika_support_tickets', JSON.stringify(updated));
+          localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(updated));
         }
       } catch (e) {}
       setOrderTaggingTicket(null);
@@ -2562,11 +2562,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       await deleteDoc(doc(db, 'support_tickets', ticket.id));
       setSupportTickets(prev => prev.filter(t => t.id !== ticket.id));
       try {
-        const cached = localStorage.getItem('fitzaika_support_tickets');
+        const cached = localStorage.getItem('taashbhatti_support_tickets');
         if (cached) {
           const list: SupportTicket[] = JSON.parse(cached);
           const filtered = list.filter(t => t.id !== ticket.id);
-          localStorage.setItem('fitzaika_support_tickets', JSON.stringify(filtered));
+          localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(filtered));
         }
       } catch (e) {}
       setTicketToDelete(null);
@@ -3465,7 +3465,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       setAdminTableQrSvg('');
       return;
     }
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://fitzaika.in';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://taashbhatti.com';
     const dineInUrl = `${origin}/?table=${encodeURIComponent(adminSelectedTableForQr.table.tableNumber)}&bhatti=${encodeURIComponent(adminSelectedTableForQr.kitchenId)}&bhattiName=${encodeURIComponent(adminSelectedTableForQr.kitchenName)}`;
     
     generateQRCodeDataUrl(dineInUrl, {
@@ -3571,7 +3571,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       setKitchenManagers(prev => {
         const filtered = prev.filter(k => k.id !== kmId);
         const next = [updatedKM, ...filtered];
-        localStorage.setItem('fitzaika_kitchen_managers', JSON.stringify(next));
+        localStorage.setItem('taashbhatti_kitchen_managers', JSON.stringify(next));
         return next;
       });
       setShowKitchenManagerModal(false);
@@ -3612,8 +3612,8 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   };
 
   const handleLaunchKitchenPortal = (km: KitchenManager) => {
-    localStorage.setItem('fitzaika_active_km_session', JSON.stringify(km));
-    localStorage.setItem('fitzaika_gateway', 'kitchen');
+    localStorage.setItem('taashbhatti_active_km_session', JSON.stringify(km));
+    localStorage.setItem('taashbhatti_gateway', 'kitchen');
     if (onSwitchGateway) {
       onSwitchGateway('kitchen');
     } else {
@@ -4751,7 +4751,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                         onClick={() => {
                           const nextVal = !enableVoiceAnnounce;
                           setEnableVoiceAnnounce(nextVal);
-                          localStorage.setItem('fitzaika_kds_voice', nextVal ? 'true' : 'false');
+                          localStorage.setItem('taashbhatti_kds_voice', nextVal ? 'true' : 'false');
                         }}
                         className={`p-1 rounded transition-colors ${enableVoiceAnnounce ? 'text-brand-orange hover:text-brand-orange/80' : 'text-gray-500 hover:text-gray-400'}`}
                         title={enableVoiceAnnounce ? 'Disable speech announcements' : 'Enable speech announcements'}
@@ -8243,13 +8243,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                   setReplyTextMap((prev) => ({ ...prev, [ticket.id]: '' }));
 
                   try {
-                    const cached = localStorage.getItem('fitzaika_support_tickets');
+                    const cached = localStorage.getItem('taashbhatti_support_tickets');
                     if (cached) {
                       const list: SupportTicket[] = JSON.parse(cached);
                       const idx = list.findIndex(t => t.id === ticket.id);
                       if (idx !== -1) {
                         list[idx] = { ...list[idx], ...updatedTicket };
-                        localStorage.setItem('fitzaika_support_tickets', JSON.stringify(list));
+                        localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(list));
                       }
                     }
                   } catch (e) {}
@@ -8296,13 +8296,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                   setDeliveryReplyTextMap((prev) => ({ ...prev, [ticket.id]: '' }));
 
                   try {
-                    const cached = localStorage.getItem('fitzaika_support_tickets');
+                    const cached = localStorage.getItem('taashbhatti_support_tickets');
                     if (cached) {
                       const list: SupportTicket[] = JSON.parse(cached);
                       const idx = list.findIndex(t => t.id === ticket.id);
                       if (idx !== -1) {
                         list[idx] = { ...list[idx], ...updatedTicket };
-                        localStorage.setItem('fitzaika_support_tickets', JSON.stringify(list));
+                        localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(list));
                       }
                     }
                   } catch (e) {}
@@ -10374,7 +10374,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                   onChange={(e) => setNotifLinkUrl(e.target.value)}
                                   className="w-full bg-[#12181E] border border-brand-green/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
                                 >
-                                  <option value="menu">🥗 Fitzaika Gourmet Menu</option>
+                                  <option value="menu">🥗 Taash Bhatti Signature Menu</option>
                                   <option value="catering">🔥 Taash Bhatti Charcoal Specials</option>
                                   <option value="coupons">🎟️ Coupons & Discounts</option>
                                   <option value="orders">📦 Order Tracker & History</option>
@@ -10387,7 +10387,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                   type="text"
                                   value={customLinkUrl}
                                   onChange={(e) => setCustomLinkUrl(e.target.value)}
-                                  placeholder="e.g. https://fitzaika.com/promo or /custom-route"
+                                  placeholder="e.g. https://taashbhatti.com/promo or /custom-route"
                                   className="w-full bg-[#12181E] border border-brand-orange/40 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none"
                                 />
                               )}
@@ -10450,7 +10450,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                     🔥
                                   </div>
                                   <span className="text-[10px] font-black uppercase tracking-wider text-brand-green">
-                                    FITZAIKA • TAASH BHATTI
+                                    TAASH BHATTI
                                   </span>
                                 </div>
                                 <span className="text-[8px] text-gray-500 font-mono">now</span>
@@ -13525,7 +13525,7 @@ Free express delivery directly to trainer desks"
                           type="email"
                           value={agentEmail}
                           onChange={(e) => setAgentEmail(e.target.value)}
-                          placeholder="agent@fitzaika.in"
+                          placeholder="agent@taashbhatti.com"
                           required
                           className="w-full bg-[#1B232C] border border-white/10 focus:border-brand-green rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 font-mono outline-none transition-all"
                         />

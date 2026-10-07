@@ -194,7 +194,7 @@ export default function App() {
         }
       }
     } catch (e) {}
-    return (localStorage.getItem('fitzaika_gateway') as 'customer' | 'admin' | 'partner' | 'support' | 'kitchen') || 'customer';
+    return (localStorage.getItem('taashbhatti_gateway') as 'customer' | 'admin' | 'partner' | 'support' | 'kitchen') || 'customer';
   });
   const [adminEmailAttempt, setAdminEmailAttempt] = useState<string | null>(null);
   const [adminPasscodeVerified, setAdminPasscodeVerified] = useState<boolean>(() => {
@@ -488,7 +488,7 @@ export default function App() {
 
   // User Preferences State
   const [user, setUser] = useState<User>(() => {
-    const cached = localStorage.getItem('fitzaika_cached_user_profile');
+    const cached = localStorage.getItem('taashbhatti_cached_user_profile');
     if (cached) {
       try {
         return JSON.parse(cached);
@@ -507,10 +507,10 @@ export default function App() {
 
   // Helper for persistent Guest User ID
   const getGuestUserId = (): string => {
-    let guestId = localStorage.getItem('fitzaika_guest_user_id');
+    let guestId = localStorage.getItem('taashbhatti_guest_user_id');
     if (!guestId) {
       guestId = 'guest_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
-      localStorage.setItem('fitzaika_guest_user_id', guestId);
+      localStorage.setItem('taashbhatti_guest_user_id', guestId);
     }
     return guestId;
   };
@@ -518,7 +518,7 @@ export default function App() {
   const updateOrdersWithCache = (newOrders: Order[]) => {
     setOrders(newOrders);
     try {
-      localStorage.setItem('fitzaika_orders_cache', JSON.stringify(newOrders));
+      localStorage.setItem('taashbhatti_orders_cache', JSON.stringify(newOrders));
     } catch (e) {}
   };
 
@@ -526,7 +526,7 @@ export default function App() {
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
   const [selectedBhatti, setSelectedBhatti] = useState<Kitchen | null>(() => {
     try {
-      const cached = localStorage.getItem('fitzaika_selected_bhatti');
+      const cached = localStorage.getItem('taashbhatti_selected_bhatti');
       if (cached) return JSON.parse(cached);
     } catch (e) {}
     return null;
@@ -535,20 +535,20 @@ export default function App() {
   const handleSelectBhatti = (bhatti: Kitchen | null) => {
     setSelectedBhatti(bhatti);
     if (bhatti) {
-      localStorage.setItem('fitzaika_selected_bhatti', JSON.stringify(bhatti));
+      localStorage.setItem('taashbhatti_selected_bhatti', JSON.stringify(bhatti));
     } else {
-      localStorage.removeItem('fitzaika_selected_bhatti');
+      localStorage.removeItem('taashbhatti_selected_bhatti');
     }
   };
   const [likedMeals, setLikedMeals] = useState<string[]>(() => {
     try {
-      const cached = localStorage.getItem('fitzaika_deck_meals');
+      const cached = localStorage.getItem('taashbhatti_deck_meals');
       if (cached) return JSON.parse(cached);
     } catch (e) {}
     return [];
   });
   const [orders, setOrders] = useState<Order[]>(() => {
-    const cached = localStorage.getItem('fitzaika_orders_cache');
+    const cached = localStorage.getItem('taashbhatti_orders_cache');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
@@ -661,7 +661,7 @@ export default function App() {
 
   // Firebase Auth and sync state
   const [fbUser, setFbUser] = useState<any>(() => {
-    const cached = localStorage.getItem('fitzaika_cached_fb_user');
+    const cached = localStorage.getItem('taashbhatti_cached_fb_user');
     if (cached) {
       try {
         return JSON.parse(cached);
@@ -859,7 +859,7 @@ export default function App() {
       // 2. Return to Customer gateway if inside admin/partner/kitchen/support
       if (s.currentGateway !== 'customer') {
         setCurrentGateway('customer');
-        localStorage.setItem('fitzaika_gateway', 'customer');
+        localStorage.setItem('taashbhatti_gateway', 'customer');
         return;
       }
 
@@ -964,7 +964,7 @@ export default function App() {
       const nextUser = { ...user, address: singleAddr };
       setUser(nextUser);
       try {
-        localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(nextUser));
+        localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(nextUser));
       } catch (_) {}
     }
   }, [authChecking, currentGateway, fbUser?.uid, dineInSession, user?.savedAddresses, user?.address]);
@@ -976,7 +976,7 @@ export default function App() {
       address: selectedAddressText,
     };
     setUser(nextUser);
-    localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(nextUser));
+    localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(nextUser));
 
     if (fbUser && fbUser.uid) {
       try {
@@ -1020,7 +1020,7 @@ export default function App() {
       savedAddresses: updatedAddresses,
     };
     setUser(nextUser);
-    localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(nextUser));
+    localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(nextUser));
 
     if (fbUser && fbUser.uid) {
       try {
@@ -1071,7 +1071,7 @@ export default function App() {
   // Enforce Light Theme Clean Aesthetics
   useEffect(() => {
     document.documentElement.classList.remove('dark');
-    localStorage.setItem('fitzaika_theme', 'light');
+    localStorage.setItem('taashbhatti_theme', 'light');
   }, []);
 
   // Mandatory Phone Verification Watcher:
@@ -1149,7 +1149,7 @@ export default function App() {
       onboardingCompleted: true,
     };
     setUser(nextUser);
-    localStorage.setItem('fitzaika_onboarding_done', 'true');
+    localStorage.setItem('taashbhatti_onboarding_done', 'true');
     handleShowOnboarding(false);
 
     // Save/Sync to Firebase Firestore if logged in
@@ -1223,42 +1223,42 @@ export default function App() {
           const snapAgent = await getDocs(qAgent);
           if (!snapAgent.empty) {
             setCurrentGateway('support');
-            localStorage.setItem('fitzaika_gateway', 'support');
+            localStorage.setItem('taashbhatti_gateway', 'support');
           } else {
             // 2. Check Kitchen Station Managers
             const qKM = query(collection(db, 'kitchen_managers'), where('email', '==', emailClean));
             const snapKM = await getDocs(qKM);
             if (!snapKM.empty) {
               const kmData = { id: snapKM.docs[0].id, ...snapKM.docs[0].data() };
-              localStorage.setItem('fitzaika_active_km_session', JSON.stringify(kmData));
+              localStorage.setItem('taashbhatti_active_km_session', JSON.stringify(kmData));
               setCurrentGateway('kitchen');
-              localStorage.setItem('fitzaika_gateway', 'kitchen');
+              localStorage.setItem('taashbhatti_gateway', 'kitchen');
             } else {
               // 3. Check Delivery Fleet Partners
               const q = query(collection(db, 'delivery_partners'), where('email', '==', emailClean));
               const snap = await getDocs(q);
               if (!snap.empty) {
                 const partnerData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(partnerData));
+                localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(partnerData));
                 setCurrentGateway('partner');
-                localStorage.setItem('fitzaika_gateway', 'partner');
-              } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+                localStorage.setItem('taashbhatti_gateway', 'partner');
+              } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
                 if (!adminCreatingAccountRef.current) {
                   setAdminEmailAttempt(emailClean);
                   setAdminPasscodeVerified(false);
                   setCurrentGateway('admin');
-                  localStorage.setItem('fitzaika_gateway', 'admin');
+                  localStorage.setItem('taashbhatti_gateway', 'admin');
                 }
               }
             }
           }
         } catch (e) {
-          if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+          if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
             if (!adminCreatingAccountRef.current) {
               setAdminEmailAttempt(emailClean);
               setAdminPasscodeVerified(false);
               setCurrentGateway('admin');
-              localStorage.setItem('fitzaika_gateway', 'admin');
+              localStorage.setItem('taashbhatti_gateway', 'admin');
             }
           }
         }
@@ -1274,7 +1274,7 @@ export default function App() {
       }
 
       if (firebaseUser) {
-        localStorage.setItem('fitzaika_cached_fb_user', JSON.stringify({
+        localStorage.setItem('taashbhatti_cached_fb_user', JSON.stringify({
           uid: firebaseUser.uid,
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
@@ -1298,14 +1298,14 @@ export default function App() {
               const loadedDeck = profile.deckMealIds || profile.favoriteMealIds || [];
               setLikedMeals(loadedDeck);
               try {
-                localStorage.setItem('fitzaika_deck_meals', JSON.stringify(loadedDeck));
+                localStorage.setItem('taashbhatti_deck_meals', JSON.stringify(loadedDeck));
               } catch (e) {}
             }
-            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(profile));
+            localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(profile));
             if (profile.onboardingCompleted) {
-              localStorage.setItem('fitzaika_onboarding_done', 'true');
+              localStorage.setItem('taashbhatti_onboarding_done', 'true');
             } else {
-              localStorage.removeItem('fitzaika_onboarding_done');
+              localStorage.removeItem('taashbhatti_onboarding_done');
             }
           } else {
             const initialProfile: User = {
@@ -1324,8 +1324,8 @@ export default function App() {
               handleFirestoreError(error, OperationType.WRITE, `users/${firebaseUser.uid}`);
             });
             setUser(initialProfile);
-            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(initialProfile));
-            localStorage.removeItem('fitzaika_onboarding_done');
+            localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(initialProfile));
+            localStorage.removeItem('taashbhatti_onboarding_done');
           }
         }, (error: any) => {
           if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
@@ -1345,7 +1345,7 @@ export default function App() {
           });
 
           // Merge with cached local orders in case any were saved offline or during guest session
-          const cachedStr = localStorage.getItem('fitzaika_orders_cache');
+          const cachedStr = localStorage.getItem('taashbhatti_orders_cache');
           let localCache: Order[] = [];
           if (cachedStr) {
             try { localCache = JSON.parse(cachedStr); } catch (e) {}
@@ -1365,9 +1365,9 @@ export default function App() {
         });
       } else {
         // Inspect local storage for an active session (e.g., phone auth or remembered user profile)
-        const cachedUserStr = localStorage.getItem('fitzaika_cached_user_profile');
-        const cachedFbUserStr = localStorage.getItem('fitzaika_cached_fb_user');
-        const hasAuthSession = localStorage.getItem('fitzaika_auth_session') === 'true';
+        const cachedUserStr = localStorage.getItem('taashbhatti_cached_user_profile');
+        const cachedFbUserStr = localStorage.getItem('taashbhatti_cached_fb_user');
+        const hasAuthSession = localStorage.getItem('taashbhatti_auth_session') === 'true';
         let persistentProfile: User | null = null;
         if (cachedUserStr) {
           try {
@@ -1401,7 +1401,7 @@ export default function App() {
             snapshot.forEach((d) => {
               loadedOrders.push(d.data() as Order);
             });
-            const cachedStr = localStorage.getItem('fitzaika_orders_cache');
+            const cachedStr = localStorage.getItem('taashbhatti_orders_cache');
             let localCache: Order[] = [];
             if (cachedStr) {
               try { localCache = JSON.parse(cachedStr); } catch (e) {}
@@ -1439,7 +1439,7 @@ export default function App() {
             snapshot.forEach((d) => {
               loadedOrders.push(d.data() as Order);
             });
-            const cachedStr = localStorage.getItem('fitzaika_orders_cache');
+            const cachedStr = localStorage.getItem('taashbhatti_orders_cache');
             let localCache: Order[] = [];
             if (cachedStr) {
               try { localCache = JSON.parse(cachedStr); } catch (e) {}
@@ -1509,7 +1509,7 @@ export default function App() {
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added') {
             const newOrder = change.doc.data() as Order;
-            const seenKey = `fitzaika_seen_buddy_order_${newOrder.id}`;
+            const seenKey = `taashbhatti_seen_buddy_order_${newOrder.id}`;
             if (!sessionStorage.getItem(seenKey)) {
               sessionStorage.setItem(seenKey, '1');
               setIncomingBuddyOrderAlert(newOrder);
@@ -1587,7 +1587,7 @@ export default function App() {
           const item = change.doc.data() as any;
           if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
             try {
-              new Notification(item.title || 'Fitzaika • Taash Bhatti Alert', {
+              new Notification(item.title || 'Taash Bhatti Alert', {
                 body: item.body || 'You have a new update.',
                 icon: item.imageUrl || 'https://cdn.postimage.me/2026/08/01/28172.png',
               });
@@ -1827,7 +1827,7 @@ export default function App() {
       const filtered = prev.filter(o => o.id !== order.id);
       const next = [orderWithUser, ...filtered];
       try {
-        localStorage.setItem('fitzaika_orders_cache', JSON.stringify(next));
+        localStorage.setItem('taashbhatti_orders_cache', JSON.stringify(next));
       } catch (e) {}
       return next;
     });
@@ -1891,16 +1891,16 @@ export default function App() {
           const snapKM = await getDocs(qKM);
           if (!snapKM.empty) {
             const kmData = { id: snapKM.docs[0].id, ...snapKM.docs[0].data() };
-            localStorage.setItem('fitzaika_active_km_session', JSON.stringify(kmData));
+            localStorage.setItem('taashbhatti_active_km_session', JSON.stringify(kmData));
             targetGateway = 'kitchen';
           } else {
             const q = query(collection(db, 'delivery_partners'), where('email', '==', emailClean));
             const snap = await getDocs(q);
             if (!snap.empty) {
               const partnerData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-              localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(partnerData));
+              localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(partnerData));
               targetGateway = 'partner';
-            } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+            } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
               setAdminEmailAttempt(emailClean);
               setAdminPasscodeVerified(false);
               targetGateway = 'admin';
@@ -1908,7 +1908,7 @@ export default function App() {
           }
         }
       } catch (e) {
-        if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+        if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
           setAdminEmailAttempt(emailClean);
           setAdminPasscodeVerified(false);
           targetGateway = 'admin';
@@ -1929,7 +1929,7 @@ export default function App() {
       }
 
       setCurrentGateway(targetGateway);
-      localStorage.setItem('fitzaika_gateway', targetGateway);
+      localStorage.setItem('taashbhatti_gateway', targetGateway);
 
       if (targetGateway === 'admin') {
         showToast("👑 Admin console authenticated successfully!");
@@ -2007,14 +2007,14 @@ export default function App() {
   const handleSignUpWithEmail = async (email: string, pass: string, name: string, goal: 'fat_loss' | 'muscle_gain' | 'maintenance' | 'general') => {
     const emailClean = email.trim().toLowerCase();
     const passClean = pass.trim();
-    const isAdminEmail = emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com');
+    const isAdminEmail = emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com');
     
     if (isAdminEmail) {
       setAdminCreatingAccount(true);
       adminCreatingAccountRef.current = true;
       try {
-        localStorage.removeItem('fitzaika_onboarding_done');
-        localStorage.removeItem('fitzaika_cached_user_profile');
+        localStorage.removeItem('taashbhatti_onboarding_done');
+        localStorage.removeItem('taashbhatti_cached_user_profile');
         
         // Actually register the admin account in Firebase Auth!
         const cred = await createUserWithEmailAndPassword(auth, emailClean, passClean);
@@ -2036,7 +2036,7 @@ export default function App() {
         setAdminEmailAttempt(emailClean);
         setAdminPasscodeVerified(false);
         setCurrentGateway('admin');
-        localStorage.setItem('fitzaika_gateway', 'admin');
+        localStorage.setItem('taashbhatti_gateway', 'admin');
         setAdminCreatingAccount(false);
         adminCreatingAccountRef.current = false;
         
@@ -2057,8 +2057,8 @@ export default function App() {
     }
 
     try {
-      localStorage.removeItem('fitzaika_onboarding_done');
-      localStorage.removeItem('fitzaika_cached_user_profile');
+      localStorage.removeItem('taashbhatti_onboarding_done');
+      localStorage.removeItem('taashbhatti_cached_user_profile');
 
       // Check if email is already linked in Firestore to prevent duplicate account creation
       try {
@@ -2122,16 +2122,16 @@ export default function App() {
             const snapKM = await getDocs(qKM);
             if (!snapKM.empty) {
               const kmData = { id: snapKM.docs[0].id, ...snapKM.docs[0].data() };
-              localStorage.setItem('fitzaika_active_km_session', JSON.stringify(kmData));
+              localStorage.setItem('taashbhatti_active_km_session', JSON.stringify(kmData));
               targetGateway = 'kitchen';
             } else {
               const q = query(collection(db, 'delivery_partners'), where('email', '==', emailClean));
               const snap = await getDocs(q);
               if (!snap.empty) {
                 const partnerData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(partnerData));
+                localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(partnerData));
                 targetGateway = 'partner';
-              } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+              } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
                 setAdminEmailAttempt(emailClean);
                 setAdminPasscodeVerified(false);
                 targetGateway = 'admin';
@@ -2139,7 +2139,7 @@ export default function App() {
             }
           }
         } catch (e) {
-          if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+          if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
             setAdminEmailAttempt(emailClean);
             setAdminPasscodeVerified(false);
             targetGateway = 'admin';
@@ -2159,7 +2159,7 @@ export default function App() {
       }
 
       setCurrentGateway(targetGateway);
-      localStorage.setItem('fitzaika_gateway', targetGateway);
+      localStorage.setItem('taashbhatti_gateway', targetGateway);
 
       if (targetGateway === 'admin') {
         showToast("🔒 Secure admin verification required.");
@@ -2221,16 +2221,16 @@ export default function App() {
             const snapKM = await getDocs(qKM);
             if (!snapKM.empty) {
               const kmData = { id: snapKM.docs[0].id, ...snapKM.docs[0].data() };
-              localStorage.setItem('fitzaika_active_km_session', JSON.stringify(kmData));
+              localStorage.setItem('taashbhatti_active_km_session', JSON.stringify(kmData));
               targetGateway = 'kitchen';
             } else {
               const q = query(collection(db, 'delivery_partners'), where('email', '==', emailClean));
               const snap = await getDocs(q);
               if (!snap.empty) {
                 const partnerData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(partnerData));
+                localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(partnerData));
                 targetGateway = 'partner';
-              } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+              } else if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
                 setAdminEmailAttempt(emailClean);
                 setAdminPasscodeVerified(false);
                 targetGateway = 'admin';
@@ -2238,7 +2238,7 @@ export default function App() {
             }
           }
         } catch (e) {
-          if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@fitzaika.com') || emailClean.endsWith('@taashbhatti.com')) {
+          if (emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com')) {
             setAdminEmailAttempt(emailClean);
             setAdminPasscodeVerified(false);
             targetGateway = 'admin';
@@ -2258,7 +2258,7 @@ export default function App() {
       }
 
       setCurrentGateway(targetGateway);
-      localStorage.setItem('fitzaika_gateway', targetGateway);
+      localStorage.setItem('taashbhatti_gateway', targetGateway);
 
       if (targetGateway === 'admin') {
         showToast("🔒 Secure admin verification required.");
@@ -2308,9 +2308,9 @@ export default function App() {
     
     // Explicitly persist session in localStorage so the user is never logged out on app reopen
     try {
-      localStorage.setItem('fitzaika_auth_session', 'true');
-      localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(data.user));
-      localStorage.setItem('fitzaika_cached_fb_user', JSON.stringify(data.fbUser));
+      localStorage.setItem('taashbhatti_auth_session', 'true');
+      localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(data.user));
+      localStorage.setItem('taashbhatti_cached_fb_user', JSON.stringify(data.fbUser));
     } catch (e) {}
 
     // Mark arrival prompt as handled so automatic timers don't open the map
@@ -2343,13 +2343,13 @@ export default function App() {
     try {
       await clearAdminSession();
       setAdminPasscodeVerified(false);
-      localStorage.removeItem('fitzaika_auth_session');
-      localStorage.removeItem('fitzaika_cached_fb_user');
-      localStorage.removeItem('fitzaika_cached_user_profile');
-      localStorage.removeItem('fitzaika_onboarding_done');
-      localStorage.removeItem('fitzaika_admin_verified');
-      localStorage.removeItem('fitzaika_active_dp_session');
-      localStorage.setItem('fitzaika_gateway', 'customer');
+      localStorage.removeItem('taashbhatti_auth_session');
+      localStorage.removeItem('taashbhatti_cached_fb_user');
+      localStorage.removeItem('taashbhatti_cached_user_profile');
+      localStorage.removeItem('taashbhatti_onboarding_done');
+      localStorage.removeItem('taashbhatti_admin_verified');
+      localStorage.removeItem('taashbhatti_active_dp_session');
+      localStorage.setItem('taashbhatti_gateway', 'customer');
       setCurrentGateway('customer');
       setFbUser(null);
       setUser({
@@ -2366,9 +2366,9 @@ export default function App() {
       showToast("🔓 Logged out successfully.");
     } catch (err) {
       console.error(err);
-      localStorage.removeItem('fitzaika_auth_session');
-      localStorage.removeItem('fitzaika_cached_fb_user');
-      localStorage.removeItem('fitzaika_cached_user_profile');
+      localStorage.removeItem('taashbhatti_auth_session');
+      localStorage.removeItem('taashbhatti_cached_fb_user');
+      localStorage.removeItem('taashbhatti_cached_user_profile');
       setFbUser(null);
       setUser({
         name: 'Guest Athlete',
@@ -2432,7 +2432,7 @@ export default function App() {
       const updated = isAlreadyInDeck ? prev.filter((id) => id !== mealId) : [...prev, mealId];
 
       try {
-        localStorage.setItem('fitzaika_deck_meals', JSON.stringify(updated));
+        localStorage.setItem('taashbhatti_deck_meals', JSON.stringify(updated));
       } catch (e) {}
 
       // If user is authenticated in Firestore, persist deck in their profile document
@@ -2464,8 +2464,8 @@ export default function App() {
         (user.email && user.email.trim().length > 0 && !user.email.includes('guest@') && !user.email.includes('guest-')) ||
         (user.id && !user.id.startsWith('guest_') && user.id !== 'guest-user-muzaffarpur')
       )) ||
-      localStorage.getItem('fitzaika_auth_session') === 'true' ||
-      Boolean(localStorage.getItem('fitzaika_cached_fb_user'))
+      localStorage.getItem('taashbhatti_auth_session') === 'true' ||
+      Boolean(localStorage.getItem('taashbhatti_cached_fb_user'))
     );
     if (!isUserAuthenticated) {
       alert("🔒 Authentication Required: Please sign in or register under the Vault tab to reorder past meal combos!");
@@ -2717,14 +2717,14 @@ export default function App() {
         onVerify={() => {
           setAdminPasscodeVerified(true);
           setCurrentGateway('admin');
-          localStorage.setItem('fitzaika_gateway', 'admin');
+          localStorage.setItem('taashbhatti_gateway', 'admin');
         }}
         onCancel={async () => {
           setAdminEmailAttempt(null);
           setAdminPasscodeVerified(false);
           await clearAdminSession();
           setCurrentGateway('customer');
-          localStorage.setItem('fitzaika_gateway', 'customer');
+          localStorage.setItem('taashbhatti_gateway', 'customer');
           if (auth.currentUser) {
             await signOut(auth);
           }
@@ -2738,7 +2738,7 @@ export default function App() {
       <CustomerSupportPortal
         onExitGateway={() => {
           setCurrentGateway('customer');
-          localStorage.setItem('fitzaika_gateway', 'customer');
+          localStorage.setItem('taashbhatti_gateway', 'customer');
         }}
         allKitchens={kitchens}
         allOrders={orders}
@@ -2751,7 +2751,7 @@ export default function App() {
       <DeliveryPartnerApp
         onExitGateway={() => {
           setCurrentGateway('customer');
-          localStorage.setItem('fitzaika_gateway', 'customer');
+          localStorage.setItem('taashbhatti_gateway', 'customer');
         }}
         allKitchens={kitchens}
         allOrders={orders}
@@ -2771,7 +2771,7 @@ export default function App() {
       <KitchenManagerApp
         onExitGateway={() => {
           setCurrentGateway('customer');
-          localStorage.setItem('fitzaika_gateway', 'customer');
+          localStorage.setItem('taashbhatti_gateway', 'customer');
         }}
         allKitchens={kitchens}
         allOrders={orders}
@@ -2787,14 +2787,14 @@ export default function App() {
           onVerify={() => {
             setAdminPasscodeVerified(true);
             setCurrentGateway('admin');
-            localStorage.setItem('fitzaika_gateway', 'admin');
+            localStorage.setItem('taashbhatti_gateway', 'admin');
           }}
           onCancel={async () => {
             setAdminEmailAttempt(null);
             setAdminPasscodeVerified(false);
             await clearAdminSession();
             setCurrentGateway('customer');
-            localStorage.setItem('fitzaika_gateway', 'customer');
+            localStorage.setItem('taashbhatti_gateway', 'customer');
             if (auth.currentUser) {
               await signOut(auth);
             }
@@ -2809,7 +2809,7 @@ export default function App() {
           setAdminPasscodeVerified(false);
           await clearAdminSession();
           setCurrentGateway('customer');
-          localStorage.setItem('fitzaika_gateway', 'customer');
+          localStorage.setItem('taashbhatti_gateway', 'customer');
           if (auth.currentUser) {
             await signOut(auth);
           }
@@ -2820,7 +2820,7 @@ export default function App() {
             setAdminPasscodeVerified(false);
           }
           setCurrentGateway(gw);
-          localStorage.setItem('fitzaika_gateway', gw);
+          localStorage.setItem('taashbhatti_gateway', gw);
         }}
         user={user}
         fbUser={fbUser}
@@ -3133,7 +3133,7 @@ export default function App() {
             }}
             onOpenAdminPortal={() => {
               setCurrentGateway('admin');
-              localStorage.setItem('fitzaika_gateway', 'admin');
+              localStorage.setItem('taashbhatti_gateway', 'admin');
             }}
             isAdmin={Boolean(fbUser && (fbUser.email?.includes('admin') || fbUser.email?.includes('taashbhatti')))}
           />
@@ -3522,7 +3522,7 @@ export default function App() {
                 const updatedWithAddr = { ...user, address: freshPrimaryAddr };
                 setUser(updatedWithAddr);
                 try {
-                  localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(updatedWithAddr));
+                  localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(updatedWithAddr));
                 } catch (e) {}
               }
               showToast(`📍 Delivering to your saved address: ${freshPrimaryAddr.slice(0, 35)}...`);
@@ -3694,7 +3694,7 @@ export default function App() {
           };
           setUser(updated);
           try {
-            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(updated));
+            localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(updated));
           } catch (e) {}
           showToast("✅ Mobile number verified! Welcome to Taash Bhatti.");
 

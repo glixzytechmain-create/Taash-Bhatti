@@ -7,7 +7,7 @@ import { OfflineDeliveryRecord } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
-const QUEUE_STORAGE_KEY = 'fitzaika_rider_offline_queue';
+const QUEUE_STORAGE_KEY = 'taashbhatti_rider_offline_queue';
 
 export function getOfflineQueue(): OfflineDeliveryRecord[] {
   try {

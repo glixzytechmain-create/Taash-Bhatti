@@ -248,7 +248,7 @@ export default function KitchenManagerApp({
 }: KitchenManagerAppProps) {
   // Authentication & Session State
   const [activeSession, setActiveSession] = useState<KitchenManager | null>(() => {
-    const cached = localStorage.getItem('fitzaika_active_km_session');
+    const cached = localStorage.getItem('taashbhatti_active_km_session');
     if (cached) {
       try { return JSON.parse(cached); } catch (e) {}
     }
@@ -641,7 +641,7 @@ export default function KitchenManagerApp({
 
   // Audio / Speech Announcement state
   const [enableVoiceAnnounce, setEnableVoiceAnnounce] = useState<boolean>(() => {
-    return localStorage.getItem('fitzaika_km_voice') === 'true';
+    return localStorage.getItem('taashbhatti_km_voice') === 'true';
   });
   const [audioMuted, setAudioMuted] = useState<boolean>(false);
 
@@ -770,7 +770,7 @@ export default function KitchenManagerApp({
 
     const cachedList: KitchenManager[] = (() => {
       try {
-        return JSON.parse(localStorage.getItem('fitzaika_kitchen_managers') || '[]');
+        return JSON.parse(localStorage.getItem('taashbhatti_kitchen_managers') || '[]');
       } catch (e) {
         return [];
       }
@@ -789,7 +789,7 @@ export default function KitchenManagerApp({
       }
       const updated = { ...match, lastLoginAt: new Date().toISOString() };
       setActiveSession(updated);
-      localStorage.setItem('fitzaika_active_km_session', JSON.stringify(updated));
+      localStorage.setItem('taashbhatti_active_km_session', JSON.stringify(updated));
       setIsLoggingIn(false);
       return;
     }
@@ -810,12 +810,12 @@ export default function KitchenManagerApp({
     };
     setDoc(doc(db, 'kitchen_managers', defaultMgr.id), defaultMgr).catch(() => {});
     setActiveSession(defaultMgr);
-    localStorage.setItem('fitzaika_active_km_session', JSON.stringify(defaultMgr));
+    localStorage.setItem('taashbhatti_active_km_session', JSON.stringify(defaultMgr));
     setIsLoggingIn(false);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('fitzaika_active_km_session');
+    localStorage.removeItem('taashbhatti_active_km_session');
     setActiveSession(null);
   };
 
@@ -1183,7 +1183,7 @@ export default function KitchenManagerApp({
             </div>
             <h2 className="text-xl font-black uppercase tracking-wider text-white">Kitchen Manager OS</h2>
             <p className="text-xs text-gray-400 max-w-xs mx-auto">
-              FitZaika Branch Terminal • Authorized Station Sign-in
+              Taash Bhatti Branch Terminal • Authorized Station Sign-in
             </p>
           </div>
 
@@ -1206,7 +1206,7 @@ export default function KitchenManagerApp({
                   required
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="manager@fitzaika.in"
+                  placeholder="manager@taashbhatti.com"
                   className="w-full pl-10 pr-4 py-3 bg-[#0A0E13] border border-white/10 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-medium font-mono"
                 />
               </div>
@@ -1415,7 +1415,7 @@ export default function KitchenManagerApp({
                 onClick={() => {
                   const nextVal = !enableVoiceAnnounce;
                   setEnableVoiceAnnounce(nextVal);
-                  localStorage.setItem('fitzaika_km_voice', nextVal ? 'true' : 'false');
+                  localStorage.setItem('taashbhatti_km_voice', nextVal ? 'true' : 'false');
                 }}
                 className={`p-1 rounded transition-colors ${enableVoiceAnnounce ? 'text-brand-orange' : 'text-gray-500'}`}
                 title={enableVoiceAnnounce ? 'Voice announcements ON' : 'Voice announcements OFF'}

@@ -406,10 +406,10 @@ export default function PhoneAuthComponent({
     };
 
     try {
-      localStorage.setItem('fitzaika_auth_session', 'true');
-      localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
+      localStorage.setItem('taashbhatti_auth_session', 'true');
+      localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(finalProfile));
       localStorage.setItem(
-        'fitzaika_cached_fb_user',
+        'taashbhatti_cached_fb_user',
         JSON.stringify({
           uid: knownUserAccount.id,
           phoneNumber: fullE164Phone,
@@ -544,10 +544,10 @@ export default function PhoneAuthComponent({
           };
 
           try {
-            localStorage.setItem('fitzaika_auth_session', 'true');
-            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
+            localStorage.setItem('taashbhatti_auth_session', 'true');
+            localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(finalProfile));
             localStorage.setItem(
-              'fitzaika_cached_fb_user',
+              'taashbhatti_cached_fb_user',
               JSON.stringify({
                 uid: knownUserAccount.id,
                 phoneNumber: fullE164Phone,
@@ -604,10 +604,10 @@ export default function PhoneAuthComponent({
         };
 
         try {
-          localStorage.setItem('fitzaika_auth_session', 'true');
-          localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
+          localStorage.setItem('taashbhatti_auth_session', 'true');
+          localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(finalProfile));
           localStorage.setItem(
-            'fitzaika_cached_fb_user',
+            'taashbhatti_cached_fb_user',
             JSON.stringify({
               uid: fbUser.uid,
               phoneNumber: fullE164Phone,
@@ -715,10 +715,10 @@ export default function PhoneAuthComponent({
 
       // Cache session
       try {
-        localStorage.setItem('fitzaika_auth_session', 'true');
-        localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
+        localStorage.setItem('taashbhatti_auth_session', 'true');
+        localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(finalProfile));
         localStorage.setItem(
-          'fitzaika_cached_fb_user',
+          'taashbhatti_cached_fb_user',
           JSON.stringify({
             uid,
             phoneNumber: fullE164Phone,

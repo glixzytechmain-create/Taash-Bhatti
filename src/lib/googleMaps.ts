@@ -1,98 +1,44 @@
+export const GOOGLE_MAPS_API_KEY: string =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY) ||
+  (typeof process !== 'undefined' && (process.env?.GOOGLE_MAPS_PLATFORM_KEY || process.env?.VITE_GOOGLE_MAPS_API_KEY || process.env?.VITE_GOOGLE_MAPS_PLATFORM_KEY)) ||
+  (typeof window !== 'undefined' && ((window as any).GOOGLE_MAPS_PLATFORM_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY)) ||
+  'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE';
+
 export function getGoogleMapsApiKey(): string {
   if (typeof window !== 'undefined') {
     try {
-      const custom = localStorage.getItem('fitzaika_custom_google_maps_key');
+      const custom = localStorage.getItem('taashbhatti_custom_google_maps_key');
       if (custom && custom.trim()) return custom.trim();
     } catch (e) {}
   }
-  return (
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY) ||
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY) ||
-    (typeof process !== 'undefined' && (process.env?.GOOGLE_MAPS_PLATFORM_KEY || process.env?.VITE_GOOGLE_MAPS_API_KEY || process.env?.VITE_GOOGLE_MAPS_PLATFORM_KEY)) ||
-    (typeof window !== 'undefined' && ((window as any).GOOGLE_MAPS_PLATFORM_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY)) ||
-    ''
-  );
+  return GOOGLE_MAPS_API_KEY;
 }
-
-export const GOOGLE_MAPS_API_KEY: string = getGoogleMapsApiKey();
 
 export function setCustomGoogleMapsApiKey(key: string): void {
   if (typeof window !== 'undefined') {
     try {
       if (key && key.trim()) {
-        localStorage.setItem('fitzaika_custom_google_maps_key', key.trim());
+        localStorage.setItem('taashbhatti_custom_google_maps_key', key.trim());
       } else {
-        localStorage.removeItem('fitzaika_custom_google_maps_key');
+        localStorage.removeItem('taashbhatti_custom_google_maps_key');
       }
-      sessionStorage.removeItem('fitzaika_gmaps_auth_failed');
-      window.dispatchEvent(new CustomEvent('fitzaika_maps_key_updated'));
+      window.dispatchEvent(new CustomEvent('taashbhatti_maps_key_updated'));
     } catch (e) {}
   }
-}
-
-// Global detection of Google Maps authentication errors (RefererNotAllowedMapError, etc.)
-let gmapsAuthFailed = false;
-
-if (typeof window !== 'undefined') {
-  try {
-    if (sessionStorage.getItem('fitzaika_gmaps_auth_failed') === 'true') {
-      gmapsAuthFailed = true;
-    }
-    const prevAuthFailure = (window as any).gm_authFailure;
-    (window as any).gm_authFailure = () => {
-      console.warn('Google Maps authentication failure on this domain! Auto-activating resilient Leaflet map engine.');
-      gmapsAuthFailed = true;
-      try {
-        sessionStorage.setItem('fitzaika_gmaps_auth_failed', 'true');
-      } catch (e) {}
-      window.dispatchEvent(new CustomEvent('fitzaika_maps_auth_failed'));
-      if (typeof prevAuthFailure === 'function') {
-        prevAuthFailure();
-      }
-    };
-
-    // Intercept Google Maps billing, auth, and referrer errors to switch cleanly to Leaflet
-    const origConsoleError = console.error;
-    console.error = (...args: any[]) => {
-      const errStr = args.map((a) => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
-      if (
-        errStr.includes('Google Maps JavaScript API error') ||
-        errStr.includes('BillingNotEnabledMapError') ||
-        errStr.includes('ApiNotActivatedMapError') ||
-        errStr.includes('RefererNotAllowedMapError') ||
-        errStr.includes('InvalidKeyMapError')
-      ) {
-        markGoogleMapsFailed();
-      }
-      origConsoleError.apply(console, args);
-    };
-  } catch (e) {}
 }
 
 export function isGoogleMapsAuthFailed(): boolean {
-  if (typeof window !== 'undefined' && sessionStorage.getItem('fitzaika_gmaps_auth_failed') === 'true') {
-    return true;
-  }
-  return gmapsAuthFailed;
+  return false;
 }
 
 export function markGoogleMapsFailed(): void {
-  gmapsAuthFailed = true;
-  if (typeof window !== 'undefined') {
-    try {
-      sessionStorage.setItem('fitzaika_gmaps_auth_failed', 'true');
-      window.dispatchEvent(new CustomEvent('fitzaika_maps_auth_failed'));
-    } catch (e) {}
-  }
+  // No-op: keep Google Maps engine active
 }
 
 let googleMapsPromise: Promise<typeof google.maps> | null = null;
 
 export function loadGoogleMaps(): Promise<typeof google.maps> {
-  if (isGoogleMapsAuthFailed()) {
-    return Promise.reject(new Error('Google Maps authentication failed on this domain'));
-  }
-
   if (typeof window !== 'undefined' && window.google && window.google.maps) {
     return Promise.resolve(window.google.maps);
   }
@@ -110,19 +56,9 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
         if (window.google && window.google.maps) resolve(window.google.maps);
         else reject(new Error('google.maps not loaded'));
       });
-      existingScript.addEventListener('error', (e) => {
-        markGoogleMapsFailed();
-        reject(e);
-      });
+      existingScript.addEventListener('error', (e) => reject(e));
       return;
     }
-
-    // Safety timeout: if Google Maps hangs or blocks referrer, reject after 3.5 seconds
-    const safetyTimer = setTimeout(() => {
-      console.warn('Google Maps load timeout. Falling back to Leaflet map engine.');
-      markGoogleMapsFailed();
-      reject(new Error('Google Maps loading timed out'));
-    }, 3500);
 
     const script = document.createElement('script');
     script.id = 'google-maps-js-sdk';
@@ -130,18 +66,14 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
     script.async = true;
     script.defer = true;
     script.onload = () => {
-      clearTimeout(safetyTimer);
       if (window.google && window.google.maps) {
         resolve(window.google.maps);
       } else {
-        markGoogleMapsFailed();
         reject(new Error('Google Maps script loaded but google.maps is not defined'));
       }
     };
     script.onerror = (err) => {
-      clearTimeout(safetyTimer);
-      console.warn('Google Maps script load error, switching to Leaflet:', err);
-      markGoogleMapsFailed();
+      console.warn('Google Maps script load error:', err);
       reject(err);
     };
     document.head.appendChild(script);
@@ -150,65 +82,60 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
   return googleMapsPromise;
 }
 
-// Fallback reverse geocoding via OpenStreetMap Nominatim with local fallback
+// Reverse geocoding via Google Maps Geocoder with fallback
 export async function reverseGeocodeCoords(lat: number, lng: number): Promise<string> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
-      { headers: { 'Accept': 'application/json' } }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.display_name) {
-        return data.display_name;
-      }
-    }
-  } catch (e) {
-    // Non-blocking fallback
+  if (typeof window !== 'undefined' && window.google?.maps?.Geocoder) {
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      const res = await new Promise<string | null>((resolve) => {
+        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+          if (status === 'OK' && results && results[0]?.formatted_address) {
+            resolve(results[0].formatted_address);
+          } else {
+            resolve(null);
+          }
+        });
+      });
+      if (res) return res;
+    } catch (e) {}
   }
   return `Pinpoint (${lat.toFixed(4)}, ${lng.toFixed(4)}), Muzaffarpur`;
 }
 
-// Map style definition tailored to FitZaika / Taash Bhatti brand theme
-// Palette: Charcoal Emerald (#0B1713), Forest Jade (#0F291E, #10B981), Warm Gold/Amber (#F59E0B), Deep Obsidian Water (#07141F)
-export const FITZAIKA_BRAND_MAP_STYLE: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#0B1713" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#070E0C" }, { weight: 3 }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#CBD5E1" }] },
+// Classic detailed dark map style (Uber / Swiggy inspired with high road contrast)
+export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: "geometry", stylers: [{ color: "#111822" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#111822" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#8E9DAE" }] },
   {
     featureType: "administrative.locality",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#FCD34D" }, { weight: 1.5 }], // FitZaika Warm Gold
-  },
-  {
-    featureType: "administrative.neighborhood",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#94A3B8" }],
+    stylers: [{ color: "#D1D5DB" }],
   },
   {
     featureType: "poi",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#64748B" }],
+    stylers: [{ color: "#4B5563" }],
   },
   {
     featureType: "poi.park",
     elementType: "geometry",
-    stylers: [{ color: "#0D261C" }], // Rich Forest Green
+    stylers: [{ color: "#0F1F18" }],
   },
   {
     featureType: "poi.park",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#10B981" }], // Brand Emerald
+    stylers: [{ color: "#34D399" }],
   },
   {
     featureType: "road",
     elementType: "geometry",
-    stylers: [{ color: "#162820" }], // Dark Jade Slate
+    stylers: [{ color: "#1E293B" }],
   },
   {
     featureType: "road",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#0D1B15" }],
+    stylers: [{ color: "#0F172A" }],
   },
   {
     featureType: "road",
@@ -218,42 +145,41 @@ export const FITZAIKA_BRAND_MAP_STYLE: google.maps.MapTypeStyle[] = [
   {
     featureType: "road.highway",
     elementType: "geometry",
-    stylers: [{ color: "#2B3A28" }], // Warm olive-jade arterial
+    stylers: [{ color: "#334155" }],
   },
   {
     featureType: "road.highway",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#1A2518" }],
+    stylers: [{ color: "#1E293B" }],
   },
   {
     featureType: "road.highway",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#FBBF24" }], // Amber Highway labels
+    stylers: [{ color: "#F8FAFC" }],
   },
   {
     featureType: "transit",
     elementType: "geometry",
-    stylers: [{ color: "#14251E" }],
+    stylers: [{ color: "#1E293B" }],
   },
   {
     featureType: "transit.station",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#10B981" }],
+    stylers: [{ color: "#94A3B8" }],
   },
   {
     featureType: "water",
     elementType: "geometry",
-    stylers: [{ color: "#07141F" }], // Deep Obsidian Marine
+    stylers: [{ color: "#0B131E" }],
   },
   {
     featureType: "water",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#38BDF8" }],
+    stylers: [{ color: "#475569" }],
   },
 ];
 
-// Dark map style is configured to our brand theme
-export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = FITZAIKA_BRAND_MAP_STYLE;
+export const TAASH_BHATTI_BRAND_MAP_STYLE: google.maps.MapTypeStyle[] = DARK_MAP_STYLE;
 
 // Map style definition for light theme
 export const LIGHT_MAP_STYLE: google.maps.MapTypeStyle[] = [

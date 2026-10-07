@@ -21,7 +21,7 @@ export default function FloatingDeliveredRateBubble({
 }: FloatingDeliveredRateBubbleProps) {
   const [dismissedOrderIds, setDismissedOrderIds] = useState<string[]>(() => {
     try {
-      const stored = sessionStorage.getItem('fitzaika_dismissed_rate_bubbles');
+      const stored = sessionStorage.getItem('taashbhatti_dismissed_rate_bubbles');
       return stored ? JSON.parse(stored) : [];
     } catch {
       return [];
@@ -37,7 +37,7 @@ export default function FloatingDeliveredRateBubble({
     const updated = [...dismissedOrderIds, order.id];
     setDismissedOrderIds(updated);
     try {
-      sessionStorage.setItem('fitzaika_dismissed_rate_bubbles', JSON.stringify(updated));
+      sessionStorage.setItem('taashbhatti_dismissed_rate_bubbles', JSON.stringify(updated));
     } catch {}
     if (onDismiss) onDismiss(order.id);
   };

@@ -83,7 +83,7 @@ export default function DeliveryPartnerApp({
 }: DeliveryPartnerAppProps) {
   // Fleet state loaded from Firestore delivery_partners or localStorage
   const [fleet, setFleet] = useState<DeliveryPartner[]>(() => {
-    const cached = localStorage.getItem('fitzaika_delivery_fleet');
+    const cached = localStorage.getItem('taashbhatti_delivery_fleet');
     if (cached) {
       try { return JSON.parse(cached); } catch (e) {}
     }
@@ -128,7 +128,7 @@ export default function DeliveryPartnerApp({
 
   // Active Logged-in Partner Session State
   const [currentPartner, setCurrentPartner] = useState<DeliveryPartner | null>(() => {
-    const cached = localStorage.getItem('fitzaika_active_dp_session');
+    const cached = localStorage.getItem('taashbhatti_active_dp_session');
     if (cached) {
       try { return JSON.parse(cached); } catch (e) {}
     }
@@ -143,7 +143,7 @@ export default function DeliveryPartnerApp({
 
   // Active Order Search State
   const [orderSearchId, setOrderSearchId] = useState<string>(() => {
-    return localStorage.getItem('fitzaika_active_unlocked_order_id') || '';
+    return localStorage.getItem('taashbhatti_active_unlocked_order_id') || '';
   });
   const [activeUnlockedOrder, setActiveUnlockedOrder] = useState<Order | null>(null);
   const [unlockedError, setUnlockedError] = useState<string | null>(null);
@@ -294,9 +294,9 @@ export default function DeliveryPartnerApp({
           if (!prev) return partnerData;
           return { ...prev, ...partnerData };
         });
-        const cached = localStorage.getItem('fitzaika_active_dp_session');
+        const cached = localStorage.getItem('taashbhatti_active_dp_session');
         const parsed = cached ? JSON.parse(cached) : {};
-        localStorage.setItem('fitzaika_active_dp_session', JSON.stringify({ ...parsed, ...partnerData }));
+        localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify({ ...parsed, ...partnerData }));
       }
     }, (err) => {
       console.warn("Delivery partner live sync error:", err);
@@ -425,7 +425,7 @@ export default function DeliveryPartnerApp({
 
   // Auto-restore and keep activeUnlockedOrder synced in real-time with effectiveAllOrders
   useEffect(() => {
-    const cachedUnlockedId = localStorage.getItem('fitzaika_active_unlocked_order_id') || orderSearchId;
+    const cachedUnlockedId = localStorage.getItem('taashbhatti_active_unlocked_order_id') || orderSearchId;
     if (cachedUnlockedId && effectiveAllOrders.length > 0) {
       const cleanId = cachedUnlockedId.trim().toUpperCase();
       const digitsOnlyTarget = cleanId.replace(/\D/g, '');
@@ -445,7 +445,7 @@ export default function DeliveryPartnerApp({
         if (orderSearchId !== found.id) {
           setOrderSearchId(found.id);
         }
-        localStorage.setItem('fitzaika_active_unlocked_order_id', found.id);
+        localStorage.setItem('taashbhatti_active_unlocked_order_id', found.id);
       }
     }
   }, [effectiveAllOrders]);
@@ -652,7 +652,7 @@ export default function DeliveryPartnerApp({
 
   // Sync fleet state with localStorage whenever it updates
   useEffect(() => {
-    localStorage.setItem('fitzaika_delivery_fleet', JSON.stringify(fleet));
+    localStorage.setItem('taashbhatti_delivery_fleet', JSON.stringify(fleet));
   }, [fleet]);
 
   // Handle Delivery Partner Login with Firebase Auth
@@ -678,7 +678,7 @@ export default function DeliveryPartnerApp({
     });
 
     if (matched && matched.status === 'inactive') {
-      setLoginError('This delivery partner account is currently suspended/inactive. Contact FitZaika Admin.');
+      setLoginError('This delivery partner account is currently suspended/inactive. Contact Taash Bhatti Admin.');
       setIsLoggingIn(false);
       return;
     }
@@ -708,7 +708,7 @@ export default function DeliveryPartnerApp({
       };
 
       setCurrentPartner(activePartner);
-      localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(activePartner));
+      localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(activePartner));
       if (matched) {
         try {
           await setDoc(doc(db, 'delivery_partners', matched.id), activePartner);
@@ -732,12 +732,12 @@ export default function DeliveryPartnerApp({
           } catch (e) {}
 
           setCurrentPartner(updatedPartner);
-          localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(updatedPartner));
+          localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(updatedPartner));
           setLoginError(null);
         } catch (createErr: any) {
           // Fallback to local fleet session
           setCurrentPartner(matched);
-          localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(matched));
+          localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(matched));
           setLoginError(null);
         }
       } else {
@@ -750,8 +750,8 @@ export default function DeliveryPartnerApp({
 
   const handleLogoutPartner = () => {
     setCurrentPartner(null);
-    localStorage.removeItem('fitzaika_active_dp_session');
-    localStorage.removeItem('fitzaika_active_unlocked_order_id');
+    localStorage.removeItem('taashbhatti_active_dp_session');
+    localStorage.removeItem('taashbhatti_active_unlocked_order_id');
     setActiveUnlockedOrder(null);
     setOrderSearchId('');
   };
@@ -760,7 +760,7 @@ export default function DeliveryPartnerApp({
   const handleCancelView = () => {
     setActiveUnlockedOrder(null);
     setOrderSearchId('');
-    localStorage.removeItem('fitzaika_active_unlocked_order_id');
+    localStorage.removeItem('taashbhatti_active_unlocked_order_id');
     setUnlockedError(null);
     setStatusSuccessMsg(null);
   };
@@ -774,7 +774,7 @@ export default function DeliveryPartnerApp({
     if (!targetId) {
       setUnlockedError('Please enter a valid Order ID (e.g., 84910485 or FZ-203918)');
       setActiveUnlockedOrder(null);
-      localStorage.removeItem('fitzaika_active_unlocked_order_id');
+      localStorage.removeItem('taashbhatti_active_unlocked_order_id');
       return;
     }
 
@@ -800,11 +800,11 @@ export default function DeliveryPartnerApp({
     if (found) {
       setActiveUnlockedOrder(found);
       setOrderSearchId(found.id);
-      localStorage.setItem('fitzaika_active_unlocked_order_id', found.id);
+      localStorage.setItem('taashbhatti_active_unlocked_order_id', found.id);
       setUnlockedError(null);
     } else {
       setActiveUnlockedOrder(null);
-      localStorage.removeItem('fitzaika_active_unlocked_order_id');
+      localStorage.removeItem('taashbhatti_active_unlocked_order_id');
       setUnlockedError(`Order ID "${targetId}" not found in system orders.`);
     }
   };
@@ -1196,7 +1196,7 @@ export default function DeliveryPartnerApp({
         totalTipsEarned: newTotalTipsEarned,
       };
       setCurrentPartner(updatedPartner);
-      localStorage.setItem('fitzaika_active_dp_session', JSON.stringify(updatedPartner));
+      localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(updatedPartner));
 
       const updatedOrder: Order = {
         ...activeUnlockedOrder,
@@ -1425,7 +1425,7 @@ export default function DeliveryPartnerApp({
     }
 
     if (expectedOtp && enteredClean !== expectedOtp) {
-      setOtpError(`❌ Invalid OTP "${enteredClean}"! Please ask the customer to check the 4-digit code in their FitZaika app.`);
+      setOtpError(`❌ Invalid OTP "${enteredClean}"! Please ask the customer to check the 4-digit code in their Taash Bhatti app.`);
       return;
     }
 
@@ -1594,7 +1594,7 @@ export default function DeliveryPartnerApp({
                 Delivery Partner Portal
               </h2>
               <p className="text-xs text-gray-400">
-                FitZaika Central Rider Fleet Authentication
+                Taash Bhatti Central Rider Fleet Authentication
               </p>
             </div>
           </div>
@@ -1617,7 +1617,7 @@ export default function DeliveryPartnerApp({
                   type="text"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="e.g. rider@fitzaika.in or +91 98765..."
+                  placeholder="e.g. rider@taashbhatti.com or +91 98765..."
                   required
                   className="w-full pl-10 pr-4 py-3 bg-[#0A0E13] border border-white/10 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-medium"
                 />
@@ -1897,7 +1897,7 @@ export default function DeliveryPartnerApp({
                   onClick={() => {
                     setActiveUnlockedOrder(incomingProximityOrder);
                     setOrderSearchId(incomingProximityOrder.id);
-                    localStorage.setItem('fitzaika_active_unlocked_order_id', incomingProximityOrder.id);
+                    localStorage.setItem('taashbhatti_active_unlocked_order_id', incomingProximityOrder.id);
                   }}
                   className="w-full sm:w-auto px-5 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shrink-0 shadow-lg flex items-center justify-center gap-2"
                 >
@@ -1920,7 +1920,7 @@ export default function DeliveryPartnerApp({
               Primary Origin Hub: {originKitchen.name}
             </h3>
             <p className="text-xs text-gray-400">
-              {originKitchen.address} (Serving All FitZaika Kitchen Branches)
+              {originKitchen.address} (Serving All Taash Bhatti Kitchen Branches)
             </p>
           </div>
 
@@ -2817,7 +2817,7 @@ export default function DeliveryPartnerApp({
                             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-400/20 to-transparent animate-pulse pointer-events-none" />
                             <div className="mt-1 flex items-center gap-1">
                               <span className="text-[8px] font-black tracking-widest text-slate-700 uppercase font-mono">
-                                UPI • FITZAIKA QR
+                                UPI • TAASH BHATTI QR
                               </span>
                             </div>
                           </div>
@@ -2906,7 +2906,7 @@ export default function DeliveryPartnerApp({
                   )}
 
                   <p className="text-xs text-gray-300 leading-relaxed">
-                    Ask the customer for their 4-digit Delivery OTP shown in their FitZaika app to confirm handover:
+                    Ask the customer for their 4-digit Delivery OTP shown in their Taash Bhatti app to confirm handover:
                   </p>
 
                   <div className="space-y-3">
@@ -4604,7 +4604,7 @@ export default function DeliveryPartnerApp({
             </div>
 
             <p className="text-xs text-gray-300 leading-relaxed font-sans">
-              FitZaika requires delivery partners to enable mandatory real-time device location permissions before accepting customer orders. This allows customers and kitchens to track your arrival live on the interactive map.
+              Taash Bhatti requires delivery partners to enable mandatory real-time device location permissions before accepting customer orders. This allows customers and kitchens to track your arrival live on the interactive map.
             </p>
 
             <div className="bg-red-950/40 border border-red-500/30 rounded-2xl p-3.5 space-y-1.5 text-xs text-red-200 font-mono">

@@ -837,10 +837,10 @@ export default function AccountTab({
         const docRef = doc(db, 'support_tickets', reviewTicketId);
         await setDoc(docRef, cleanReviewTicket).catch(() => {});
 
-        const cached = localStorage.getItem('fitzaika_support_tickets');
+        const cached = localStorage.getItem('taashbhatti_support_tickets');
         const list: SupportTicket[] = cached ? JSON.parse(cached) : [];
         list.unshift(reviewTicket);
-        localStorage.setItem('fitzaika_support_tickets', JSON.stringify(list));
+        localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(list));
       } catch (err) {
         console.warn("Could not save review support ticket:", err);
       }
@@ -1110,19 +1110,26 @@ export default function AccountTab({
 
       // 4. Wipe all local device storage
       try {
-        localStorage.removeItem('fitzaika_auth_session');
-        localStorage.removeItem('fitzaika_cached_fb_user');
-        localStorage.removeItem('fitzaika_cached_user_profile');
-        localStorage.removeItem('fitzaika_onboarding_done');
-        localStorage.removeItem('fitzaika_admin_verified');
+        localStorage.removeItem('taashbhatti_auth_session');
+        localStorage.removeItem('taashbhatti_cached_fb_user');
+        localStorage.removeItem('taashbhatti_cached_user_profile');
+        localStorage.removeItem('taashbhatti_onboarding_done');
+        localStorage.removeItem('taashbhatti_admin_verified');
         clearAdminSession();
-        localStorage.removeItem('fitzaika_active_dp_session');
+        localStorage.removeItem('taashbhatti_active_dp_session');
         localStorage.removeItem('tb_active_group_room_id');
         localStorage.removeItem('tb_group_room_pin');
         if (targetUid) {
           localStorage.removeItem(`taash_notifications_${targetUid}`);
         }
         localStorage.removeItem('taash_legal_age_consent_v1');
+        // Clear any other keys matching app prefix
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('taashbhatti_') || k.startsWith('tb_'))) {
+            localStorage.removeItem(k);
+          }
+        }
       } catch (storageErr) {
         console.warn('Storage cleanup warning:', storageErr);
       }
@@ -1199,7 +1206,7 @@ export default function AccountTab({
 
     setIsSubmittingSupport(true);
     const ticketId = 'TKT-' + Math.floor(100000 + Math.random() * 900000);
-    const ticketEmail = supportEmail.toLowerCase().trim() || user.email.toLowerCase().trim() || 'guest@fitzaika.com';
+    const ticketEmail = supportEmail.toLowerCase().trim() || user.email.toLowerCase().trim() || 'guest@taashbhatti.com';
 
     // Derive priority from complaint intensity if type is complaint
     let finalPriority = supportPriority;
@@ -1272,10 +1279,10 @@ export default function AccountTab({
 
       // 2. Local storage caching for offline capability
       try {
-        const cached = localStorage.getItem('fitzaika_support_tickets');
+        const cached = localStorage.getItem('taashbhatti_support_tickets');
         const list: SupportTicket[] = cached ? JSON.parse(cached) : [];
         list.unshift(newTicket);
-        localStorage.setItem('fitzaika_support_tickets', JSON.stringify(list));
+        localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(list));
       } catch (e) {
         console.warn("Local storage cache warning:", e);
       }

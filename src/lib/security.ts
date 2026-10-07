@@ -31,7 +31,7 @@ export function setAdminSessionToken(token: string): void {
   try {
     sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
     // Remove obsolete spoofable localStorage flags if present
-    localStorage.removeItem('fitzaika_admin_verified');
+    localStorage.removeItem('taashbhatti_admin_verified');
   } catch (e) {}
 }
 
@@ -43,7 +43,7 @@ export async function clearAdminSession(): Promise<void> {
   const token = getAdminSessionToken();
   try {
     sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-    localStorage.removeItem('fitzaika_admin_verified');
+    localStorage.removeItem('taashbhatti_admin_verified');
     if (token) {
       await fetch('/api/admin/auth/logout', {
         method: 'POST',
@@ -112,11 +112,11 @@ export function initializeCybersecurityShield(): void {
   try {
     window.addEventListener('storage', (e) => {
       // If someone attempts to set spoofed admin flags via another tab or console
-      if (e.key === 'fitzaika_admin_verified' && e.newValue === 'true') {
+      if (e.key === 'taashbhatti_admin_verified' && e.newValue === 'true') {
         const token = getAdminSessionToken();
         if (!token) {
           // Immediately purge spoofed flag
-          localStorage.removeItem('fitzaika_admin_verified');
+          localStorage.removeItem('taashbhatti_admin_verified');
           console.warn('🛡️ Security Shield: Blocked unverified administrative flag tampering.');
         }
       }

@@ -226,7 +226,7 @@ export async function cancelOrderWithInstantWalletRefund(
           currentTx = Array.isArray(uData.walletTransactions) ? uData.walletTransactions : [];
         } else {
           try {
-            const cached = localStorage.getItem('fitzaika_cached_user_profile') || localStorage.getItem('fitzaika_user_session');
+            const cached = localStorage.getItem('taashbhatti_cached_user_profile') || localStorage.getItem('taashbhatti_user_session');
             if (cached) {
               const parsed = JSON.parse(cached);
               currentGolden = Number(parsed.goldenEmberBalance || 0);
@@ -272,7 +272,7 @@ export async function cancelOrderWithInstantWalletRefund(
 
       // Update local cached user profile & session
       try {
-        ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+        ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
           const cached = localStorage.getItem(key);
           if (cached) {
             const parsed = JSON.parse(cached);
@@ -284,7 +284,7 @@ export async function cancelOrderWithInstantWalletRefund(
         });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
-            new CustomEvent('fitzaika_user_updated', {
+            new CustomEvent('taashbhatti_user_updated', {
               detail: {
                 goldenEmberBalance: newGoldenBalance,
                 walletBalance: newTotalBalance,
@@ -388,13 +388,13 @@ export async function awardStandardEmberCoinsOnOrderCompletion(
 
     // Update local cached user if matching
     try {
-      const cached = localStorage.getItem('fitzaika_user_session');
+      const cached = localStorage.getItem('taashbhatti_user_session');
       if (cached) {
         const parsed = JSON.parse(cached);
         parsed.standardEmberBalance = newStandardBalance;
         parsed.walletBalance = newTotalBalance;
         parsed.walletTransactions = updatedTxList;
-        localStorage.setItem('fitzaika_user_session', JSON.stringify(parsed));
+        localStorage.setItem('taashbhatti_user_session', JSON.stringify(parsed));
       }
     } catch (e) {}
 
@@ -502,7 +502,7 @@ export async function debitEmberCoinsForOrder({
     } else {
       // Check local cache if user document does not exist in Firestore yet
       try {
-        const cached = localStorage.getItem('fitzaika_cached_user_profile') || localStorage.getItem('fitzaika_user_session');
+        const cached = localStorage.getItem('taashbhatti_cached_user_profile') || localStorage.getItem('taashbhatti_user_session');
         if (cached) {
           const parsed = JSON.parse(cached);
           currentGolden = Number(parsed.goldenEmberBalance || 0);
@@ -563,7 +563,7 @@ export async function debitEmberCoinsForOrder({
 
     // Update local cache and dispatch event for immediate UI updates
     try {
-      ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+      ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
         const cached = localStorage.getItem(key);
         if (cached) {
           const parsed = JSON.parse(cached);
@@ -576,7 +576,7 @@ export async function debitEmberCoinsForOrder({
       });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
-          new CustomEvent('fitzaika_user_updated', {
+          new CustomEvent('taashbhatti_user_updated', {
             detail: {
               goldenEmberBalance: remainingGolden,
               standardEmberBalance: remainingStandard,
@@ -630,7 +630,7 @@ export async function creditGoldenEmbersForShortfall({
       currentTx = Array.isArray(uData.walletTransactions) ? uData.walletTransactions : [];
     } else {
       try {
-        const cached = localStorage.getItem('fitzaika_cached_user_profile') || localStorage.getItem('fitzaika_user_session');
+        const cached = localStorage.getItem('taashbhatti_cached_user_profile') || localStorage.getItem('taashbhatti_user_session');
         if (cached) {
           const parsed = JSON.parse(cached);
           currentGolden = Number(parsed.goldenEmberBalance || 0);
@@ -671,7 +671,7 @@ export async function creditGoldenEmbersForShortfall({
     }
 
     try {
-      ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+      ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
         const cached = localStorage.getItem(key);
         if (cached) {
           const parsed = JSON.parse(cached);
@@ -683,7 +683,7 @@ export async function creditGoldenEmbersForShortfall({
       });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
-          new CustomEvent('fitzaika_user_updated', {
+          new CustomEvent('taashbhatti_user_updated', {
             detail: {
               goldenEmberBalance: newGoldenBalance,
               standardEmberBalance: currentStandard,

@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, ChefHat, CheckCircle2, AlertTriangle, X, Search, Navigation, Compass, Building2, LocateFixed, ZoomIn, ZoomOut, RefreshCw, Maximize2 } from 'lucide-react';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap } from '@vis.gl/react-google-maps';
 import { Kitchen } from '../types';
-import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed } from '../lib/googleMaps';
-import { LeafletMap } from './LeafletMap';
+import { GOOGLE_MAPS_API_KEY } from '../lib/googleMaps';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 
 // MapController component to smoothly handle dynamic center updates and smart zoom transitions
@@ -107,13 +106,6 @@ export default function CityGeofenceSelectorModal({
 
   const [addressLabel, setAddressLabel] = useState<string>(`Selected Pin, ${selectedCity}`);
   const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
-
-  useEffect(() => {
-    const handleAuthFail = () => setUseLeaflet(true);
-    window.addEventListener('fitzaika_maps_auth_failed', handleAuthFail);
-    return () => window.removeEventListener('fitzaika_maps_auth_failed', handleAuthFail);
-  }, []);
 
   // When city changes, update center & pin, zoom to city level
   const handleSelectCity = (cityName: string) => {
@@ -471,85 +463,64 @@ export default function CityGeofenceSelectorModal({
             </div>
 
             <div className="relative w-full h-64 sm:h-72 rounded-2xl overflow-hidden border-2 border-brand-green/25 bg-[#12181E] shadow-inner">
-              {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
-                <LeafletMap
-                  center={customerPos}
-                  zoom={mapZoom}
-                  interactive={true}
-                  draggableCustomerPin={true}
-                  points={[
-                    { lat: customerPos.lat, lng: customerPos.lng, label: 'Your Address', type: 'customer' },
-                    ...relevantKitchens.map((k) => ({
-                      lat: k.lat,
-                      lng: k.lng,
-                      label: k.name,
-                      type: 'kitchen' as const,
-                      geofenceRadiusKm: k.geofenceRadius,
-                    })),
-                  ]}
-                  onPositionSelect={(coords) => handleMapPointSelect(coords.lat, coords.lng)}
-                  className="w-full h-full"
-                />
-              ) : (
-                <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
-                  <GoogleMap
-                    defaultCenter={customerPos}
-                    defaultZoom={12}
-                    gestureHandling="greedy"
-                    disableDefaultUI={false}
-                    onClick={(e) => {
-                      if (e.detail.latLng) {
-                        const lat = typeof (e.detail.latLng as any).lat === 'function' ? (e.detail.latLng as any).lat() : e.detail.latLng.lat;
-                        const lng = typeof (e.detail.latLng as any).lng === 'function' ? (e.detail.latLng as any).lng() : e.detail.latLng.lng;
+              <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
+                <GoogleMap
+                  defaultCenter={customerPos}
+                  defaultZoom={12}
+                  gestureHandling="greedy"
+                  disableDefaultUI={false}
+                  onClick={(e) => {
+                    if (e.detail.latLng) {
+                      const lat = typeof (e.detail.latLng as any).lat === 'function' ? (e.detail.latLng as any).lat() : e.detail.latLng.lat;
+                      const lng = typeof (e.detail.latLng as any).lng === 'function' ? (e.detail.latLng as any).lng() : e.detail.latLng.lng;
+                      handleMapPointSelect(lat, lng);
+                    }
+                  }}
+                  mapId="DEMO_MAP_ID"
+                  internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
+                  style={{ width: '100%', height: '100%' }}
+                >
+                  {/* Inner controller to keep zoom level & position smoothly synced without fighting user drag */}
+                  <MapController center={customerPos} zoom={mapZoom} />
+
+                  {/* Kitchen Markers with Geofence visualization */}
+                  {relevantKitchens.map((kitchen, kIdx) => (
+                    <AdvancedMarker
+                      key={`geo-marker-${kitchen.id || kIdx}-${kIdx}`}
+                      position={{ lat: kitchen.lat, lng: kitchen.lng }}
+                      title={`${kitchen.name} (Geofence: ${kitchen.geofenceRadius}km)`}
+                    >
+                      <div className="flex flex-col items-center group">
+                        <div className="bg-brand-orange text-brand-charcoal font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white flex items-center gap-1 uppercase">
+                          <ChefHat className="w-3 h-3" />
+                          <span>{kitchen.name}</span>
+                        </div>
+                        <Pin background="#E0533C" glyphColor="#FFFFFF" borderColor="#73190E" />
+                      </div>
+                    </AdvancedMarker>
+                  ))}
+
+                  {/* Customer Location Pin */}
+                  <AdvancedMarker
+                    position={customerPos}
+                    draggable={true}
+                    onDragEnd={(e) => {
+                      if (e.latLng) {
+                        const lat = typeof (e.latLng as any).lat === 'function' ? (e.latLng as any).lat() : (e.latLng as any).lat;
+                        const lng = typeof (e.latLng as any).lng === 'function' ? (e.latLng as any).lng() : (e.latLng as any).lng;
                         handleMapPointSelect(lat, lng);
                       }
                     }}
-                    mapId="DEMO_MAP_ID"
-                    internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
-                    style={{ width: '100%', height: '100%' }}
                   >
-                    {/* Inner controller to keep zoom level & position smoothly synced without fighting user drag */}
-                    <MapController center={customerPos} zoom={mapZoom} />
-
-                    {/* Kitchen Markers with Geofence visualization */}
-                    {relevantKitchens.map((kitchen, kIdx) => (
-                      <AdvancedMarker
-                        key={`geo-marker-${kitchen.id || kIdx}-${kIdx}`}
-                        position={{ lat: kitchen.lat, lng: kitchen.lng }}
-                        title={`${kitchen.name} (Geofence: ${kitchen.geofenceRadius}km)`}
-                      >
-                        <div className="flex flex-col items-center group">
-                          <div className="bg-brand-orange text-brand-charcoal font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white flex items-center gap-1 uppercase">
-                            <ChefHat className="w-3 h-3" />
-                            <span>{kitchen.name}</span>
-                          </div>
-                          <Pin background="#E0533C" glyphColor="#FFFFFF" borderColor="#73190E" />
-                        </div>
-                      </AdvancedMarker>
-                    ))}
-
-                    {/* Customer Location Pin */}
-                    <AdvancedMarker
-                      position={customerPos}
-                      draggable={true}
-                      onDragEnd={(e) => {
-                        if (e.latLng) {
-                          const lat = typeof (e.latLng as any).lat === 'function' ? (e.latLng as any).lat() : (e.latLng as any).lat;
-                          const lng = typeof (e.latLng as any).lng === 'function' ? (e.latLng as any).lng() : (e.latLng as any).lng;
-                          handleMapPointSelect(lat, lng);
-                        }
-                      }}
-                    >
-                      <div className="flex flex-col items-center">
-                        <div className="bg-brand-green text-brand-charcoal font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white uppercase flex items-center gap-1 animate-bounce">
-                          <MapPin className="w-3 h-3" /> Your Address
-                        </div>
-                        <Pin background="#007A78" glyphColor="#FFFFFF" borderColor="#004D4B" />
+                    <div className="flex flex-col items-center">
+                      <div className="bg-brand-green text-brand-charcoal font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white uppercase flex items-center gap-1 animate-bounce">
+                        <MapPin className="w-3 h-3" /> Your Address
                       </div>
-                    </AdvancedMarker>
-                  </GoogleMap>
-                </APIProvider>
-              )}
+                      <Pin background="#007A78" glyphColor="#FFFFFF" borderColor="#004D4B" />
+                    </div>
+                  </AdvancedMarker>
+                </GoogleMap>
+              </APIProvider>
 
               {/* Floating Manual Controls Overlay (Zoom In, Zoom Out, GPS Locate, Fullscreen) */}
               <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5 bg-black/80 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-xl">
@@ -616,7 +587,7 @@ export default function CityGeofenceSelectorModal({
                 initialCoords={customerPos}
                 initialAddress={addressLabel}
                 kitchenCoords={{ lat: relevantKitchens[0]?.lat || 26.1209, lng: relevantKitchens[0]?.lng || 85.3647 }}
-                kitchenName={relevantKitchens[0]?.name || 'FitZaika Kitchen'}
+                kitchenName={relevantKitchens[0]?.name || 'Taash Bhatti Kitchen'}
                 onConfirmPin={(coords, address) => {
                   handleMapPointSelect(coords.lat, coords.lng);
                   if (address) {

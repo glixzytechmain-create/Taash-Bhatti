@@ -137,7 +137,7 @@ export default function NotificationPromptModal({
         if (perm === 'granted') {
           granted = true;
           try {
-            new Notification("🔔 Fitzaika • Taash Bhatti Device Notifications Active!", {
+            new Notification("🔔 Taash Bhatti Device Notifications Active!", {
               body: "You'll now receive real-time updates on your orders, special chef releases, and exclusive offer drops directly on your device.",
               icon: "https://cdn.postimage.me/2026/08/01/28172.png",
             });

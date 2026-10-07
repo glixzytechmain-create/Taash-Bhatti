@@ -586,13 +586,13 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
         }
 
         try {
-          const cached = localStorage.getItem('fitzaika_cached_user_profile');
+          const cached = localStorage.getItem('taashbhatti_cached_user_profile');
           if (cached) {
             const parsed = JSON.parse(cached);
             parsed.phone = fullE164Phone;
             parsed.isPhoneVerified = true;
             parsed.atp = atpCode;
-            localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(parsed));
+            localStorage.setItem('taashbhatti_cached_user_profile', JSON.stringify(parsed));
           }
         } catch (e) {}
 

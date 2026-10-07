@@ -52,8 +52,7 @@ import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupo
 import { evaluateSmartCoupon, getEligibleCoupons, normalizeSmartCoupon, searchPublicCoupons, generateDefaultTerms } from '../lib/couponEngine';
 import { getStoredFeatureFlags, subscribeFeatureFlags } from '../lib/featureFlags';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-import { GOOGLE_MAPS_API_KEY, reverseGeocodeCoords, isGoogleMapsAuthFailed } from '../lib/googleMaps';
-import { LeafletMap } from './LeafletMap';
+import { GOOGLE_MAPS_API_KEY, reverseGeocodeCoords } from '../lib/googleMaps';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 import GoesWellWithExtension from './GoesWellWithExtension';
 
@@ -82,134 +81,7 @@ function CustomerLocationPicker({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
   const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
-
-  useEffect(() => {
-    const handleFail = () => setUseLeaflet(true);
-    window.addEventListener('fitzaika_maps_auth_failed', handleFail);
-    return () => window.removeEventListener('fitzaika_maps_auth_failed', handleFail);
-  }, []);
-
-  const handleLeafletSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setLoading(true);
-    const q = searchQuery.toLowerCase();
-    const matched = MUZAFFARPUR_LOCATIONS.find((loc) => loc.name.toLowerCase().includes(q));
-    if (matched) {
-      setMapCoords({ lat: matched.lat, lng: matched.lng });
-      setMapAddress(matched.name);
-      setLoading(false);
-      return;
-    }
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + ', Muzaffarpur')}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data[0]) {
-          const lat = parseFloat(data[0].lat);
-          const lng = parseFloat(data[0].lon);
-          setMapCoords({ lat, lng });
-          setMapAddress(data[0].display_name);
-          setLoading(false);
-          return;
-        }
-      }
-    } catch (e) {}
-
-    setMapAddress(`${searchQuery}, Muzaffarpur, Bihar`);
-    setLoading(false);
-  };
-
-  if (useLeaflet || !GOOGLE_MAPS_API_KEY) {
-    return (
-      <div className="space-y-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-charcoal/40" />
-            <input
-              type="text"
-              placeholder="Search address, landmark or area..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleLeafletSearch();
-                }
-              }}
-              className="w-full bg-white border border-brand-green/20 rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-brand-charcoal placeholder-brand-charcoal/40 focus:outline-none focus:border-brand-green"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleLeafletSearch}
-            disabled={loading}
-            className="px-4 py-2 bg-brand-green text-white font-bold text-xs rounded-xl hover:bg-brand-green/90 cursor-pointer disabled:opacity-50 transition-all flex items-center gap-1.5"
-          >
-            {loading ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <>
-                <Search className="w-3.5 h-3.5" />
-                <span>Search</span>
-              </>
-            )}
-          </button>
-        </div>
-        <div 
-          onClick={() => setIsFullScreenOpen(true)}
-          className="h-44 w-full rounded-2xl overflow-hidden border border-brand-green/15 relative shadow-sm cursor-pointer group"
-          title="Click to expand map to full screen"
-        >
-          <LeafletMap
-            center={mapCoords}
-            zoom={14}
-            interactive={true}
-            draggableCustomerPin={true}
-            points={[{ lat: mapCoords.lat, lng: mapCoords.lng, label: 'Delivery Location', type: 'customer' }]}
-            onPositionSelect={async (coords) => {
-              setMapCoords(coords);
-              const addr = await reverseGeocodeCoords(coords.lat, coords.lng);
-              setMapAddress(addr);
-            }}
-            className="w-full h-full"
-          />
-
-          {/* TAP TO MAKE MAP BIGGER MESSAGE BADGE */}
-          <div 
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsFullScreenOpen(true);
-            }}
-            className="absolute bottom-2 inset-x-2 z-10 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-3 py-1.5 rounded-xl border border-emerald-500/30 flex items-center justify-between text-[10px] font-bold cursor-pointer transition-all shadow-md group-hover:border-emerald-400"
-          >
-            <span className="flex items-center gap-1.5 text-emerald-300">
-              <Sparkles className="w-3 h-3 text-emerald-400" />
-              <span>✨ Tap map to enlarge full-screen for precise doorstep pin & address search</span>
-            </span>
-            <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1 group-hover:bg-emerald-500 shrink-0">
-              <Maximize2 className="w-2.5 h-2.5" /> Enlarge
-            </span>
-          </div>
-        </div>
-
-        {/* FULLSCREEN DOORSTEP PIN MODAL */}
-        <FullScreenAddressPinModal
-          isOpen={isFullScreenOpen}
-          onClose={() => setIsFullScreenOpen(false)}
-          initialCoords={mapCoords}
-          initialAddress={mapAddress}
-          onConfirmPin={(coords, address) => {
-            setMapCoords(coords);
-            setMapAddress(address);
-          }}
-        />
-      </div>
-    );
-  }
 
   return (
     <>
@@ -423,7 +295,7 @@ function CustomerMapAndSearchContent({
             <div className="w-20 h-20 border border-emerald-500/30 rounded-full animate-pulse" />
           </div>
           <div className="relative flex justify-between items-center pointer-events-none">
-            <span className="flex items-center gap-1.5"><Compass className="w-3.5 h-3.5 text-brand-orange animate-spin" /> FITZAIKA RADAR MAP v2.6</span>
+            <span className="flex items-center gap-1.5"><Compass className="w-3.5 h-3.5 text-brand-orange animate-spin" /> TAASH BHATTI RADAR MAP v2.6</span>
             <span className="bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/20 animate-pulse text-brand-orange">ONLINE PINPOINT ACTIVE</span>
           </div>
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none flex flex-col items-center">
@@ -531,8 +403,8 @@ export default function CartDrawer({
       (user.email && user.email.trim().length > 0 && !user.email.includes('guest@') && !user.email.includes('guest-')) ||
       (user.id && !user.id.startsWith('guest_') && user.id !== 'guest-user-muzaffarpur')
     )) ||
-    (typeof window !== 'undefined' && localStorage.getItem('fitzaika_auth_session') === 'true') ||
-    (typeof window !== 'undefined' && Boolean(localStorage.getItem('fitzaika_cached_fb_user')))
+    (typeof window !== 'undefined' && localStorage.getItem('taashbhatti_auth_session') === 'true') ||
+    (typeof window !== 'undefined' && Boolean(localStorage.getItem('taashbhatti_cached_fb_user')))
   );
 
   // Coupon input state
@@ -1520,7 +1392,7 @@ export default function CartDrawer({
 
     // Debit Ember coins if used
     if (emberCheckout.totalEmberDiscount > 0) {
-      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('fitzaika_guest_user_id') || 'guest_user';
+      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
       const newGolden = Math.max(0, goldenBalance - emberCheckout.goldenDeduction);
       const newStandard = Math.max(0, standardBalance - emberCheckout.standardDeduction);
       const newTotal = newGolden + newStandard;
@@ -1537,7 +1409,7 @@ export default function CartDrawer({
       }
 
       try {
-        ['fitzaika_user_session', 'fitzaika_cached_user_profile'].forEach((key) => {
+        ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
           const cached = localStorage.getItem(key);
           if (cached) {
             const parsed = JSON.parse(cached);
@@ -1548,7 +1420,7 @@ export default function CartDrawer({
           }
         });
         window.dispatchEvent(
-          new CustomEvent('fitzaika_user_updated', {
+          new CustomEvent('taashbhatti_user_updated', {
             detail: {
               goldenEmberBalance: newGolden,
               standardEmberBalance: newStandard,
@@ -1572,7 +1444,7 @@ export default function CartDrawer({
 
     // Credit Gold Ember Coins if customer banked free delivery shortfall
     if (gecShortfallAmount > 0) {
-      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('fitzaika_guest_user_id') || 'guest_user';
+      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
       try {
         await creditGoldenEmbersForShortfall({
           userId: activeUserId,

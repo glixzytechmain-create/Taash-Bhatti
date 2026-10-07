@@ -47,7 +47,7 @@ export default function SupportMailboxModal({
           // Retrieve cached ticket IDs created on this local device
           let localTicketIds: string[] = [];
           try {
-            const cached = localStorage.getItem('fitzaika_support_tickets');
+            const cached = localStorage.getItem('taashbhatti_support_tickets');
             if (cached) {
               const parsed: SupportTicket[] = JSON.parse(cached);
               localTicketIds = parsed.map((t) => t.id);
@@ -58,7 +58,7 @@ export default function SupportMailboxModal({
             const data = d.data() as SupportTicket;
             const tEmail = (data.userEmail || '').toLowerCase().trim();
 
-            const isEmailMatch = tEmail && cleanUserEmail && (tEmail === cleanUserEmail || cleanUserEmail === 'guest@fitzaika.com' || cleanUserEmail === 'guest@taashbhatti.com');
+            const isEmailMatch = tEmail && cleanUserEmail && (tEmail === cleanUserEmail || cleanUserEmail === 'guest@taashbhatti.com');
             const isUidMatch = currentUid && data.userId === currentUid;
             const isLocalMatch = localTicketIds.includes(d.id);
 
@@ -69,7 +69,7 @@ export default function SupportMailboxModal({
 
           // Also merge any local offline tickets created on this device that might not be in Firestore snapshot
           try {
-            const cached = localStorage.getItem('fitzaika_support_tickets');
+            const cached = localStorage.getItem('taashbhatti_support_tickets');
             if (cached) {
               const parsed: SupportTicket[] = JSON.parse(cached);
               parsed.forEach((t) => {
@@ -89,7 +89,7 @@ export default function SupportMailboxModal({
           console.warn("Firestore support tickets listener offline/error:", error);
           // Fallback to localStorage
           try {
-            const cached = localStorage.getItem('fitzaika_support_tickets');
+            const cached = localStorage.getItem('taashbhatti_support_tickets');
             if (cached) {
               const parsed: SupportTicket[] = JSON.parse(cached);
               setTickets(parsed);
@@ -135,13 +135,13 @@ export default function SupportMailboxModal({
 
       // Update local storage
       try {
-        const cached = localStorage.getItem('fitzaika_support_tickets');
+        const cached = localStorage.getItem('taashbhatti_support_tickets');
         if (cached) {
           const parsed: SupportTicket[] = JSON.parse(cached);
           const idx = parsed.findIndex((t) => t.id === ticket.id);
           if (idx !== -1) {
             parsed[idx] = { ...parsed[idx], message: updatedMessage, unreadByAdmin: true, status: 'pending' };
-            localStorage.setItem('fitzaika_support_tickets', JSON.stringify(parsed));
+            localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(parsed));
           }
         }
       } catch (e) {}

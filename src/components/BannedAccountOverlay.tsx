@@ -8,7 +8,7 @@ interface BannedAccountOverlayProps {
 }
 
 export default function BannedAccountOverlay({ user }: BannedAccountOverlayProps) {
-  const bannedReason = user.bannedReason || 'Account suspended by FitZaika Security Administration due to policy violation or security verification lock.';
+  const bannedReason = user.bannedReason || 'Account suspended by Taash Bhatti Security Administration due to policy violation or security verification lock.';
   const bannedDate = user.bannedAt ? new Date(user.bannedAt).toLocaleString() : new Date().toLocaleString();
 
   return (
@@ -87,7 +87,7 @@ export default function BannedAccountOverlay({ user }: BannedAccountOverlayProps
         <div className="pt-2 border-t border-rose-900/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-[10px] text-gray-400">
           <div className="flex items-center gap-1.5 text-gray-300">
             <Mail className="w-3.5 h-3.5 text-rose-400" />
-            <span>Appeal: <strong className="text-white font-mono">compliance@fitzaika.com</strong></span>
+            <span>Appeal: <strong className="text-white font-mono">compliance@taashbhatti.com</strong></span>
           </div>
           <button
             onClick={() => window.location.reload()}

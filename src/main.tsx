@@ -54,7 +54,7 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
   handleReset = () => {
     try {
-      localStorage.removeItem('fitzaika_orders_cache');
+      localStorage.removeItem('taashbhatti_orders_cache');
       localStorage.removeItem('tb_active_dine_in_session');
       sessionStorage.clear();
     } catch (_) {}

@@ -86,7 +86,7 @@ export function CustomerSupportPortal({
 }: CustomerSupportPortalProps) {
   // Support Agents collection state synced with Firestore & local cache
   const [agents, setAgents] = useState<SupportAgent[]>(() => {
-    const cached = localStorage.getItem('fitzaika_support_agents');
+    const cached = localStorage.getItem('taashbhatti_support_agents');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
@@ -98,7 +98,7 @@ export function CustomerSupportPortal({
 
   // Active Support Agent Session
   const [activeAgent, setActiveAgent] = useState<SupportAgent | null>(() => {
-    const cachedSession = localStorage.getItem('fitzaika_active_support_agent_session');
+    const cachedSession = localStorage.getItem('taashbhatti_active_support_agent_session');
     if (cachedSession) {
       try {
         return JSON.parse(cachedSession);
@@ -146,7 +146,7 @@ export function CustomerSupportPortal({
         loaded.push(docSnap.data() as SupportAgent);
       });
       setAgents(loaded);
-      localStorage.setItem('fitzaika_support_agents', JSON.stringify(loaded));
+      localStorage.setItem('taashbhatti_support_agents', JSON.stringify(loaded));
     }, (err) => {
       console.warn("Firestore support_agents snapshot listener offline mode.", err);
     });
@@ -176,9 +176,9 @@ export function CustomerSupportPortal({
   // Sync activeAgent state updates if agent modified
   useEffect(() => {
     if (activeAgent) {
-      localStorage.setItem('fitzaika_active_support_agent_session', JSON.stringify(activeAgent));
+      localStorage.setItem('taashbhatti_active_support_agent_session', JSON.stringify(activeAgent));
     } else {
-      localStorage.removeItem('fitzaika_active_support_agent_session');
+      localStorage.removeItem('taashbhatti_active_support_agent_session');
     }
   }, [activeAgent]);
 
@@ -411,7 +411,7 @@ export function CustomerSupportPortal({
                   <input
                     type="email"
                     required
-                    placeholder="e.g. support.overall@fitzaika.com"
+                    placeholder="e.g. support.overall@taashbhatti.com"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     className="w-full bg-[#0A0E12] border border-brand-green/20 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green/60"
