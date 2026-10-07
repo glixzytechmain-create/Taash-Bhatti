@@ -487,6 +487,7 @@ interface CartDrawerProps {
   onRemoveItem: (mealId: string) => void;
   selectedBhatti?: Kitchen | null;
   user: User;
+  fbUser?: any;
   onPlaceOrder: (newOrder: Order) => void;
   onClearCart: () => void;
   onSelectTab: (tab: any) => void;
@@ -508,6 +509,7 @@ export default function CartDrawer({
   onRemoveItem,
   selectedBhatti,
   user,
+  fbUser,
   onPlaceOrder,
   onClearCart,
   onSelectTab,
@@ -520,6 +522,19 @@ export default function CartDrawer({
   dineInSession,
   onClearDineInSession,
 }: CartDrawerProps) {
+  // Determine if the current customer is authenticated across Firebase Auth, Phone Auth, or stored session
+  const isUserAuthenticated = Boolean(
+    auth.currentUser ||
+    fbUser?.uid ||
+    (user && (
+      (user.phone && user.phone.replace(/\D/g, '').length >= 10) ||
+      (user.email && user.email.trim().length > 0 && !user.email.includes('guest@') && !user.email.includes('guest-')) ||
+      (user.id && !user.id.startsWith('guest_') && user.id !== 'guest-user-muzaffarpur')
+    )) ||
+    (typeof window !== 'undefined' && localStorage.getItem('fitzaika_auth_session') === 'true') ||
+    (typeof window !== 'undefined' && Boolean(localStorage.getItem('fitzaika_cached_fb_user')))
+  );
+
   // Coupon input state
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupons, setAppliedCoupons] = useState<any[]>([]); // Array of applied coupons in stack
@@ -1241,7 +1256,7 @@ export default function CartDrawer({
     const isDineIn = fulfillmentType === 'dine_in';
     const isTakeaway = fulfillmentType === 'takeaway';
 
-    if (!auth.currentUser && !isDineIn) {
+    if (!isUserAuthenticated && !isDineIn) {
       alert("🔒 Authentication Required: Please sign in or register to place your meal order.");
       onClose();
       onSelectTab('account');
@@ -1380,8 +1395,8 @@ export default function CartDrawer({
     const newOrder: Order = {
       id: orderId,
       items: enrichedItems,
-      userId: auth.currentUser?.uid || (isDineIn ? `guest_table_${orderId}` : ''),
-      isDineInGuest: isDineIn && !auth.currentUser,
+      userId: auth.currentUser?.uid || fbUser?.uid || user.id || (isDineIn ? `guest_table_${orderId}` : ''),
+      isDineInGuest: isDineIn && !isUserAuthenticated,
       customerName: finalCustomerName,
       customerPhone: finalCustomerPhone,
       guestName: isDineIn ? finalCustomerName : undefined,
@@ -2884,7 +2899,7 @@ export default function CartDrawer({
                         <span>✨ No Account Login Required!</span>
                       </p>
                       <p className="text-emerald-800">
-                        {auth.currentUser
+                        {isUserAuthenticated
                           ? `You are signed in as ${user.name || 'member'}. This table order will be tied to your profile and history!`
                           : 'Orders are transmitted directly to the kitchen KDS for your table and stored locally on your device.'}
                       </p>

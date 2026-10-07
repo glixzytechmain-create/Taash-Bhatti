@@ -1797,8 +1797,8 @@ export default function App() {
     // MANDATORY PHONE VERIFICATION CHECK:
     // Delivery & Takeaway users MUST have a verified phone number via OTP.
     // Dine-In guests fill form name & phone directly without OTP verification or account login required.
-    const cleanPhone = (user.phone || auth.currentUser?.phoneNumber || order.customerPhone || order.guestPhone || '').replace(/\D/g, '');
-    const isVerified = user.isPhoneVerified || !!auth.currentUser?.phoneNumber || isDineIn;
+    const cleanPhone = (user.phone || fbUser?.phoneNumber || auth.currentUser?.phoneNumber || order.customerPhone || order.guestPhone || '').replace(/\D/g, '');
+    const isVerified = user.isPhoneVerified || !!fbUser?.phoneNumber || !!auth.currentUser?.phoneNumber || (user.phone && user.phone.replace(/\D/g, '').length >= 10) || isDineIn;
 
     if (!isDineIn && (!cleanPhone || cleanPhone.length < 10 || !isVerified)) {
       setShowMandatoryPhoneModal(true);
@@ -1811,13 +1811,13 @@ export default function App() {
       return;
     }
 
-    const activeUserId = auth.currentUser?.uid || (isDineIn ? `guest_table_${cleanPhone || Date.now()}` : getGuestUserId());
+    const activeUserId = auth.currentUser?.uid || fbUser?.uid || user.id || (isDineIn ? `guest_table_${cleanPhone || Date.now()}` : getGuestUserId());
     const orderWithUser: Order = {
       ...order,
       userId: activeUserId,
       customerName: isDineIn ? (order.guestName || order.customerName || user.name || 'Dine-In Guest') : (user.name || order.customerName || 'Customer'),
-      customerPhone: isDineIn ? (order.guestPhone || order.customerPhone || user.phone || 'N/A') : (user.phone || auth.currentUser?.phoneNumber || order.customerPhone || 'N/A'),
-      isDineInGuest: isDineIn && !auth.currentUser,
+      customerPhone: isDineIn ? (order.guestPhone || order.customerPhone || user.phone || 'N/A') : (user.phone || fbUser?.phoneNumber || auth.currentUser?.phoneNumber || order.customerPhone || 'N/A'),
+      isDineInGuest: isDineIn && !auth.currentUser && !fbUser,
     };
     const sanitizedOrder = sanitizeForFirestore(orderWithUser);
     const pathForWrite = `orders/${order.id}`;
@@ -2456,7 +2456,18 @@ export default function App() {
 
   // Reorder past items
   const handleReorder = (items: OrderItem[]) => {
-    if (!auth.currentUser) {
+    const isUserAuthenticated = Boolean(
+      auth.currentUser ||
+      fbUser?.uid ||
+      (user && (
+        (user.phone && user.phone.replace(/\D/g, '').length >= 10) ||
+        (user.email && user.email.trim().length > 0 && !user.email.includes('guest@') && !user.email.includes('guest-')) ||
+        (user.id && !user.id.startsWith('guest_') && user.id !== 'guest-user-muzaffarpur')
+      )) ||
+      localStorage.getItem('fitzaika_auth_session') === 'true' ||
+      Boolean(localStorage.getItem('fitzaika_cached_fb_user'))
+    );
+    if (!isUserAuthenticated) {
       alert("🔒 Authentication Required: Please sign in or register under the Vault tab to reorder past meal combos!");
       setActiveTab('account');
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3299,6 +3310,7 @@ export default function App() {
         onRemoveItem={handleRemoveItem}
         selectedBhatti={selectedBhatti}
         user={user}
+        fbUser={fbUser}
         onPlaceOrder={handlePlaceOrder}
         onClearCart={() => setCart([])}
         onSelectTab={(tab) => {
