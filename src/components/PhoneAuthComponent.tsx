@@ -299,28 +299,23 @@ export default function PhoneAuthComponent({
         if (existingData.email && !existingData.email.includes('@taashbhatti.phone')) {
           setEmail(existingData.email);
         }
-
-        // Ask: "Do you have your 6-digit code (ATP)?"
-        setVerifyMode('atp');
-        setStep('registered_verify');
-        setAtpDigits(['', '', '', '', '', '']);
-        setTimeout(() => {
-          atpInputRefs.current[0]?.focus();
-        }, 300);
       } else {
-        // NEW FIRST-TIME USER!
-        // Dispatch chosen 2Factor OTP (Voice Call, SMS, WhatsApp)
-        const sent = await dispatchTwoFactorOtp(selectedChannel);
-        if (sent) {
-          setStep('new_user_otp');
-        }
+        setKnownUserAccount(null);
       }
+
+      // DO NOT dispatch OTP automatically! Always ask "Do you have an ATP?" first
+      setVerifyMode('atp');
+      setStep('registered_verify');
+      setAtpDigits(['', '', '', '', '', '']);
+      setTimeout(() => {
+        atpInputRefs.current[0]?.focus();
+      }, 300);
     } catch (err: any) {
       console.error('Error checking account:', err);
-      const sent = await dispatchTwoFactorOtp(selectedChannel);
-      if (sent) {
-        setStep('new_user_otp');
-      }
+      setKnownUserAccount(null);
+      setVerifyMode('atp');
+      setStep('registered_verify');
+      setAtpDigits(['', '', '', '', '', '']);
     } finally {
       setLoading(false);
     }
@@ -385,53 +380,54 @@ export default function PhoneAuthComponent({
       return;
     }
 
-    if (!knownUserAccount) {
-      setErrorMessage('Account context not found. Please request an SMS OTP.');
-      return;
-    }
+    if (knownUserAccount) {
+      if (knownUserAccount.user.atp && code !== knownUserAccount.user.atp) {
+        setErrorMessage('Incorrect All-Time Password (ATP). Please check or request a Voice Call / SMS OTP.');
+        return;
+      }
 
-    if (code !== knownUserAccount.user.atp) {
-      setErrorMessage('Incorrect All-Time Password (ATP). Please check or request an SMS OTP.');
-      return;
-    }
+      // ATP verified!
+      setLoading(true);
+      setStep('verifying');
 
-    // ATP verified!
-    setLoading(true);
-    setStep('verifying');
+      const finalProfile: User = {
+        ...knownUserAccount.user,
+        phone: fullE164Phone,
+        isPhoneVerified: true,
+        atp: knownUserAccount.user.atp || code,
+      };
 
-    const finalProfile: User = {
-      ...knownUserAccount.user,
-      phone: fullE164Phone,
-      isPhoneVerified: true,
-    };
+      try {
+        localStorage.setItem('fitzaika_auth_session', 'true');
+        localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
+        localStorage.setItem(
+          'fitzaika_cached_fb_user',
+          JSON.stringify({
+            uid: knownUserAccount.id,
+            phoneNumber: fullE164Phone,
+            displayName: finalProfile.name,
+            email: finalProfile.email || '',
+          })
+        );
+      } catch (e) {}
 
-    try {
-      localStorage.setItem('fitzaika_auth_session', 'true');
-      localStorage.setItem('fitzaika_cached_user_profile', JSON.stringify(finalProfile));
-      localStorage.setItem(
-        'fitzaika_cached_fb_user',
-        JSON.stringify({
+      // 1.2s logo verifying animation
+      await new Promise((r) => setTimeout(r, 1200));
+
+      onSuccess({
+        user: finalProfile,
+        fbUser: {
           uid: knownUserAccount.id,
           phoneNumber: fullE164Phone,
           displayName: finalProfile.name,
           email: finalProfile.email || '',
-        })
-      );
-    } catch (e) {}
-
-    // 1.2s logo verifying animation
-    await new Promise((r) => setTimeout(r, 1200));
-
-    onSuccess({
-      user: finalProfile,
-      fbUser: {
-        uid: knownUserAccount.id,
-        phoneNumber: fullE164Phone,
-        displayName: finalProfile.name,
-        email: finalProfile.email || '',
-      },
-      isNewUser: false,
-    });
+        },
+        isNewUser: false,
+      });
+    } else {
+      // New user verifying via ATP -> Proceed to profile setup
+      setStep('new_user_profile');
+    }
   };
 
   // Switch registered user to SMS OTP

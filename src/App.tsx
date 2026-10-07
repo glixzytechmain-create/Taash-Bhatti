@@ -1103,6 +1103,24 @@ export default function App() {
     }
   }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified, user.role, user.isRider, user.email]);
 
+  // Automatic Rider Gateway Route Guardian:
+  // When a rider account signs in or is active, automatically redirect them directly to the Rider Partner App Gateway (<DeliveryPartnerApp />) and NEVER show customer UI.
+  useEffect(() => {
+    if (authChecking) return;
+    if (!fbUser && !auth.currentUser) return;
+    const isRiderAccount = Boolean(
+      user.role === 'rider' ||
+      user.role === 'delivery_partner' ||
+      user.isRider ||
+      (user.email && user.email.toLowerCase().includes('rider')) ||
+      (fbUser?.email && fbUser.email.toLowerCase().includes('rider'))
+    );
+    if (isRiderAccount && currentGateway !== 'partner') {
+      setCurrentGateway('partner');
+      localStorage.setItem('fitzaika_gateway', 'partner');
+    }
+  }, [authChecking, user.role, user.isRider, user.email, fbUser, currentGateway]);
+
   // Interactive Guided App Tour:
   // - Highlights buttons one-by-one with live in-app navigation
   // - ONLY for unauthenticated guests (!authChecking && !fbUser && !auth.currentUser)
