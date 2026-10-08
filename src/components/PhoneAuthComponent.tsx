@@ -57,6 +57,8 @@ interface PhoneAuthComponentProps {
   onSuccess: (userData: { user: User; fbUser: any; isNewUser: boolean }) => void;
   onCancel?: () => void;
   defaultName?: string;
+  initialPhone?: string;
+  noticeBanner?: string | null;
 }
 
 type AuthStep = 
@@ -70,15 +72,23 @@ export default function PhoneAuthComponent({
   onSuccess,
   onCancel,
   defaultName = '',
+  initialPhone = '',
+  noticeBanner = null,
 }: PhoneAuthComponentProps) {
   const [step, setStep] = useState<AuthStep>('phone_input');
 
   // Input states
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(COUNTRY_CODES[0]);
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(initialPhone ? initialPhone.replace(/\D/g, '') : '');
   const [fullName, setFullName] = useState(defaultName);
   const [email, setEmail] = useState('');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+
+  useEffect(() => {
+    if (initialPhone && initialPhone.replace(/\D/g, '').length > 0) {
+      setPhoneNumber(initialPhone.replace(/\D/g, ''));
+    }
+  }, [initialPhone]);
 
   // 2Factor OTP Delivery Channels: 'voice' (Receive a Call) | 'sms' | 'whatsapp'
   const [selectedChannel, setSelectedChannel] = useState<'voice' | 'sms' | 'whatsapp'>('voice');
@@ -777,6 +787,14 @@ export default function PhoneAuthComponent({
     <div className="w-full space-y-4 font-sans">
       {/* Hidden reCAPTCHA anchor */}
       <div id="phone-recaptcha-container" className="my-1 flex justify-center overflow-hidden" />
+
+      {/* Notice Banner */}
+      {noticeBanner && (
+        <div className="p-3.5 rounded-2xl bg-brand-green/10 border border-brand-green/30 text-brand-green text-xs font-bold flex items-start gap-2 shadow-xs">
+          <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-brand-green" />
+          <span>{noticeBanner}</span>
+        </div>
+      )}
 
       {/* Global Error Banner */}
       {errorMessage && (

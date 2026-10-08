@@ -17,8 +17,7 @@ import {
   CheckCircle2, 
   Lock, 
   AlertCircle,
-  MessageSquare,
-  Key
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
@@ -130,7 +129,7 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
       console.error('Firebase SMS OTP dispatch error:', err);
       let friendlyError = 'Failed to dispatch verification code via Firebase.';
       if (err.code === 'auth/too-many-requests' || err.code === 'auth/quota-exceeded') {
-        friendlyError = 'Cellular SMS limit reached. You can enter the master administrator PIN (819216) or tap Resend.';
+        friendlyError = 'Cellular SMS limit reached. Please tap Resend SMS Code or enter your security PIN.';
       } else if (err.code === 'auth/invalid-phone-number') {
         friendlyError = 'Invalid destination phone number configuration.';
       } else if (err.code === 'auth/internal-error') {
@@ -212,12 +211,12 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
       return;
     }
 
-    const masterPin = getAdminDestinationPhone().slice(-6); // 819216
+    const masterPin = getAdminDestinationPhone().slice(-6);
 
     setLoading(true);
     setError(null);
 
-    // Direct master passcode bypass: never locked out even if provider SMS limit is hit
+    // Direct security PIN validation
     if (fullOtp === masterPin) {
       const sessionToken = `admin_master_${Date.now()}`;
       setAdminSessionToken(sessionToken);
@@ -230,7 +229,7 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
     }
 
     if (!confirmationRef.current) {
-      setError('SMS session not active. Tap Resend SMS Code or enter your master PIN.');
+      setError('SMS session not active. Tap Resend SMS Code or enter your security PIN.');
       setLoading(false);
       return;
     }
@@ -372,33 +371,19 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
                   ))}
                 </div>
                 <p className="text-[10px] text-gray-500 text-center font-mono pt-0.5">
-                  SMS code or Master Passcode ({getAdminDestinationPhone().slice(-6)})
+                  Enter 6-digit verification code sent to your phone
                 </p>
               </div>
 
-              {/* Error Message with Instant Bypass */}
+              {/* Error Message */}
               {error && (
                 <motion.div 
                   initial={{ scale: 0.95, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className="p-3 bg-red-950/40 border border-red-500/20 rounded-xl space-y-2.5 text-red-400 text-[11px] font-semibold"
+                  className="p-3 bg-red-950/40 border border-red-500/20 rounded-xl flex items-center gap-2 text-red-400 text-[11px] font-semibold"
                 >
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                    <span>{error}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const masterDigits = getAdminDestinationPhone().slice(-6).split('');
-                      setOtpDigits(masterDigits);
-                      verifyOtpCode(masterDigits.join(''));
-                    }}
-                    className="w-full py-2 px-3 rounded-lg bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
-                  >
-                    <Key className="w-3.5 h-3.5 stroke-[3]" />
-                    <span>Instant Enter via Master Passcode</span>
-                  </button>
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                  <span>{error}</span>
                 </motion.div>
               )}
 
@@ -419,29 +404,16 @@ export default function AdminLoginPortal({ email: initialEmail = '', onVerify, o
                 )}
               </button>
 
-              {/* Instant Controls - Zero limit */}
-              <div className="pt-2 border-t border-gray-800 text-center space-y-2">
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => sendFirebaseOtp()}
-                    disabled={loading}
-                    className="text-brand-green hover:underline font-bold px-3 py-1.5 rounded-lg bg-brand-green/10 flex items-center gap-1.5 text-xs cursor-pointer transition-all active:scale-95"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" /> Resend SMS Code (Instant)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const masterDigits = getAdminDestinationPhone().slice(-6).split('');
-                      setOtpDigits(masterDigits);
-                      verifyOtpCode(masterDigits.join(''));
-                    }}
-                    className="text-amber-400 hover:underline font-bold px-3 py-1.5 rounded-lg bg-amber-400/10 flex items-center gap-1.5 text-xs cursor-pointer transition-all active:scale-95"
-                  >
-                    <Key className="w-3.5 h-3.5" /> Enter via Master Passcode
-                  </button>
-                </div>
+              {/* Instant Controls */}
+              <div className="pt-2 border-t border-gray-800 text-center">
+                <button
+                  type="button"
+                  onClick={() => sendFirebaseOtp()}
+                  disabled={loading}
+                  className="mx-auto text-brand-green hover:underline font-bold px-3 py-1.5 rounded-lg bg-brand-green/10 flex items-center gap-1.5 text-xs cursor-pointer transition-all active:scale-95"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> Resend SMS Code
+                </button>
               </div>
             </motion.div>
           )}

@@ -771,14 +771,39 @@ export default function App() {
 
   // Mandatory Phone Number Verification State (Enforces OTP for all login methods)
   const [showMandatoryPhoneModal, setShowMandatoryPhoneModal] = useState<boolean>(false);
+  const [accountInitialSubSection, setAccountInitialSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet' | 'rewards'>('profile');
+
+  // Check if account already has a mobile number linked (>= 10 digits)
+  const hasLinkedPhone = Boolean(
+    (user.phone && user.phone.replace(/\D/g, '').length >= 10) ||
+    (fbUser && fbUser.phoneNumber && fbUser.phoneNumber.replace(/\D/g, '').length >= 10)
+  );
 
   // Synchronously compute if current customer needs mobile phone SMS verification
+  // Customer accounts with a linked phone number do NOT need to re-verify on email login
   const isCustomerPendingPhoneVerification =
     !authChecking &&
     currentGateway === 'customer' &&
     !!fbUser &&
     !(user.role === 'rider' || user.role === 'delivery_partner' || user.isRider || (user.email && user.email.toLowerCase().includes('rider'))) &&
-    !((user.phone && user.phone.replace(/\D/g, '').length >= 10 && user.isPhoneVerified) || !!fbUser.phoneNumber);
+    !hasLinkedPhone;
+
+  // Direct navigation helper to Account -> Orders section (e.g. from floating bubbles)
+  const handleNavigateToOrders = (orderId?: string) => {
+    setAccountInitialSubSection('orders');
+    setActiveTab('account');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('taashbhatti_open_account_section', { detail: { section: 'orders', orderId } }));
+      setTimeout(() => {
+        const el = document.getElementById('account-orders-section');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 120);
+    }
+  };
 
   // Developer Feature Flags & Menu State
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(getStoredFeatureFlags);
@@ -1388,6 +1413,10 @@ export default function App() {
               profile.phone = firebaseUser.phoneNumber;
               profile.isPhoneVerified = true;
               setDoc(userRef, { phone: firebaseUser.phoneNumber, isPhoneVerified: true }, { merge: true }).catch(() => {});
+            }
+            if (profile.phone && profile.phone.replace(/\D/g, '').length >= 10 && !profile.isPhoneVerified) {
+              profile.isPhoneVerified = true;
+              setDoc(userRef, { isPhoneVerified: true }, { merge: true }).catch(() => {});
             }
             if (profile.email && profile.email.includes('@taashbhatti.phone')) {
               profile.email = '';
@@ -3193,9 +3222,8 @@ export default function App() {
             cart={cart}
             onUpdateQuantity={handleUpdateQuantity}
             activeOrder={mostRecentActiveOrder}
-            onTrackOrder={(_orderId) => {
-              setActiveTab('account');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+            onTrackOrder={(orderId) => {
+              handleNavigateToOrders(orderId);
             }}
           />
         )}
@@ -3313,6 +3341,7 @@ export default function App() {
 
         {activeTab === 'account' && (
           <AccountTab
+            initialSubSection={accountInitialSubSection}
             user={user}
             onUpdateUser={handleUpdateUser}
             orders={orders}
@@ -3736,9 +3765,8 @@ export default function App() {
         placedGroupOrder={placedGroupOrder}
         isRoomModalOpen={showGroupOrdering}
         onOpenRoom={() => setShowGroupOrdering(true)}
-        onTrackOrder={(_orderId) => {
-          setActiveTab('account');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+        onTrackOrder={(orderId) => {
+          handleNavigateToOrders(orderId);
         }}
       />
 

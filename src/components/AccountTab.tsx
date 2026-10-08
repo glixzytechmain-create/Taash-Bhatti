@@ -350,6 +350,7 @@ function getInteractiveCustomerMessage(order: Order): { title: string; desc: str
 }
 
 interface AccountTabProps {
+  initialSubSection?: 'profile' | 'orders' | 'support' | 'wallet' | 'rewards';
   user: User;
   onUpdateUser: (updated: User) => void;
   orders: Order[];
@@ -376,6 +377,7 @@ interface AccountTabProps {
 
 
 export default function AccountTab({
+  initialSubSection = 'profile',
   user,
   onUpdateUser,
   orders,
@@ -400,9 +402,28 @@ export default function AccountTab({
   onStartTour,
 }: AccountTabProps) {
   // Navigation inside Account screen
-  const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet' | 'rewards'>('profile');
+  const [activeSubSection, setActiveSubSection] = useState<'profile' | 'orders' | 'support' | 'wallet' | 'rewards'>(initialSubSection || 'profile');
   const [wonRewards, setWonRewards] = useState<WonRewardRecord[]>([]);
   const [copiedRewardCode, setCopiedRewardCode] = useState<string | null>(null);
+
+  // Synchronize when initialSubSection changes
+  useEffect(() => {
+    if (initialSubSection) {
+      setActiveSubSection(initialSubSection);
+    }
+  }, [initialSubSection]);
+
+  // Listen for global section jump events (e.g. from floating order bubbles)
+  useEffect(() => {
+    const handleOpenSection = (e: any) => {
+      const section = e.detail?.section;
+      if (section && ['profile', 'orders', 'support', 'wallet', 'rewards'].includes(section)) {
+        setActiveSubSection(section);
+      }
+    };
+    window.addEventListener('taashbhatti_open_account_section', handleOpenSection);
+    return () => window.removeEventListener('taashbhatti_open_account_section', handleOpenSection);
+  }, []);
 
   // Subscribe to user won rewards in real-time
   useEffect(() => {
@@ -896,6 +917,11 @@ export default function AccountTab({
   const [showGuestProfile, setShowGuestProfile] = useState(false);
   const [showPhoneLinkModal, setShowPhoneLinkModal] = useState(false);
 
+  // Forgot password via linked mobile phone OTP states
+  const [forgotPhonePrefill, setForgotPhonePrefill] = useState<string>('');
+  const [phoneNoticeBanner, setPhoneNoticeBanner] = useState<string | null>(null);
+  const [isLookingUpPhone, setIsLookingUpPhone] = useState<boolean>(false);
+
   // Legal & Age Verification Consent Gate State (stored once per device in localStorage)
   const [hasLegalAgeConsent, setHasLegalAgeConsent] = useState(() => hasAcceptedLegalAgeConsent());
 
@@ -967,6 +993,39 @@ export default function AccountTab({
       setAuthError(res.error || "Apple sign-in canceled.");
     }
     setAuthLoading(false);
+  };
+
+  // Flow: user forgot password while logging in via email -> use their linked phone number to send the OTP
+  const handleForgotPasswordViaPhone = async () => {
+    setAuthError(null);
+    const cleanEmail = authEmail.trim().toLowerCase();
+
+    if (cleanEmail) {
+      setIsLookingUpPhone(true);
+      try {
+        const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const matchedUser = snap.docs[0].data();
+          if (matchedUser.phone && matchedUser.phone.replace(/\D/g, '').length >= 10) {
+            const rawDigits = matchedUser.phone.replace(/\D/g, '');
+            const phoneDigits = rawDigits.length === 12 && rawDigits.startsWith('91') ? rawDigits.slice(2) : rawDigits;
+            setForgotPhonePrefill(phoneDigits);
+            setPhoneNoticeBanner(`Linked mobile found for ${cleanEmail}! Tap Continue to receive your instant OTP code and sign in.`);
+            setAuthMode('phone');
+            setIsLookingUpPhone(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Error finding linked phone for email:', err);
+      }
+      setIsLookingUpPhone(false);
+    }
+
+    setForgotPhonePrefill('');
+    setPhoneNoticeBanner('Forgot your password? Enter your registered mobile number below to sign in instantly via OTP code.');
+    setAuthMode('phone');
   };
 
   // Handle changing user password
@@ -1369,6 +1428,8 @@ export default function AccountTab({
                 onPhoneAuthSuccess?.(userData);
               }}
               defaultName={authName}
+              initialPhone={forgotPhonePrefill}
+              noticeBanner={phoneNoticeBanner}
             />
           ) : (
             <form onSubmit={handleAuthSubmit} className="space-y-4">
@@ -1401,7 +1462,24 @@ export default function AccountTab({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">Password</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">Password</label>
+                  {authMode === 'email' && (
+                    <button
+                      type="button"
+                      onClick={handleForgotPasswordViaPhone}
+                      disabled={isLookingUpPhone}
+                      className="text-[10px] font-bold text-brand-green hover:underline cursor-pointer flex items-center gap-1 transition-colors"
+                    >
+                      {isLookingUpPhone ? (
+                        <span className="w-2.5 h-2.5 border-2 border-brand-green border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <KeyRound className="w-3 h-3 text-brand-green" />
+                      )}
+                      <span>Forgot password? Sign in with Phone OTP</span>
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <input
                     type={showAuthPassword ? "text" : "password"}
@@ -2363,7 +2441,7 @@ export default function AccountTab({
 
       {/* 2. LIVE TRACKING & ORDERS */}
       {activeSubSection === 'orders' && (
-        <div className="space-y-4 animate-fade-in">
+        <div id="account-orders-section" className="space-y-4 animate-fade-in">
           
           {/* Active Orders Trackers */}
           {activeOrders.length === 0 ? (
