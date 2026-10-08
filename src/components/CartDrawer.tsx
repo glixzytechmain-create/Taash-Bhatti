@@ -46,6 +46,7 @@ import {
   ChefHat,
 } from 'lucide-react';
 import { calculateEmberCheckoutUsage, debitEmberCoinsForOrder, creditGoldenEmbersForShortfall, isCashOnDeliveryOrder } from '../lib/walletService';
+import { getLoyaltyConfig, validateReferralCode } from '../lib/loyaltyService';
 import { doc, getDoc, updateDoc, collection, onSnapshot, query, where, getDocs, increment } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupon, CouponEvaluationContext, SmartCouponRedemptionRecord } from '../types';
@@ -539,6 +540,9 @@ export default function CartDrawer({
   // Coupon input state
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupons, setAppliedCoupons] = useState<any[]>([]); // Array of applied coupons in stack
+  const [appliedReferral, setAppliedReferral] = useState<{ code: string; referrerUserId: string; discountAmount: number } | null>(null);
+  const [loyaltyMultiplier, setLoyaltyMultiplier] = useState<number>(1.0);
+  const [loyaltyRankTitle, setLoyaltyRankTitle] = useState<string>('');
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
   // Available Smart Coupons from Firestore & User Completed Orders
@@ -567,7 +571,7 @@ export default function CartDrawer({
     return () => unsub();
   }, [isOpen]);
 
-  // Load customer completed order count to verify sequence criteria (e.g. 1st order only, Nth order)
+  // Load customer completed order count & loyalty multiplier
   useEffect(() => {
     const uid = user.id || auth.currentUser?.uid;
     if (!uid || !isOpen) return;
@@ -580,7 +584,22 @@ export default function CartDrawer({
           where('status', '==', 'delivered')
         );
         const snap = await getDocs(q);
-        setUserCompletedOrderCount(snap.size);
+        const count = snap.size;
+        setUserCompletedOrderCount(count);
+
+        // Fetch dynamic loyalty tier and multiplier
+        try {
+          const lConfig = await getLoyaltyConfig();
+          const ranks = [...lConfig.royalRanks].sort((a, b) => a.minOrders - b.minOrders);
+          let currentRank = ranks[0];
+          for (const r of ranks) {
+            if (count >= r.minOrders) currentRank = r;
+          }
+          setLoyaltyMultiplier(currentRank.cashbackMultiplier);
+          setLoyaltyRankTitle(`${currentRank.title} (${currentRank.cashbackMultiplier}x)`);
+        } catch (e) {
+          console.warn("Could not calculate loyalty tier:", e);
+        }
       } catch (err) {
         console.warn("Could not fetch user order count for coupon evaluation:", err);
       }
@@ -588,11 +607,19 @@ export default function CartDrawer({
     fetchOrdersCount();
   }, [user.id, auth.currentUser?.uid, isOpen]);
 
-  // Preload coupon code if passed from Bhatti GameOn or User Vault
+  // Preload coupon code if passed from Bhatti GameOn or User Vault or URL ?ref=
   useEffect(() => {
-    if (initialCouponCode && isOpen) {
-      setCouponCode(initialCouponCode.trim().toUpperCase());
-      setCouponError(null);
+    if (isOpen) {
+      if (initialCouponCode) {
+        setCouponCode(initialCouponCode.trim().toUpperCase());
+        setCouponError(null);
+      } else if (typeof window !== 'undefined') {
+        const urlRef = new URLSearchParams(window.location.search).get('ref');
+        if (urlRef && !couponCode) {
+          setCouponCode(urlRef.trim().toUpperCase());
+          setCouponError(null);
+        }
+      }
     }
   }, [initialCouponCode, isOpen]);
 
@@ -1211,10 +1238,40 @@ export default function CartDrawer({
         const couponRef = doc(db, 'coupons', codeClean);
         const couponSnap = await getDoc(couponRef);
         if (!couponSnap.exists()) {
-          setCouponError("Invalid coupon code. This coupon does not exist or has expired.");
-          return;
+          // Check if this is an authentic friend referral code
+          const loyaltyConfig = await getLoyaltyConfig();
+          const refResult = await validateReferralCode({
+            code: codeClean,
+            currentUserId: auth.currentUser?.uid || user.id,
+            cartSubtotal: regularSubtotal,
+            config: loyaltyConfig
+          });
+
+          if (refResult.valid && refResult.referrerUser) {
+            targetCoupon = normalizeSmartCoupon({
+              id: `ref-${codeClean}`,
+              code: codeClean,
+              title: `Friend Referral (${refResult.referrerUser.name})`,
+              discountType: 'fixed',
+              discountValue: refResult.discountAmount,
+              description: `Special welcome discount invited by ${refResult.referrerUser.name}`,
+              isReferral: true,
+              criteria: {
+                minOrderValue: loyaltyConfig.refereeReward.minOrderValue
+              }
+            });
+            setAppliedReferral({
+              code: codeClean,
+              referrerUserId: refResult.referrerUser.id,
+              discountAmount: refResult.discountAmount
+            });
+          } else {
+            setCouponError(refResult.errorReason || "Invalid coupon or referral code. Please check the code and try again.");
+            return;
+          }
+        } else {
+          targetCoupon = normalizeSmartCoupon({ id: codeClean, ...couponSnap.data() });
         }
-        targetCoupon = normalizeSmartCoupon({ id: codeClean, ...couponSnap.data() });
       }
 
       // Execute comprehensive smart validation
@@ -1443,6 +1500,9 @@ export default function CartDrawer({
       goldenEmbersUsed: emberCheckout.goldenDeduction,
       standardEmbersUsed: emberCheckout.standardDeduction,
       walletUsedAmount: emberCheckout.totalEmberDiscount,
+      referralCodeApplied: appliedReferral?.code,
+      referrerUserId: appliedReferral?.referrerUserId,
+      loyaltyMultiplierApplied: loyaltyMultiplier,
       address: finalAddress,
       isCOD: isCashOnDeliveryOrder({ paymentMethod: selectedPayment }),
       paymentMethod: selectedPayment,
@@ -1474,6 +1534,7 @@ export default function CartDrawer({
 
     // Increment coupon usage count dynamically and accumulate totalSavings in Firestore
     for (const coupon of appliedCoupons) {
+      if ((coupon as any).isReferral) continue;
       if (coupon.id || coupon.code) {
         const cId = coupon.id || coupon.code;
         try {
@@ -3663,14 +3724,14 @@ export default function CartDrawer({
                 </span>
               </div>
 
-              {/* 10% Standard Ember Earning Note */}
+              {/* Standard Ember Earning Note with Royal Rank Multiplier */}
               <div className="flex items-center justify-between text-[10px] text-amber-800 bg-amber-50/80 px-2.5 py-1.5 rounded-xl border border-amber-200/60 font-medium">
                 <span className="flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                   Standard Embers earned on completion:
                 </span>
                 <span className="font-mono font-black text-amber-900">
-                  +{Math.max(1, Math.round(finalTotal * 0.10))} Coins (10%)
+                  +{Math.max(1, Math.round(finalTotal * 0.10 * loyaltyMultiplier))} Coins ({Math.round(10 * loyaltyMultiplier)}%{loyaltyMultiplier > 1 ? ` • ${loyaltyRankTitle}` : ''})
                 </span>
               </div>
 

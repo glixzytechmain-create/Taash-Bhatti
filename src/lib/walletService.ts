@@ -6,6 +6,7 @@
 import { User, Order, WalletTransaction } from '../types';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { getLoyaltyConfig, dealCardForDeliveredOrder, processReferralOnOrderDelivered } from './loyaltyService';
 
 /**
  * Detects if an order was placed via Cash on Delivery (COD).
@@ -339,8 +340,32 @@ export async function awardStandardEmberCoinsOnOrderCompletion(
   const orderTotal = Number(order.total || 0);
   if (orderTotal <= 0) return { success: false, coinsAwarded: 0 };
 
-  // 10% Standard Ember reward
-  const coinsAwarded = Math.max(1, Math.round(orderTotal * 0.10));
+  // Fetch active loyalty config and user multiplier
+  let multiplier = 1.0;
+  let rankTitle = '';
+  try {
+    const loyaltyConfig = await getLoyaltyConfig();
+    if (order.loyaltyMultiplierApplied && order.loyaltyMultiplierApplied > 0) {
+      multiplier = order.loyaltyMultiplierApplied;
+    } else {
+      // Find matching rank multiplier based on user's successful order count
+      const userDoc = await getDoc(doc(db, 'users', targetUserId));
+      if (userDoc.exists()) {
+        const uOrdersCount = (userDoc.data() as User).successfulReferralCount || 0;
+        const matchingRank = [...loyaltyConfig.royalRanks]
+          .reverse()
+          .find((r) => uOrdersCount >= r.minOrders);
+        if (matchingRank) {
+          multiplier = matchingRank.cashbackMultiplier;
+          rankTitle = ` (${matchingRank.title} ${matchingRank.cashbackMultiplier}x Boost)`;
+        }
+      }
+    }
+  } catch {}
+
+  // 10% Standard Ember reward boosted by royal rank multiplier
+  const baseReward = orderTotal * 0.10;
+  const coinsAwarded = Math.max(1, Math.round(baseReward * multiplier));
   const nowIso = new Date().toISOString();
 
   try {
@@ -348,7 +373,8 @@ export async function awardStandardEmberCoinsOnOrderCompletion(
     const orderRef = doc(db, 'orders', order.id);
     await updateDoc(orderRef, {
       standardEmberAwarded: true,
-      standardEmberCoinsEarned: coinsAwarded
+      standardEmberCoinsEarned: coinsAwarded,
+      loyaltyMultiplierApplied: multiplier
     });
 
     // 2. Credit to user's standardEmberBalance
@@ -373,7 +399,7 @@ export async function awardStandardEmberCoinsOnOrderCompletion(
       type: 'credit',
       amount: coinsAwarded,
       emberType: 'standard',
-      description: `10% Standard Ember Reward earned on Order #${order.id.slice(-6)}`,
+      description: `🔥 ${Math.round(10 * multiplier)}% Standard Ember Reward${rankTitle} earned on Order #${order.id.slice(-6)}`,
       orderId: order.id,
       createdAt: nowIso
     };
@@ -383,8 +409,24 @@ export async function awardStandardEmberCoinsOnOrderCompletion(
     await updateDoc(userRef, {
       standardEmberBalance: newStandardBalance,
       walletBalance: newTotalBalance,
-      walletTransactions: updatedTxList
+      walletTransactions: updatedTxList,
+      lastOrderDate: nowIso
     });
+
+    // 3. Deal 1 authentic Playing Card for completed feast
+    try {
+      await dealCardForDeliveredOrder(order, targetUserId);
+    } catch (e) {
+      console.warn("Could not deal playing card:", e);
+    }
+
+    // 4. Process Referrer Reward if this was a referred friend's order
+    try {
+      const currentLoyaltyConfig = await getLoyaltyConfig();
+      await processReferralOnOrderDelivered({ order, config: currentLoyaltyConfig });
+    } catch (e) {
+      console.warn("Could not process referral bonus:", e);
+    }
 
     // Update local cached user if matching
     try {

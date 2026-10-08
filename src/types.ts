@@ -97,6 +97,15 @@ export interface User {
   goldenEmberBalance?: number;
   standardEmberBalance?: number;
   walletTransactions?: WalletTransaction[];
+  referralCode?: string;
+  referredByCode?: string;
+  referredByUserId?: string;
+  successfulReferralCount?: number;
+  squadBountyClaimed?: boolean;
+  orderStreakCount?: number;
+  lastOrderDate?: string;
+  pokerCards?: any[];
+  claimedCombos?: string[];
 }
 
 export interface WalletTransaction {
@@ -470,6 +479,10 @@ export interface Order {
   kdsPickupStage?: 'at_kitchen' | 'meal_collected' | 'picked_up' | 'en_route_customer' | 'delivered';
   chatMessages?: ChatMessage[];
   deliveryRating?: OrderDeliveryRating;
+  referralCodeApplied?: string;
+  referrerUserId?: string;
+  pokerCardAwarded?: any;
+  loyaltyMultiplierApplied?: number;
   // Payment Collection & Status
   paymentStatus?: 'pending' | 'paid' | 'unpaid' | 'collected';
   collectedPaymentMethod?: 'cash' | 'upi';

@@ -124,6 +124,7 @@ import KitchenEODSettlementModal from './KitchenEODSettlementModal';
 import KitchenWastageManager from './KitchenWastageManager';
 import { syncLowStockMenuWithFirestore, computeEODShiftReport } from '../lib/kitchenSettlement';
 import BhattiGameOnAdmin from './admin/BhattiGameOnAdmin';
+import AdminLoyaltyManager from './admin/AdminLoyaltyManager';
 import { generateQRCodeDataUrl, generateQRCodeSvg, downloadFile } from '../lib/qrCodeGenerator';
 
 enum OperationType {
@@ -694,7 +695,7 @@ interface AdminPortalProps {
 }
 
 export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, allGyms = [], gymChains = [], allKitchens = [] }: AdminPortalProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tracking' | 'meals' | 'deals' | 'coupons' | 'kitchens' | 'fleet' | 'support' | 'users' | 'banners' | 'legal' | 'gameon'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tracking' | 'meals' | 'deals' | 'coupons' | 'kitchens' | 'fleet' | 'support' | 'users' | 'banners' | 'legal' | 'gameon' | 'loyalty'>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
 
   // Hero Banners State
@@ -4165,6 +4166,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
               { id: 'banners' as const, label: 'Hero Banners', icon: Layers, countBadge: banners.length > 0 ? banners.length : null },
               { id: 'legal' as const, label: 'Legal & Policies', icon: FileText, countBadge: null },
               { id: 'gameon' as const, label: 'Bhatti GameOn', icon: Gamepad2, countBadge: null },
+              { id: 'loyalty' as const, label: 'Loyalty & Referrals', icon: Crown, countBadge: null },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -4223,6 +4225,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                 { id: 'banners' as const, label: 'Hero Banners', icon: Layers, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-brand-orange/15 text-brand-orange border border-brand-orange/20">{banners.length} active</span> },
                 { id: 'legal' as const, label: 'Legal & Policies', icon: FileText, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-800/60">Editable</span> },
                 { id: 'gameon' as const, label: 'Bhatti GameOn', icon: Gamepad2, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/20">Arcade Studio</span> },
+                { id: 'loyalty' as const, label: 'Loyalty & Referrals', icon: Crown, badge: <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/20">Royal Club</span> },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -14359,6 +14362,19 @@ Free express delivery directly to trainer desks"
                 className="space-y-6 text-left"
               >
                 <BhattiGameOnAdmin />
+              </motion.div>
+            )}
+
+            {/* TAASH BHATTI LOYALTY & REFERRAL ENGINE */}
+            {activeTab === 'loyalty' && (
+              <motion.div
+                key="loyalty_workspace"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-6 text-left"
+              >
+                <AdminLoyaltyManager meals={meals} />
               </motion.div>
             )}
 
