@@ -28,6 +28,9 @@ export interface SmartNotification {
   timestamp: string;
   read?: boolean;
   orderId?: string;
+  orderStatus?: Order['status'];
+  liveEta?: string;
+  progressPercent?: number;
   icon?: 'flame' | 'bike' | 'sparkles' | 'phone';
 }
 
@@ -142,20 +145,27 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
           const prevStatus = previousOrderStatusRef.current[order.id];
 
           if (change.type === 'modified' && prevStatus && prevStatus !== order.status) {
+            const currentLiveEta = order.liveEta || localStorage.getItem('taashbhatti_active_order_eta') || '12-15 Mins';
             if (order.status === 'cooking') {
               addNotification({
                 title: '🔥 Clay Oven In Action!',
                 message: `Order #${order.id.slice(-4)} is now being prepared fresh in the bhatti.`,
                 type: 'order',
                 orderId: order.id,
+                orderStatus: order.status,
+                progressPercent: 50,
+                liveEta: currentLiveEta,
                 icon: 'flame'
               });
-            } else if (order.status === 'ready_for_pickup') {
+            } else if (order.status === 'ready_for_pickup' || order.status === 'ready') {
               addNotification({
                 title: '✨ Plated & Packed!',
                 message: `Order #${order.id.slice(-4)} is packed warm. Proximity courier assigned.`,
                 type: 'order',
                 orderId: order.id,
+                orderStatus: order.status,
+                progressPercent: 70,
+                liveEta: currentLiveEta,
                 icon: 'bike'
               });
             } else if (order.status === 'out_for_delivery') {
@@ -164,6 +174,9 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
                 message: `Courier ${order.deliveryPartnerName || 'Rider'} is heading your way in thermal gear.`,
                 type: 'order',
                 orderId: order.id,
+                orderStatus: order.status,
+                progressPercent: 85,
+                liveEta: currentLiveEta,
                 icon: 'bike'
               });
             } else if (order.status === 'delivered') {
@@ -172,6 +185,9 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
                 message: `Order #${order.id.slice(-4)} delivered! +10% Standard Embers added to Bhatti Wallet.`,
                 type: 'order',
                 orderId: order.id,
+                orderStatus: order.status,
+                progressPercent: 100,
+                liveEta: 'Delivered',
                 icon: 'sparkles'
               });
             }
@@ -184,6 +200,45 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
       return () => unsubscribe();
     } catch (e) {}
   }, [user.id]);
+
+  // Real-time synchronization of unified Google Maps ETA & Local status events
+  useEffect(() => {
+    const handleEtaUpdate = (e: any) => {
+      const eta = e?.detail?.eta;
+      if (eta) {
+        setActiveToast((current) => {
+          if (current && current.type === 'order') {
+            return { ...current, liveEta: eta };
+          }
+          return current;
+        });
+      }
+    };
+
+    const handleStatusUpdate = (e: any) => {
+      const { orderId, status, kitchen } = e?.detail || {};
+      if (orderId && status === 'cooking') {
+        const liveEta = localStorage.getItem('taashbhatti_active_order_eta') || '12-15 Mins';
+        addNotification({
+          title: '🔥 Ticket Accepted & Cooking Started!',
+          message: `Order #${orderId.slice(-4)} accepted by ${kitchen?.name || 'Kitchen'}. Preparation underway.`,
+          type: 'order',
+          orderId,
+          orderStatus: 'cooking',
+          progressPercent: 50,
+          liveEta,
+          icon: 'flame'
+        });
+      }
+    };
+
+    window.addEventListener('taashbhatti_order_eta_updated', handleEtaUpdate);
+    window.addEventListener('taashbhatti_order_status_updated', handleStatusUpdate);
+    return () => {
+      window.removeEventListener('taashbhatti_order_eta_updated', handleEtaUpdate);
+      window.removeEventListener('taashbhatti_order_status_updated', handleStatusUpdate);
+    };
+  }, []);
 
   // Request notification permission smoothly
   useEffect(() => {
@@ -213,19 +268,19 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
 
   return (
     <>
-      {/* 1. FLOATING TOAST ALERT */}
+      {/* 1. FLOATING TOAST ALERT WITH REAL-TIME PROGRESS BAR */}
       {activeToast && (
-        <div className="fixed top-4 right-4 z-[9990] max-w-sm w-[calc(100vw-2rem)] bg-[#0C1017] text-white border border-amber-500/40 rounded-2xl shadow-2xl p-3.5 animate-slide-in backdrop-blur-md">
+        <div className="fixed top-4 right-4 z-[9990] max-w-sm w-[calc(100vw-2rem)] bg-[#0C130F]/95 text-white border border-[#C06C38]/60 rounded-2xl shadow-2xl p-3.5 animate-slide-in backdrop-blur-md">
           <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-white shrink-0 shadow-xs">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#143D27] to-[#0C130F] border border-[#C06C38]/40 flex items-center justify-center text-white shrink-0 shadow-xs">
               {activeToast.icon === 'flame' ? (
-                <Flame className="w-4 h-4" />
+                <Flame className="w-4 h-4 text-[#C06C38]" />
               ) : activeToast.icon === 'bike' ? (
-                <Bike className="w-4 h-4" />
+                <Bike className="w-4 h-4 text-emerald-400" />
               ) : activeToast.icon === 'phone' ? (
-                <PhoneCall className="w-4 h-4" />
+                <PhoneCall className="w-4 h-4 text-emerald-400" />
               ) : (
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-4 h-4 text-amber-400" />
               )}
             </div>
 
@@ -235,6 +290,24 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
                 <span className="text-[9px] text-gray-400 font-mono">{activeToast.timestamp}</span>
               </div>
               <p className="text-[11px] text-gray-300 mt-0.5 leading-relaxed">{activeToast.message}</p>
+
+              {/* REAL-TIME PROGRESS BAR WITH UNIFIED GOOGLE MAPS ETA */}
+              {activeToast.progressPercent !== undefined && (
+                <div className="mt-2.5 pt-2 border-t border-white/10 space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-zinc-400">Live Progress</span>
+                    <span className="text-[#E89358] font-bold">
+                      {activeToast.progressPercent}% • {activeToast.liveEta ? `ETA: ${activeToast.liveEta}` : 'Calculating ETA...'}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#C06C38] via-amber-400 to-emerald-400 rounded-full transition-all duration-700 ease-out"
+                      style={{ width: `${activeToast.progressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {activeToast.orderId && onOpenOrderTracking && (
                 <button
@@ -314,6 +387,20 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
                       <span className="text-[9px] font-mono text-slate-400">{n.timestamp}</span>
                     </div>
                     <p className="text-[11px] text-slate-300">{n.message}</p>
+                    {n.progressPercent !== undefined && (
+                      <div className="mt-2 pt-1.5 border-t border-slate-700/60 space-y-1">
+                        <div className="flex items-center justify-between text-[9px] font-mono text-zinc-400">
+                          <span>Milestone</span>
+                          <span className="text-[#E89358] font-bold">{n.progressPercent}% {n.liveEta ? `• ETA: ${n.liveEta}` : ''}</span>
+                        </div>
+                        <div className="w-full h-1 bg-black/40 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[#C06C38] via-amber-400 to-emerald-400 rounded-full"
+                            style={{ width: `${n.progressPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                     {n.orderId && onOpenOrderTracking && (
                       <button
                         onClick={() => {

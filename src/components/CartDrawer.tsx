@@ -1422,6 +1422,8 @@ export default function CartDrawer({
       riderTip: effectiveRiderTip > 0 ? effectiveRiderTip : undefined,
       gecAddedAmount: gecShortfallAmount > 0 ? gecShortfallAmount : undefined,
       gecCoinsEarned: gecShortfallAmount > 0 ? gecShortfallAmount : undefined,
+      pendingEmberBonus: (isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) && gecShortfallAmount > 0) ? gecShortfallAmount : undefined,
+      gecBonusAwarded: !isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) && gecShortfallAmount > 0,
       createdAt: new Date().toISOString(),
       subtotal,
       discount: totalDiscount,
@@ -1571,24 +1573,33 @@ export default function CartDrawer({
     }
 
     // Credit Gold Ember Coins if customer banked free delivery shortfall
+    const isCodOrder = isCashOnDeliveryOrder({ paymentMethod: selectedPayment });
     if (gecShortfallAmount > 0) {
-      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
-      try {
-        await creditGoldenEmbersForShortfall({
-          userId: activeUserId,
-          orderId,
-          amount: gecShortfallAmount
-        });
-      } catch (gecErr) {
-        console.warn("Could not credit Golden Embers for shortfall:", gecErr);
-      }
+      if (!isCodOrder) {
+        // PREPAID ORDER: Credit immediately into Bhatti Wallet
+        const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
+        try {
+          await creditGoldenEmbersForShortfall({
+            userId: activeUserId,
+            orderId,
+            amount: gecShortfallAmount
+          });
+        } catch (gecErr) {
+          console.warn("Could not credit Golden Embers for shortfall:", gecErr);
+        }
 
-      if (onUpdateUser) {
-        onUpdateUser({
-          ...user,
-          goldenEmberBalance: (user.goldenEmberBalance || 0) + gecShortfallAmount,
-          walletBalance: (user.walletBalance || 0) + gecShortfallAmount
-        });
+        if (onUpdateUser) {
+          onUpdateUser({
+            ...user,
+            goldenEmberBalance: (user.goldenEmberBalance || 0) + gecShortfallAmount,
+            walletBalance: (user.walletBalance || 0) + gecShortfallAmount
+          });
+        }
+      } else {
+        // CASH ON DELIVERY (COD): Do NOT credit wallet at checkout!
+        // Defer crediting until the delivery partner successfully hands over the order with OTP.
+        newOrder.pendingEmberBonus = gecShortfallAmount;
+        newOrder.gecBonusAwarded = false;
       }
     }
 

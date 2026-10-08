@@ -587,6 +587,76 @@ export default function App() {
     }
   }, [orders]);
 
+  // Monitor placed customer orders for homepage floating tracking bubble and live sync
+  const [mostRecentActiveOrder, setMostRecentActiveOrder] = useState<Order | null>(null);
+
+  useEffect(() => {
+    const placedId = localStorage.getItem('tb_most_recent_active_order_id') || localStorage.getItem('tb_active_tracking_order_id');
+    if (placedId) {
+      const match = orders.find(
+        (o) => o.id === placedId && o.status !== 'delivered' && o.status !== 'cancelled'
+      );
+      if (match) {
+        setMostRecentActiveOrder(match);
+        return;
+      } else {
+        const finished = orders.find(
+          (o) => o.id === placedId && (o.status === 'delivered' || o.status === 'cancelled')
+        );
+        if (finished) {
+          localStorage.removeItem('tb_most_recent_active_order_id');
+        }
+      }
+    }
+
+    // Fallback: search for most recent active order among user's orders
+    const activeOnes = orders.filter(
+      (o) => o.status !== 'delivered' && o.status !== 'cancelled'
+    );
+    if (activeOnes.length > 0) {
+      const sorted = [...activeOnes].sort((a, b) => (b.createdAt || b.id).localeCompare(a.createdAt || a.id));
+      setMostRecentActiveOrder(sorted[0]);
+    } else {
+      setMostRecentActiveOrder(null);
+    }
+  }, [orders]);
+
+  // Real-Time Direct Document Listener for Active Order:
+  // Directly subscribes to doc(db, 'orders', activeOrderId) for instantaneous (sub-second)
+  // updates when a kitchen accepts or changes order state.
+  useEffect(() => {
+    const activeId = mostRecentActiveOrder?.id || localStorage.getItem('tb_most_recent_active_order_id') || localStorage.getItem('tb_active_tracking_order_id');
+    if (!activeId) return;
+
+    const unsub = onSnapshot(
+      doc(db, 'orders', activeId),
+      (snap) => {
+        if (snap.exists()) {
+          const freshOrder = { id: snap.id, ...snap.data() } as Order;
+          setOrders((prev) => {
+            const index = prev.findIndex((o) => o.id === freshOrder.id);
+            if (index > -1) {
+              const updated = [...prev];
+              updated[index] = freshOrder;
+              return updated;
+            } else {
+              return [freshOrder, ...prev];
+            }
+          });
+          if (freshOrder.status === 'delivered' || freshOrder.status === 'cancelled') {
+            localStorage.removeItem('tb_most_recent_active_order_id');
+            setMostRecentActiveOrder(null);
+          } else {
+            setMostRecentActiveOrder(freshOrder);
+          }
+        }
+      },
+      (err) => console.warn("Active order real-time sync:", err)
+    );
+
+    return () => unsub();
+  }, [mostRecentActiveOrder?.id]);
+
   // Auto-cleanup: Auto-delete feast room from Firestore backend when group order is delivered
   useEffect(() => {
     const deliveredGroupOrders = orders.filter(
@@ -1861,6 +1931,10 @@ export default function App() {
       } catch (e) {}
       return next;
     });
+    setMostRecentActiveOrder(orderWithUser);
+    try {
+      localStorage.setItem('tb_most_recent_active_order_id', order.id);
+    } catch (e) {}
 
     try {
       await setDoc(doc(db, 'orders', order.id), sanitizedOrder);
@@ -3118,6 +3192,11 @@ export default function App() {
             cartMealIds={cart.map((i) => i.meal.id)}
             cart={cart}
             onUpdateQuantity={handleUpdateQuantity}
+            activeOrder={mostRecentActiveOrder}
+            onTrackOrder={(_orderId) => {
+              setActiveTab('account');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           />
         )}
 

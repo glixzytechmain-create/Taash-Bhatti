@@ -344,7 +344,7 @@ export default function Header({
 
           {/* Sliding Content Panel */}
           <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-            <div className="w-screen max-w-xs sm:max-w-sm bg-white shadow-2xl flex flex-col justify-between overflow-y-auto animate-slide-in-right border-l border-brand-green/15">
+            <div className="w-full max-w-xs sm:max-w-sm bg-white shadow-2xl flex flex-col justify-between overflow-y-auto animate-slide-in-right border-l border-brand-green/15">
               
               {/* Drawer Top Header */}
               <div className="p-4 sm:p-5 bg-gradient-to-b from-brand-cream to-white border-b border-brand-green/10">

@@ -48,6 +48,8 @@ import {
 import { LeafletMap } from './LeafletMap';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { ChatMessage, OrderDeliveryRating } from '../types';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface InAppDeliveryMapProps {
   acceptedByKitchenId?: string;
@@ -244,9 +246,21 @@ export default function InAppDeliveryMap({
     // Fallback seed until geocoder resolves the exact destination string
     return { lat: 26.1209, lng: 85.3647 };
   });
-  const [geocodedCustomerAddress, setGeocodedCustomerAddress] = useState<string>('');
-  const [kitchenCoords, setKitchenCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [kitchenCoords, setKitchenCoords] = useState<{ lat: number; lng: number } | null>(() => {
+    if (kitchenLat && kitchenLng && !isNaN(kitchenLat) && !isNaN(kitchenLng) && kitchenLat !== 0) {
+      return { lat: kitchenLat, lng: kitchenLng };
+    }
+    return null;
+  });
   const [geocodedKitchenAddress, setGeocodedKitchenAddress] = useState<string>('');
+  const [leafletPolylineCoords, setLeafletPolylineCoords] = useState<[number, number][]>([]);
+
+  // Synchronize kitchen coordinates immediately as soon as kitchen accepts and props update
+  useEffect(() => {
+    if (kitchenLat && kitchenLng && !isNaN(kitchenLat) && !isNaN(kitchenLng) && kitchenLat !== 0) {
+      setKitchenCoords({ lat: kitchenLat, lng: kitchenLng });
+    }
+  }, [kitchenLat, kitchenLng]);
 
   // Geofenced Arrival Alert state for rider
   const [geofenceNotice, setGeofenceNotice] = useState<string | null>(null);
@@ -736,13 +750,21 @@ export default function InAppDeliveryMap({
               const overviewPath = routeObj.overview_path || [];
 
               if (overviewPath.length > 0) {
+                // Synchronize Leaflet polyline coords
+                try {
+                  setLeafletPolylineCoords(overviewPath.map((pt: any) => [
+                    typeof pt.lat === 'function' ? pt.lat() : pt.lat,
+                    typeof pt.lng === 'function' ? pt.lng() : pt.lng
+                  ]));
+                } catch (e) {}
+
                 // Outer dark casing line following true turn-by-turn road geometry
                 if (!casingPolylineRef.current) {
                   casingPolylineRef.current = new gMaps.Polyline({
                     path: overviewPath,
                     geodesic: true,
-                    strokeColor: '#0D47A1',
-                    strokeOpacity: 0.85,
+                    strokeColor: '#09100C',
+                    strokeOpacity: 0.9,
                     strokeWeight: 10,
                     map,
                   });
@@ -751,12 +773,12 @@ export default function InAppDeliveryMap({
                   casingPolylineRef.current.setMap(map);
                 }
 
-                // Google Maps Royal Blue main path line following true turn-by-turn road geometry
+                // Taash Bhatti Signature Luminous Copper main path line
                 if (!polylineRef.current) {
                   polylineRef.current = new gMaps.Polyline({
                     path: overviewPath,
                     geodesic: true,
-                    strokeColor: '#1A73E8',
+                    strokeColor: '#C06C38',
                     strokeOpacity: 1.0,
                     strokeWeight: 6,
                     map,
@@ -777,7 +799,7 @@ export default function InAppDeliveryMap({
                         <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
                       </filter>
                       <g filter="url(#shadow)">
-                        <rect x="3" y="3" width="90" height="32" rx="16" fill="#1A73E8" stroke="#FFFFFF" stroke-width="2.5"/>
+                        <rect x="3" y="3" width="90" height="32" rx="16" fill="#C06C38" stroke="#FFFFFF" stroke-width="2.5"/>
                         <text x="48" y="19" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${durationText}</text>
                       </g>
                     </svg>
@@ -808,13 +830,29 @@ export default function InAppDeliveryMap({
               }
 
               if (routeLeg) {
+                const distStr = routeLeg.distance?.text || '2.4 km';
+                const durStr = routeLeg.duration_in_traffic?.text || routeLeg.duration?.text || '12-15 Mins';
                 if (routeLeg.distance?.text) {
                   const numKm = parseFloat(routeLeg.distance.text.replace(/[^0-9.]/g, '')) || 2.4;
                   setLiveDistanceKm(numKm);
                 }
-                if (routeLeg.duration_in_traffic?.text || routeLeg.duration?.text) {
-                  setLiveEtaMinutes(routeLeg.duration_in_traffic?.text || routeLeg.duration?.text || '12 Mins');
-                }
+                setLiveEtaMinutes(durStr);
+
+                // Broadcast Unified ETA across whole application (Home bubble, account card, notifications)
+                try {
+                  localStorage.setItem('taashbhatti_active_order_eta', durStr);
+                  localStorage.setItem('taashbhatti_active_order_distance', distStr);
+                  window.dispatchEvent(new CustomEvent('taashbhatti_order_eta_updated', {
+                    detail: { orderId, eta: durStr, distance: distStr }
+                  }));
+                  if (orderId) {
+                    updateDoc(doc(db, 'orders', orderId), {
+                      liveEta: durStr,
+                      liveDistance: distStr
+                    }).catch(() => {});
+                  }
+                } catch (e) {}
+
                 if (routeLeg.steps && routeLeg.steps.length > 0) {
                   const cleanSteps = routeLeg.steps.map((s: any) => ({
                     instruction: s.instructions ? s.instructions.replace(/<[^>]*>/g, '') : 'Proceed along route',
@@ -1344,56 +1382,116 @@ export default function InAppDeliveryMap({
           </div>
         )}
 
-        {/* Fullscreen Turn-by-Turn Guidance Drawer */}
-        {isFullscreen && navigationSteps.length > 0 && isKitchenAccepted && (
-          <div className="absolute top-28 left-3 right-3 sm:left-4 sm:w-[460px] z-30 space-y-2 pointer-events-auto">
-            <div className="bg-[#005751] text-white p-3 rounded-2xl shadow-2xl border-2 border-teal-300/60 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-10 h-10 bg-white text-[#005751] rounded-xl flex items-center justify-center shrink-0 font-bold shadow-md">
-                  <Navigation className="w-5 h-5 fill-current" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[9px] uppercase font-mono tracking-wider text-teal-200 font-bold">
-                    Turn Directions • {(Number.isFinite(liveDistanceKm) ? liveDistanceKm : 2.4).toFixed(1)} km
-                  </div>
-                  <div className="font-extrabold text-xs sm:text-sm text-white truncate">
-                    {navigationSteps[0]?.instruction} {navigationSteps[0]?.distance ? `(${navigationSteps[0]?.distance})` : ''}
-                  </div>
-                </div>
-              </div>
+        {/* Fullscreen Turn-by-Turn Guidance Drawer (Always visible for Riders with live step guidance) */}
+        {isFullscreen && (isRiderView || (navigationSteps.length > 0 && isKitchenAccepted)) && (() => {
+          const isHeadingToKitchen = isRiderView && (
+            riderStatus === 'en_route_kitchen' ||
+            riderStatus === 'arrived_kitchen' ||
+            riderStatus === 'accepted' ||
+            currentStatus.includes('en_route_kitchen') ||
+            (!currentStatus.includes('out_for_delivery') && !currentStatus.includes('delivered') && !currentStatus.includes('picked_up'))
+          );
+          const targetCoords = (isHeadingToKitchen && kitchenCoords)
+            ? kitchenCoords
+            : (kitchenCoords && isHeadingToKitchen)
+              ? { lat: kitchenLat || 26.1209, lng: kitchenLng || 85.3647 }
+              : customerCoords;
+          const targetName = isHeadingToKitchen ? (kitchenName || 'Taash Bhatti Kitchen') : (customerName || 'Customer Delivery Point');
+          const targetAddr = isHeadingToKitchen ? (kitchenAddress || 'Kitchen Branch') : (cleanCustomerAddress || 'Customer Address');
+          const navUrl = targetCoords
+            ? `https://www.google.com/maps/dir/?api=1&origin=${currentRiderPos?.lat || ''},${currentRiderPos?.lng || ''}&destination=${targetCoords.lat},${targetCoords.lng}&travelmode=driving`
+            : null;
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowStepsList(!showStepsList);
-                }}
-                className="bg-black/40 hover:bg-black/60 text-white font-bold px-2.5 py-1.5 rounded-xl text-[11px] border border-white/20 transition-all shrink-0 cursor-pointer"
-              >
-                {showStepsList ? 'Hide Steps' : `All ${navigationSteps.length} Steps`}
-              </button>
-            </div>
-
-            {showStepsList && (
-              <div className="bg-slate-900/95 border border-teal-500/40 rounded-2xl p-3 max-h-56 overflow-y-auto space-y-2 shadow-2xl backdrop-blur-md text-xs font-sans">
-                <span className="text-[10px] font-black uppercase text-teal-300 tracking-wider block border-b border-slate-800 pb-1">
-                  Full Route Directions ({navigationSteps.length} steps):
-                </span>
-                {navigationSteps.map((step, idx) => (
-                  <div key={idx} className="flex items-start gap-2 text-slate-200 border-b border-slate-800/60 last:border-0 pb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-teal-900 text-teal-300 font-mono text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
-                      {idx + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-slate-100">{step.instruction}</p>
-                      {step.distance && <span className="text-[10px] text-teal-400 font-mono">{step.distance}</span>}
+          return (
+            <div className="absolute top-28 left-3 right-3 sm:left-4 sm:w-[480px] z-30 space-y-2 pointer-events-auto">
+              <div className="bg-[#0C130F]/95 backdrop-blur-md text-white p-3.5 rounded-2xl shadow-2xl border border-[#C06C38]/70 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 bg-[#C06C38] text-white rounded-xl flex items-center justify-center shrink-0 font-bold shadow-md">
+                      <Navigation className="w-5 h-5 fill-current" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase font-mono tracking-wider text-[#E89358] font-bold flex items-center gap-1.5">
+                        <span>{isHeadingToKitchen ? '📍 PICKUP DIRECTION' : '🏠 DROP-OFF DIRECTION'}</span>
+                        <span>•</span>
+                        <span>{(Number.isFinite(liveDistanceKm) ? liveDistanceKm : 2.4).toFixed(1)} km ({liveEtaMinutes})</span>
+                      </div>
+                      <div className="font-extrabold text-xs sm:text-sm text-white truncate">
+                        {navigationSteps.length > 0
+                          ? `${navigationSteps[0]?.instruction} ${navigationSteps[0]?.distance ? `(${navigationSteps[0]?.distance})` : ''}`
+                          : `Navigate towards: ${targetName}`}
+                      </div>
+                      <div className="text-[11px] text-zinc-300 truncate font-mono">
+                        {targetAddr}
+                      </div>
                     </div>
                   </div>
-                ))}
+
+                  {navigationSteps.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowStepsList(!showStepsList);
+                      }}
+                      className="bg-white/10 hover:bg-white/20 text-amber-200 font-bold px-2.5 py-1.5 rounded-xl text-[11px] border border-[#C06C38]/40 transition-all shrink-0 cursor-pointer"
+                    >
+                      {showStepsList ? 'Hide Steps' : `All ${navigationSteps.length} Steps`}
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Navigation Action for Delivery Partner */}
+                {navUrl && (
+                  <div className="pt-2 border-t border-white/10 flex items-center gap-2">
+                    <a
+                      href={navUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-[#C06C38] to-[#994F22] hover:brightness-110 text-white text-[11px] font-black uppercase tracking-wider text-center flex items-center justify-center gap-1.5 shadow-md"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      Launch Google Maps Turn-by-Turn
+                    </a>
+                    {targetCoords && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard?.writeText(`${targetCoords.lat},${targetCoords.lng}`);
+                        }}
+                        className="py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 text-[11px] font-bold border border-white/10"
+                        title="Copy GPS coordinates"
+                      >
+                        Copy GPS
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+
+              {showStepsList && navigationSteps.length > 0 && (
+                <div className="bg-[#0C130F]/95 border border-[#C06C38]/40 rounded-2xl p-3 max-h-56 overflow-y-auto space-y-2 shadow-2xl backdrop-blur-md text-xs font-sans">
+                  <span className="text-[10px] font-black uppercase text-[#E89358] tracking-wider block border-b border-slate-800 pb-1">
+                    Route Guidance Steps ({navigationSteps.length}):
+                  </span>
+                  {navigationSteps.map((step, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-slate-200 border-b border-slate-800/60 last:border-0 pb-1.5">
+                      <span className="w-5 h-5 rounded-full bg-[#143D27] text-emerald-300 font-mono text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                        {idx + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-slate-100">{step.instruction}</p>
+                        {step.distance && <span className="text-[10px] text-amber-400 font-mono">{step.distance}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div className={`relative w-full ${isFullscreen ? 'flex-1' : 'h-full'} overflow-hidden`}>
           {useLeaflet || isGoogleMapsAuthFailed() || (mapError && !mapLoaded) ? (
@@ -1401,6 +1499,7 @@ export default function InAppDeliveryMap({
               center={currentRiderPos || customerCoords}
               zoom={14}
               interactive={true}
+              polylineCoords={leafletPolylineCoords}
               points={[
                 ...(customerCoords ? [{ lat: customerCoords.lat, lng: customerCoords.lng, label: customerName ? `${customerName} (Customer)` : 'Delivery Address', type: 'customer' as const }] : []),
                 ...(kitchenCoords ? [{ lat: kitchenCoords.lat, lng: kitchenCoords.lng, label: kitchenName ? `${kitchenName} (Kitchen)` : 'Bhatti Kitchen', type: 'kitchen' as const }] : []),

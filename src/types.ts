@@ -455,6 +455,10 @@ export interface Order {
   riderTip?: number; // 1-tap tip amount passed to delivery rider
   gecAddedAmount?: number; // Shortfall amount converted to Gold Ember Coins to unlock free delivery
   gecCoinsEarned?: number; // Gold Ember Coins earned from banking shortfall
+  pendingEmberBonus?: number; // Deferred Ember coins for COD orders awarded only upon delivery OTP handover
+  gecBonusAwarded?: boolean; // Whether the pending Ember bonus has been credited to wallet
+  liveEta?: string; // Unified Google Maps ETA duration string synced across tracker & notifications
+  liveDistance?: string; // Unified Google Maps distance string
   deliveredAt?: string;
   customerName?: string;
   customerPhone?: string;

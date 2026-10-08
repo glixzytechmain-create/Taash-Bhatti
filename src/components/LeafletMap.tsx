@@ -119,10 +119,11 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
     tileLayer.addTo(mapRef.current);
     tileLayerRef.current = tileLayer;
 
-    // Apply high-contrast dark filter when dark mode is enabled
+    // Apply Taash Bhatti Signature Forest Green & Copper theme filter
     try {
       const container = mapRef.current.getContainer();
       if (container) {
+        container.classList.add('leaflet-taash-theme');
         if (isDarkMode) {
           container.classList.add('leaflet-dark-tiles');
         } else {
@@ -160,25 +161,25 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       if (pt.type === 'kitchen') {
         iconHtml = `
           <div style="display:flex; flex-direction:column; align-items:center; transform:translateY(-8px);">
-            <div style="background:#E0533C; color:white; font-size:9px; font-weight:800; padding:2px 8px; border-radius:9999px; white-space:nowrap; box-shadow:0 4px 10px rgba(0,0,0,0.3); border:1.5px solid white; display:flex; align-items:center; gap:4px; text-transform:uppercase;">
+            <div style="background:#C06C38; color:#FAF8F5; font-size:9px; font-weight:800; padding:3px 9px; border-radius:9999px; white-space:nowrap; box-shadow:0 4px 14px rgba(192,108,56,0.45); border:1.8px solid #FAF8F5; display:flex; align-items:center; gap:4px; text-transform:uppercase; letter-spacing:0.5px;">
               <span>👨‍🍳</span>
               <span>${pt.label || 'Bhatti'}</span>
             </div>
-            <div style="width:14px; height:14px; background:#E0533C; border:2.5px solid white; border-radius:50%; margin-top:2px; box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>
+            <div style="width:14px; height:14px; background:#C06C38; border:2.5px solid #FAF8F5; border-radius:50%; margin-top:2px; box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>
           </div>
         `;
         iconSize = [120, 48];
         iconAnchor = [60, 48];
 
-        // Draw geofence circle if available
+        // Draw geofence circle in warm copper
         if (pt.geofenceRadiusKm && pt.geofenceRadiusKm > 0) {
           const circle = L.circle([pt.lat, pt.lng], {
             radius: pt.geofenceRadiusKm * 1000,
-            color: '#E0533C',
-            fillColor: '#E0533C',
-            fillOpacity: 0.08,
-            weight: 1.5,
-            dashArray: '4, 6',
+            color: '#C06C38',
+            fillColor: '#C06C38',
+            fillOpacity: 0.12,
+            weight: 2,
+            dashArray: '5, 6',
           });
           circle.addTo(circlesLayerRef.current!);
         }
@@ -186,8 +187,8 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         const rotation = pt.heading || 0;
         iconHtml = `
           <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-center; transform:rotate(${rotation}deg);">
-            <div style="position:absolute; inset:0; border-radius:50%; background:rgba(16,185,129,0.3); animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>
-            <div style="position:relative; width:36px; height:36px; background:#047857; border:2.5px solid #FFFFFF; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(0,0,0,0.5);">
+            <div style="position:absolute; inset:0; border-radius:50%; background:rgba(255,87,34,0.35); animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>
+            <div style="position:relative; width:36px; height:36px; background:#FF5722; border:2.5px solid #FFFFFF; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(255,87,34,0.5);">
               <span style="font-size:18px; line-height:1;">🛵</span>
             </div>
           </div>
@@ -195,13 +196,13 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         iconSize = [44, 44];
         iconAnchor = [22, 22];
       } else {
-        // Customer Delivery Pin
+        // Customer Delivery Pin in authentic Forest Green
         iconHtml = `
           <div style="display:flex; flex-direction:column; align-items:center; cursor:${draggableCustomerPin ? 'grab' : 'pointer'}; transform:translateY(-4px);">
-            <div style="background:#007A78; color:white; font-size:9px; font-weight:800; padding:2px 8px; border-radius:9999px; white-space:nowrap; box-shadow:0 4px 10px rgba(0,0,0,0.3); border:1.5px solid white; text-transform:uppercase;">
+            <div style="background:#143D27; color:#FAF8F5; font-size:9px; font-weight:800; padding:3px 9px; border-radius:9999px; white-space:nowrap; box-shadow:0 4px 12px rgba(20,61,39,0.5); border:1.8px solid #FAF8F5; text-transform:uppercase; letter-spacing:0.5px;">
               📍 ${pt.label || 'Your Location'}
             </div>
-            <div style="width:16px; height:16px; background:#007A78; border:3px solid white; border-radius:50%; margin-top:2px; box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>
+            <div style="width:16px; height:16px; background:#143D27; border:3px solid #FAF8F5; border-radius:50%; margin-top:2px; box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>
           </div>
         `;
         iconSize = [130, 48];
@@ -235,8 +236,8 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       const rotation = riderPosition.heading || 0;
       const riderHtml = `
         <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-center; transform:rotate(${rotation}deg);">
-          <div style="position:absolute; inset:0; border-radius:50%; background:rgba(16,185,129,0.35); animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>
-          <div style="position:relative; width:36px; height:36px; background:#047857; border:2.5px solid #FFFFFF; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(0,0,0,0.5);">
+          <div style="position:absolute; inset:0; border-radius:50%; background:rgba(255,87,34,0.35); animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>
+          <div style="position:relative; width:36px; height:36px; background:#FF5722; border:2.5px solid #FFFFFF; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(255,87,34,0.5);">
             <span style="font-size:18px; line-height:1;">🛵</span>
           </div>
         </div>
@@ -252,7 +253,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
     }
   }, [points, draggableCustomerPin, riderPosition?.lat, riderPosition?.lng, riderPosition?.heading]);
 
-  // Update Polyline
+  // Update Polyline in Signature Copper with dark shadow casing
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -263,12 +264,11 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
     if (polylineCoords && polylineCoords.length >= 2) {
       const line = L.polyline(polylineCoords, {
-        color: '#1A73E8',
-        weight: 5,
-        opacity: 0.9,
+        color: '#C06C38', // Signature luminous copper
+        weight: 6,
+        opacity: 0.95,
         lineCap: 'round',
         lineJoin: 'round',
-        dashArray: undefined,
       });
 
       line.addTo(mapRef.current);

@@ -38,13 +38,14 @@ import {
   Percent,
   Timer
 } from 'lucide-react';
-import { Meal, User, HeroBanner, OrderItem } from '../types';
+import { Meal, User, HeroBanner, OrderItem, Order } from '../types';
 import { MEALS_DATA, DEFAULT_HERO_BANNERS } from '../data';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import GoesWellWithExtension from './GoesWellWithExtension';
 import CartQuantityButton from './CartQuantityButton';
 import DishShowcaseMedia from './DishShowcaseMedia';
+import ActiveOrderFloatingBubble from './ActiveOrderFloatingBubble';
 
 interface HomeTabProps {
   onSelectGoal?: (goal: any) => void;
@@ -58,6 +59,8 @@ interface HomeTabProps {
   cartMealIds?: string[];
   cart?: OrderItem[];
   onUpdateQuantity?: (mealId: string, delta: number) => void;
+  activeOrder?: Order | null;
+  onTrackOrder?: (orderId: string) => void;
 }
 
 // Sparkle/Ember interface for Bhatti Sparks
@@ -78,6 +81,8 @@ export default function HomeTab({
   cartMealIds = [],
   cart = [],
   onUpdateQuantity,
+  activeOrder,
+  onTrackOrder,
 }: HomeTabProps) {
   const getMealCartQuantity = (mealId: string): number => {
     const item = cart.find((i) => i.meal.id === mealId);
@@ -1283,6 +1288,14 @@ export default function HomeTab({
           ))}
         </div>
       </section>
+
+      {/* FLOATING PERSISTENT ACTIVE ORDER TRACKING BUBBLE ON HOMEPAGE */}
+      {activeOrder && onTrackOrder && (
+        <ActiveOrderFloatingBubble
+          order={activeOrder}
+          onTrackOrder={onTrackOrder}
+        />
+      )}
 
     </div>
   );

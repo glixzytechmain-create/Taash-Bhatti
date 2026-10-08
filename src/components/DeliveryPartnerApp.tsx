@@ -67,6 +67,7 @@ import { db, auth } from '../lib/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import InAppDeliveryMap from './InAppDeliveryMap';
 import { getOfflineQueue, enqueueOfflineDelivery, flushOfflineSyncQueue } from '../lib/riderOfflineSync';
+import { creditGoldenEmbersForShortfall, awardStandardEmberCoinsOnOrderCompletion } from '../lib/walletService';
 
 interface DeliveryPartnerAppProps {
   onExitGateway: () => void;
@@ -1558,6 +1559,29 @@ export default function DeliveryPartnerApp({
         setPendingOfflineCount(getOfflineQueue().length);
       }
 
+      // Credit deferred Golden Embers for COD orders only now that customer paid and received order
+      const targetCustomerUserId = activeUnlockedOrder.userId || (activeUnlockedOrder as any).guestId || 'guest_user';
+      if (activeUnlockedOrder.pendingEmberBonus && activeUnlockedOrder.pendingEmberBonus > 0 && !activeUnlockedOrder.gecBonusAwarded) {
+        try {
+          await creditGoldenEmbersForShortfall({
+            userId: targetCustomerUserId,
+            orderId: activeUnlockedOrder.id,
+            amount: activeUnlockedOrder.pendingEmberBonus
+          });
+          updatePayload.gecBonusAwarded = true;
+          await updateDoc(orderRef, { gecBonusAwarded: true });
+        } catch (e) {
+          console.warn("Could not credit deferred Golden Embers on delivery:", e);
+        }
+      }
+
+      // Award standard ember reward on delivery completion
+      try {
+        await awardStandardEmberCoinsOnOrderCompletion(activeUnlockedOrder, targetCustomerUserId);
+      } catch (e) {
+        console.warn("Could not award standard embers on delivery:", e);
+      }
+
       // Update partner deliveries completed count
       try {
         const partnerRef = doc(db, 'delivery_partners', currentPartner.id);
@@ -1573,6 +1597,7 @@ export default function DeliveryPartnerApp({
         kdsPickupStage: 'delivered',
         deliveredAt: new Date().toISOString(),
         trackingSteps: updatedSteps,
+        gecBonusAwarded: true,
       };
 
       setActiveUnlockedOrder(updatedOrder);
@@ -2252,39 +2277,41 @@ export default function DeliveryPartnerApp({
                 </button>
               </div>
 
-              {/* ALWAYS VISIBLE LIVE DELIVERY MAP WITH DIRECTIONS */}
-              <InAppDeliveryMap
-                orderId={activeUnlockedOrder.id}
-                orderStatus={activeUnlockedOrder.status}
-                kitchenName={originKitchen.name}
-                kitchenAddress={originKitchen.address}
-                kitchenLat={originKitchen.lat}
-                kitchenLng={originKitchen.lng}
-                customerAddress={activeUnlockedOrder.address}
-                customerName={activeUnlockedOrder.customerName}
-                customerPhone={activeUnlockedOrder.customerPhone}
-                riderName={currentPartner?.name}
-                riderPhone={currentPartner?.phone}
-                riderVehicleNumber={currentPartner?.vehicleNumber || 'BR-06-EV-9921'}
-                riderLat={riderRealCoords?.lat || activeUnlockedOrder.riderLat || currentPartner?.lat}
-                riderLng={riderRealCoords?.lng || activeUnlockedOrder.riderLng || currentPartner?.lng}
-                riderStatus={
-                  stepNum <= 2
-                    ? 'en_route_kitchen'
-                    : stepNum === 3
-                    ? 'arrived_kitchen'
-                    : stepNum === 4
-                    ? 'en_route_customer'
-                    : isDelivered
-                    ? 'delivered'
-                    : 'arrived_customer'
-                }
-                isRiderView={true}
-                chatMessages={activeUnlockedOrder.chatMessages || []}
-                onSendMessage={(text) => handleRiderSendMessage(activeUnlockedOrder.id, text)}
-                onEnableGps={enableRiderGps}
-                gpsActive={riderGpsActive}
-              />
+              {/* ALWAYS VISIBLE LIVE DELIVERY MAP WITH DIRECTIONS - MAX WIDTH SCREEN COVERAGE */}
+              <div className="-mx-4 sm:-mx-6 w-[calc(100%+2rem)] sm:w-[calc(100%+3rem)] overflow-hidden rounded-none sm:rounded-2xl my-1">
+                <InAppDeliveryMap
+                  orderId={activeUnlockedOrder.id}
+                  orderStatus={activeUnlockedOrder.status}
+                  kitchenName={originKitchen.name}
+                  kitchenAddress={originKitchen.address}
+                  kitchenLat={originKitchen.lat}
+                  kitchenLng={originKitchen.lng}
+                  customerAddress={activeUnlockedOrder.address}
+                  customerName={activeUnlockedOrder.customerName}
+                  customerPhone={activeUnlockedOrder.customerPhone}
+                  riderName={currentPartner?.name}
+                  riderPhone={currentPartner?.phone}
+                  riderVehicleNumber={currentPartner?.vehicleNumber || 'BR-06-EV-9921'}
+                  riderLat={riderRealCoords?.lat || activeUnlockedOrder.riderLat || currentPartner?.lat}
+                  riderLng={riderRealCoords?.lng || activeUnlockedOrder.riderLng || currentPartner?.lng}
+                  riderStatus={
+                    stepNum <= 2
+                      ? 'en_route_kitchen'
+                      : stepNum === 3
+                      ? 'arrived_kitchen'
+                      : stepNum === 4
+                      ? 'en_route_customer'
+                      : isDelivered
+                      ? 'delivered'
+                      : 'arrived_customer'
+                  }
+                  isRiderView={true}
+                  chatMessages={activeUnlockedOrder.chatMessages || []}
+                  onSendMessage={(text) => handleRiderSendMessage(activeUnlockedOrder.id, text)}
+                  onEnableGps={enableRiderGps}
+                  gpsActive={riderGpsActive}
+                />
+              </div>
 
               {/* LIVE ROUTE TELEMETRY & TRANSIT PROGRESSION CONTROLS */}
               {(stepNum >= 3 || activeUnlockedOrder.status === 'out_for_delivery' || activeUnlockedOrder.kdsPickupStage === 'arrived_kitchen') && (

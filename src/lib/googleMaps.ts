@@ -166,25 +166,25 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<st
   return `Pinpoint (${lat.toFixed(4)}, ${lng.toFixed(4)}), Muzaffarpur`;
 }
 
-// Classic detailed dark map style (Uber / Swiggy inspired with high road contrast)
-export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#111822" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#111822" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8E9DAE" }] },
+// Taash Bhatti Signature Dark Forest Green & Copper Accents Map Style
+export const TAASH_BHATTI_BRAND_MAP_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: "geometry", stylers: [{ color: "#0C130F" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#0C130F" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#E2E8F0" }] },
   {
     featureType: "administrative.locality",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#D1D5DB" }],
+    stylers: [{ color: "#FAF8F5" }],
   },
   {
     featureType: "poi",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#4B5563" }],
+    stylers: [{ color: "#94A3B8" }],
   },
   {
     featureType: "poi.park",
     elementType: "geometry",
-    stylers: [{ color: "#0F1F18" }],
+    stylers: [{ color: "#12291E" }],
   },
   {
     featureType: "poi.park",
@@ -194,56 +194,61 @@ export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
   {
     featureType: "road",
     elementType: "geometry",
-    stylers: [{ color: "#1E293B" }],
+    stylers: [{ color: "#16231A" }],
   },
   {
     featureType: "road",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#0F172A" }],
+    stylers: [{ color: "#09100C" }],
   },
   {
     featureType: "road",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#94A3B8" }],
+    stylers: [{ color: "#CBD5E1" }],
   },
   {
     featureType: "road.highway",
     elementType: "geometry",
-    stylers: [{ color: "#334155" }],
+    stylers: [{ color: "#C06C38" }], // Signature warm copper highway
   },
   {
     featureType: "road.highway",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#1E293B" }],
+    stylers: [{ color: "#6A3618" }], // Deep bronze edge
   },
   {
     featureType: "road.highway",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#F8FAFC" }],
+    stylers: [{ color: "#FFFBEB" }],
+  },
+  {
+    featureType: "road.arterial",
+    elementType: "geometry",
+    stylers: [{ color: "#3B261A" }], // Subtle copper/bronze undertone
   },
   {
     featureType: "transit",
     elementType: "geometry",
-    stylers: [{ color: "#1E293B" }],
+    stylers: [{ color: "#16231A" }],
   },
   {
     featureType: "transit.station",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#94A3B8" }],
+    stylers: [{ color: "#A7F3D0" }],
   },
   {
     featureType: "water",
     elementType: "geometry",
-    stylers: [{ color: "#0B131E" }],
+    stylers: [{ color: "#081A14" }], // Deep emerald water
   },
   {
     featureType: "water",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#475569" }],
+    stylers: [{ color: "#2DD4BF" }],
   },
 ];
 
-export const TAASH_BHATTI_BRAND_MAP_STYLE: google.maps.MapTypeStyle[] = DARK_MAP_STYLE;
+export const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = TAASH_BHATTI_BRAND_MAP_STYLE;
 
 // Map style definition for light theme
 export const LIGHT_MAP_STYLE: google.maps.MapTypeStyle[] = [

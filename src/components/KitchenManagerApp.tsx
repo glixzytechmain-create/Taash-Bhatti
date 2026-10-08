@@ -59,7 +59,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, TableServiceRequest, DEFAULT_SERVICE_BELLS } from '../types';
-import { doc, updateDoc, collection, onSnapshot, setDoc, query, where, addDoc, deleteDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, onSnapshot, setDoc, query, where, addDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import InAppDeliveryMap from './InAppDeliveryMap';
 import RainEffect from './RainEffect';
@@ -898,17 +898,72 @@ export default function KitchenManagerApp({
   const handleAcceptOrder = async (orderId: string) => {
     if (!activeKitchen) return;
     try {
-      const updateData = {
+      const orderRef = doc(db, 'orders', orderId);
+      const snap = await getDoc(orderRef);
+      const existingOrder = snap.exists() ? (snap.data() as Order) : null;
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      let updatedSteps: any[] = [];
+      if (existingOrder && Array.isArray(existingOrder.trackingSteps)) {
+        updatedSteps = existingOrder.trackingSteps.map((step) => {
+          if (step.title.includes('Kitchen Acceptance') || step.title.includes('Chef Preparation') || step.title.includes('Order Transmitted')) {
+            if (step.title.includes('Kitchen Acceptance') || step.title.includes('Chef Preparation')) {
+              return {
+                ...step,
+                title: `Accepted by ${activeKitchen.name}`,
+                description: `Fresh clay-oven preparation underway at ${activeKitchen.name} (${activeKitchen.address}).`,
+                done: true,
+                time: nowTime
+              };
+            }
+            return { ...step, done: true };
+          }
+          return step;
+        });
+      } else {
+        updatedSteps = [
+          { title: 'Order Placed & Confirmed', description: 'Transmitted to kitchen.', done: true, time: nowTime },
+          { title: `Accepted by ${activeKitchen.name}`, description: `Cooking started at ${activeKitchen.name}`, done: true, time: nowTime },
+          { title: 'Out for Delivery', description: 'Assigned rider on the way.', done: false }
+        ];
+      }
+
+      const updateData: any = {
         acceptedByKitchenId: activeKitchen.id,
         acceptedKitchenName: activeKitchen.name,
         acceptedKitchenAddress: activeKitchen.address,
         acceptedKitchenLat: activeKitchen.lat,
         acceptedKitchenLng: activeKitchen.lng,
+        kitchenId: activeKitchen.id,
+        kitchenName: activeKitchen.name,
+        kitchenAddress: activeKitchen.address,
+        kitchenLat: activeKitchen.lat,
+        kitchenLng: activeKitchen.lng,
         status: 'cooking',
         kdsStage: 'cooking',
-        cookingStartedAt: new Date().toISOString()
+        cookingStartedAt: new Date().toISOString(),
+        trackingSteps: updatedSteps
       };
-      await updateDoc(doc(db, 'orders', orderId), updateData);
+
+      await updateDoc(orderRef, updateData);
+
+      // Synchronize in local orders cache
+      try {
+        const cachedStr = localStorage.getItem('taashbhatti_orders_cache');
+        if (cachedStr) {
+          const cachedOrders: Order[] = JSON.parse(cachedStr);
+          const next = cachedOrders.map(o => o.id === orderId ? { ...o, ...updateData } : o);
+          localStorage.setItem('taashbhatti_orders_cache', JSON.stringify(next));
+        }
+      } catch (e) {}
+
+      // Broadcast custom event for live customer tracking refresh
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('taashbhatti_order_status_updated', {
+          detail: { orderId, status: 'cooking', kitchen: activeKitchen }
+        }));
+      }
+
       playKitchenChime('complete');
       if (enableVoiceAnnounce) {
         speakToKitchen(`Ticket accepted. Commencing cooking.`);
