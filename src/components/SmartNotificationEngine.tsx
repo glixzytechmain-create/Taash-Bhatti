@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Order, User } from '../types';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { smartPushService } from '../lib/smartPushService';
 
 export interface SmartNotification {
