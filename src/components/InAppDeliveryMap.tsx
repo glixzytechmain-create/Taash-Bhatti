@@ -246,6 +246,7 @@ export default function InAppDeliveryMap({
     // Fallback seed until geocoder resolves the exact destination string
     return { lat: 26.1209, lng: 85.3647 };
   });
+  const [geocodedCustomerAddress, setGeocodedCustomerAddress] = useState<string>('');
   const [kitchenCoords, setKitchenCoords] = useState<{ lat: number; lng: number } | null>(() => {
     if (kitchenLat && kitchenLng && !isNaN(kitchenLat) && !isNaN(kitchenLng) && kitchenLat !== 0) {
       return { lat: kitchenLat, lng: kitchenLng };

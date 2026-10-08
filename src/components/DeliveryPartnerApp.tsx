@@ -152,14 +152,14 @@ export default function DeliveryPartnerApp({
           name: auth.currentUser.displayName || 'Delivery Partner',
           phone: auth.currentUser.phoneNumber || '+91 98765 43210',
           email: emailLower,
+          password: '',
+          kitchenId: 'k1',
           vehicleNumber: 'BR-06-TB-2026',
-          vehicleType: 'EV Scooter',
-          isActive: true,
-          isOnline: true,
+          vehicleType: 'ev_two_wheeler',
+          status: 'active',
           rating: 4.9,
-          totalDeliveries: 12,
-          walletBalance: 0,
-          pendingCashToDeposit: 0,
+          deliveriesCompleted: 12,
+          cashInHand: 0,
         };
         setCurrentPartner(autoPartner);
         localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(autoPartner));

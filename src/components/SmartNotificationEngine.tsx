@@ -157,7 +157,7 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
                 liveEta: currentLiveEta,
                 icon: 'flame'
               });
-            } else if (order.status === 'ready_for_pickup' || order.status === 'ready') {
+            } else if (order.status === 'ready_for_pickup' || order.status === 'prepared') {
               addNotification({
                 title: '✨ Plated & Packed!',
                 message: `Order #${order.id.slice(-4)} is packed warm. Proximity courier assigned.`,

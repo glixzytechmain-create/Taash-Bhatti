@@ -103,7 +103,7 @@ export default function Header({
 
   useEffect(() => {
     const handleScroll = () => {
-      const currentScrollY = window.scrollY;
+      const currentScrollY = window.scrollY || document.documentElement.scrollTop || 0;
       setIsScrolled(currentScrollY > 15);
 
       // Compute page scroll percentage
@@ -123,7 +123,11 @@ export default function Header({
   return (
     <>
       <header
-        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 8px)' }}
+        style={{
+          paddingTop: 'max(env(safe-area-inset-top, 0px), 8px)',
+          position: 'sticky',
+          top: 0
+        }}
         className={`sticky top-0 z-40 w-full transition-all duration-300 ${
           isScrolled
             ? 'pb-1.5 sm:pb-2.5 px-2 sm:px-4'

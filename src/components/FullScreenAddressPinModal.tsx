@@ -97,6 +97,8 @@ export default function FullScreenAddressPinModal({
   const [zoomLevel, setZoomLevel] = useState(16);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
   const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+  const [autocompletePredictions, setAutocompletePredictions] = useState<{ description: string; placeId?: string }[]>([]);
+  const [showPredictionsDropdown, setShowPredictionsDropdown] = useState<boolean>(false);
 
   useEffect(() => {
     const handleFail = () => setUseLeaflet(true);
