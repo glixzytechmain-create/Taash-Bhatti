@@ -64,8 +64,8 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
   onSignOut,
 }) => {
   // Step flow:
-  // 'phone_input' -> ('atp_input' for registered accounts OR 'otp_input' for first-time) -> 'verifying' -> 'verified'
-  const [step, setStep] = useState<'phone_input' | 'atp_input' | 'otp_input' | 'verifying' | 'verified'>('phone_input');
+  // 'phone_input' -> 'ask_atp' -> ('atp_input' OR 'otp_input') -> 'verifying' -> 'verified'
+  const [step, setStep] = useState<'phone_input' | 'ask_atp' | 'atp_input' | 'otp_input' | 'verifying' | 'verified'>('phone_input');
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(COUNTRY_CODES[0]);
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [showCountryPicker, setShowCountryPicker] = useState<boolean>(false);
@@ -355,33 +355,17 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
         }
       }
 
-      // 2. Check if this is a REGISTERED account with an existing All-Time Password (ATP)
+      // 2. Route to ATP pre-check question step so user can choose ATP entry vs Voice Call/SMS OTP
       const knownAtp = user.atp || existingAccountWithPhone?.data?.atp;
       if (knownAtp && knownAtp.trim().length === 6) {
-        // Registered account with ATP! Allow instant ATP entry with option to request Call / SMS code
         setRegisteredAtp(knownAtp.trim());
-        setStep('atp_input');
-        setAtpDigits(['', '', '', '', '', '']);
-        setInfoMessage('Welcome back! Enter your 6-digit All-Time Password (ATP) or request a Voice Call / SMS OTP.');
-        setLoading(false);
-        setTimeout(() => {
-          atpInputRefs.current[0]?.focus();
-        }, 300);
-        return;
       }
-
-      // 3. FIRST-TIME account (no ATP yet): Dispatch via selected channel
-      if (selectedChannel === 'voice') {
-        await dispatchTwoFactorOtp('voice');
-      } else if (selectedChannel === 'whatsapp') {
-        await dispatchTwoFactorOtp('whatsapp');
-      } else {
-        await dispatchRealSmsOtp('sms');
-      }
+      setStep('ask_atp');
     } catch (err: any) {
       console.warn('Phone check note:', err);
-      // Fallback: 2Factor Voice or SMS
-      await dispatchTwoFactorOtp(selectedChannel || 'voice');
+      setStep('ask_atp');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -444,7 +428,7 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
       return;
     }
 
-    if (!registeredAtp || code !== registeredAtp) {
+    if (registeredAtp && code !== registeredAtp) {
       setErrorMessage('Incorrect All-Time Password (ATP). Please check or request a Voice Call / SMS OTP.');
       return;
     }
@@ -454,6 +438,7 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
 
     try {
       const activeUid = auth.currentUser?.uid || user.id;
+      const finalAtp = registeredAtp || code;
       if (activeUid) {
         const userRef = doc(db, 'users', activeUid);
         await setDoc(
@@ -461,7 +446,7 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
           {
             phone: fullE164Phone,
             isPhoneVerified: true,
-            atp: registeredAtp,
+            atp: finalAtp,
             updatedAt: new Date().toISOString(),
           },
           { merge: true }
@@ -471,7 +456,7 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
       // Plain logo verifying animation duration (1.2s)
       await new Promise((r) => setTimeout(r, 1200));
 
-      onSuccess(fullE164Phone, registeredAtp);
+      onSuccess(fullE164Phone, finalAtp);
     } catch (err: any) {
       console.warn('ATP confirmation error:', err);
       setStep('atp_input');
@@ -829,27 +814,117 @@ export const MandatoryPhoneVerificationModal: React.FC<MandatoryPhoneVerificatio
                   <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    {selectedChannel === 'voice' ? (
-                      <>
-                        <PhoneCall className="w-4 h-4" />
-                        <span>Receive Verification Call</span>
-                      </>
-                    ) : selectedChannel === 'whatsapp' ? (
-                      <>
-                        <MessageCircle className="w-4 h-4" />
-                        <span>Send WhatsApp OTP</span>
-                      </>
-                    ) : (
-                      <>
-                        <MessageSquare className="w-4 h-4" />
-                        <span>Send SMS Verification Code</span>
-                      </>
-                    )}
+                    <span>Continue to Verification</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setStep('ask_atp')}
+                  disabled={!cleanPhone}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-bold inline-flex items-center gap-1.5 cursor-pointer hover:underline disabled:opacity-40"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Already have a 6-digit ATP? Verify with ATP →</span>
+                </button>
+              </div>
             </form>
+          )}
+
+          {/* STEP 1B: ASK USER IF THEY HAVE AN ALL-TIME PASSWORD (ATP) BEFORE DISPATCHING OTP */}
+          {step === 'ask_atp' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="text-center space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-black uppercase tracking-wider">
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Security Check • {fullE164Phone}</span>
+                </div>
+                <h4 className="text-sm font-black text-white">Do you have a 6-Digit All-Time Password (ATP)?</h4>
+                <p className="text-xs text-gray-300">
+                  If you have already set up or received a 6-digit ATP for this mobile number, enter it now for instant verification without waiting for an OTP call or SMS.
+                </p>
+              </div>
+
+              <div className="space-y-2.5">
+                {/* YES: Enter ATP */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('atp_input');
+                    setAtpDigits(['', '', '', '', '', '']);
+                    setTimeout(() => {
+                      atpInputRefs.current[0]?.focus();
+                    }, 300);
+                  }}
+                  className="w-full p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/10 border-2 border-amber-500/50 hover:border-amber-400 text-left transition-all cursor-pointer flex items-center justify-between group shadow-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/30 border border-amber-400 text-amber-300 flex items-center justify-center font-bold shrink-0">
+                      <KeyRound className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-amber-300 block uppercase tracking-wide">
+                        Yes, I have a 6-Digit ATP
+                      </span>
+                      <span className="text-[11px] text-gray-300">
+                        Instant verification • Zero OTP waiting time
+                      </span>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-transform" />
+                </button>
+
+                {/* NO: Send OTP */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (selectedChannel === 'voice') {
+                      await dispatchTwoFactorOtp('voice');
+                    } else if (selectedChannel === 'whatsapp') {
+                      await dispatchTwoFactorOtp('whatsapp');
+                    } else {
+                      await dispatchRealSmsOtp('sms');
+                    }
+                  }}
+                  disabled={loading}
+                  className="w-full p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 text-left transition-all cursor-pointer flex items-center justify-between group disabled:opacity-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 text-gray-300 flex items-center justify-center font-bold shrink-0">
+                      {selectedChannel === 'voice' ? (
+                        <PhoneCall className="w-5 h-5 text-amber-400" />
+                      ) : selectedChannel === 'whatsapp' ? (
+                        <MessageCircle className="w-5 h-5 text-emerald-400" />
+                      ) : (
+                        <MessageSquare className="w-5 h-5 text-amber-400" />
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-white block uppercase tracking-wide">
+                        No, Send me a Verification OTP
+                      </span>
+                      <span className="text-[11px] text-gray-400">
+                        Dispatch via {selectedChannel === 'voice' ? 'Voice Call' : selectedChannel === 'whatsapp' ? 'WhatsApp' : 'SMS OTP'}
+                      </span>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-gray-400 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setStep('phone_input')}
+                  className="text-xs text-gray-400 hover:text-white hover:underline cursor-pointer"
+                >
+                  ← Change mobile number
+                </button>
+              </div>
+            </div>
           )}
 
           {/* STEP 2A: REGISTERED ACCOUNT ATP INPUT */}

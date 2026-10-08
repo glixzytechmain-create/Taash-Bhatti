@@ -977,6 +977,25 @@ export default function InAppDeliveryMap({
     });
   }, [isAdminView, mapLoaded, allActiveOrders, allRiders]);
 
+  const [showStepsList, setShowStepsList] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (googleMapRef.current && window.google?.maps) {
+      setTimeout(() => {
+        window.google.maps.event.trigger(googleMapRef.current, 'resize');
+        handleRecenter();
+      }, 150);
+    }
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
+
   const handleRecenter = () => {
     if (!googleMapRef.current || !window.google?.maps) return;
     isUserPanningRef.current = false;
@@ -986,28 +1005,31 @@ export default function InAppDeliveryMap({
     const map = googleMapRef.current;
     const gMaps = window.google.maps;
 
-    if (!isRiderView) {
-      try {
-        if (typeof (map as any).setTilt === 'function') (map as any).setTilt(0);
-        if (typeof (map as any).setHeading === 'function') (map as any).setHeading(0);
-      } catch (e) {}
-    }
+    try {
+      if (typeof (map as any).setTilt === 'function') (map as any).setTilt(0);
+      if (typeof (map as any).setHeading === 'function') (map as any).setHeading(0);
+    } catch (e) {}
 
-    if (!isKitchenAccepted || !kitchenCoords) {
-      map.panTo(customerCoords);
-      map.setZoom(15);
-      return;
-    }
+    const isHeadingToKitchen = isRiderView && (
+      riderStatus === 'en_route_kitchen' ||
+      riderStatus === 'arrived_kitchen' ||
+      riderStatus === 'accepted' ||
+      currentStatus.includes('en_route_kitchen') ||
+      (!currentStatus.includes('out_for_delivery') && !currentStatus.includes('delivered') && !currentStatus.includes('picked_up'))
+    );
+    const targetDestination = (isHeadingToKitchen && kitchenCoords) ? kitchenCoords : customerCoords;
 
     const bounds = new gMaps.LatLngBounds();
-    bounds.extend(customerCoords);
-    if (kitchenCoords) {
+    bounds.extend(currentRiderPos);
+    if (targetDestination) {
+      bounds.extend(targetDestination);
+    }
+    if (!isRiderView && kitchenCoords) {
       bounds.extend(kitchenCoords);
     }
-    if (!isTakeaway && isRiderAssigned && riderMarkerRef.current) {
-      bounds.extend(currentRiderPos);
-    }
-    map.fitBounds(bounds, { top: 60, bottom: 65, left: 60, right: 60 });
+
+    // Zoom in to the highest possible scale where both rider and destination are clearly visible together
+    map.fitBounds(bounds, { top: 45, bottom: 55, left: 45, right: 45 });
   };
 
   const handleSendChatText = (textToSend?: string) => {
@@ -1310,6 +1332,57 @@ export default function InAppDeliveryMap({
           </div>
         )}
 
+        {/* Fullscreen Turn-by-Turn Guidance Drawer */}
+        {isFullscreen && navigationSteps.length > 0 && isKitchenAccepted && (
+          <div className="absolute top-28 left-3 right-3 sm:left-4 sm:w-[460px] z-30 space-y-2 pointer-events-auto">
+            <div className="bg-[#005751] text-white p-3 rounded-2xl shadow-2xl border-2 border-teal-300/60 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 bg-white text-[#005751] rounded-xl flex items-center justify-center shrink-0 font-bold shadow-md">
+                  <Navigation className="w-5 h-5 fill-current" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[9px] uppercase font-mono tracking-wider text-teal-200 font-bold">
+                    Turn Directions • {(Number.isFinite(liveDistanceKm) ? liveDistanceKm : 2.4).toFixed(1)} km
+                  </div>
+                  <div className="font-extrabold text-xs sm:text-sm text-white truncate">
+                    {navigationSteps[0]?.instruction} {navigationSteps[0]?.distance ? `(${navigationSteps[0]?.distance})` : ''}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowStepsList(!showStepsList);
+                }}
+                className="bg-black/40 hover:bg-black/60 text-white font-bold px-2.5 py-1.5 rounded-xl text-[11px] border border-white/20 transition-all shrink-0 cursor-pointer"
+              >
+                {showStepsList ? 'Hide Steps' : `All ${navigationSteps.length} Steps`}
+              </button>
+            </div>
+
+            {showStepsList && (
+              <div className="bg-slate-900/95 border border-teal-500/40 rounded-2xl p-3 max-h-56 overflow-y-auto space-y-2 shadow-2xl backdrop-blur-md text-xs font-sans">
+                <span className="text-[10px] font-black uppercase text-teal-300 tracking-wider block border-b border-slate-800 pb-1">
+                  Full Route Directions ({navigationSteps.length} steps):
+                </span>
+                {navigationSteps.map((step, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-slate-200 border-b border-slate-800/60 last:border-0 pb-1.5">
+                    <span className="w-5 h-5 rounded-full bg-teal-900 text-teal-300 font-mono text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-slate-100">{step.instruction}</p>
+                      {step.distance && <span className="text-[10px] text-teal-400 font-mono">{step.distance}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className={`relative w-full ${isFullscreen ? 'flex-1' : 'h-full'} overflow-hidden`}>
           <div ref={mapContainerRef} className="w-full h-full z-0 cursor-grab active:cursor-grabbing" />
 
@@ -1349,6 +1422,7 @@ export default function InAppDeliveryMap({
               </span>
             </div>
           )}
+        </div>
 
         {/* Currently Raining Animation & Floating Radar Badge (Only after kitchen acceptance) */}
         {isRaining && isKitchenAccepted && (
@@ -1731,7 +1805,6 @@ export default function InAppDeliveryMap({
             </button>
           </div>
         )}
-        </div>
 
         {/* Fullscreen Bottom Info Footer */}
         {isFullscreen && (
@@ -2280,6 +2353,7 @@ export default function InAppDeliveryMap({
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -135,6 +135,37 @@ export default function DeliveryPartnerApp({
     return null;
   });
 
+  // Auto-bind session for logged in rider account
+  useEffect(() => {
+    if (auth.currentUser && auth.currentUser.email) {
+      const emailLower = auth.currentUser.email.trim().toLowerCase();
+      const matched = fleet.find(p => p.email?.toLowerCase() === emailLower);
+      if (matched) {
+        if (!currentPartner || currentPartner.id !== matched.id) {
+          setCurrentPartner(matched);
+          localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(matched));
+        }
+      } else if (!currentPartner || currentPartner.email?.toLowerCase() !== emailLower) {
+        const autoPartner: DeliveryPartner = {
+          id: auth.currentUser.uid || 'rider_' + Date.now(),
+          name: auth.currentUser.displayName || 'Delivery Partner',
+          phone: auth.currentUser.phoneNumber || '+91 98765 43210',
+          email: emailLower,
+          vehicleNumber: 'BR-06-TB-2026',
+          vehicleType: 'EV Scooter',
+          isActive: true,
+          isOnline: true,
+          rating: 4.9,
+          totalDeliveries: 12,
+          walletBalance: 0,
+          pendingCashToDeposit: 0,
+        };
+        setCurrentPartner(autoPartner);
+        localStorage.setItem('taashbhatti_active_dp_session', JSON.stringify(autoPartner));
+      }
+    }
+  }, [auth.currentUser?.email, fleet]);
+
   // Login Form States
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -748,12 +779,24 @@ export default function DeliveryPartnerApp({
     }
   };
 
-  const handleLogoutPartner = () => {
-    setCurrentPartner(null);
+  const handleLogoutPartner = async () => {
+    try {
+      await auth.signOut();
+    } catch (e) {
+      console.warn("Firebase Auth sign out error:", e);
+    }
     localStorage.removeItem('taashbhatti_active_dp_session');
     localStorage.removeItem('taashbhatti_active_unlocked_order_id');
+    localStorage.removeItem('taashbhatti_cached_fb_user');
+    localStorage.removeItem('taashbhatti_cached_user_profile');
+    localStorage.removeItem('taashbhatti_auth_session');
+    localStorage.setItem('taashbhatti_gateway', 'customer');
+    setCurrentPartner(null);
     setActiveUnlockedOrder(null);
     setOrderSearchId('');
+    if (onExitGateway) {
+      onExitGateway();
+    }
   };
 
   // Close / Cancel current order view
@@ -1580,106 +1623,15 @@ export default function DeliveryPartnerApp({
     (o) => o.status !== 'delivered' && o.status !== 'cancelled'
   );
 
-  // If no partner session active, display dedicated Rider Fleet Sign In Portal
+  // If no partner session active, exit gateway to main customer app
+  useEffect(() => {
+    if (!currentPartner && onExitGateway) {
+      onExitGateway();
+    }
+  }, [currentPartner, onExitGateway]);
+
   if (!currentPartner) {
-    return (
-      <div className="min-h-screen bg-[#0B0F14] text-white flex flex-col justify-center items-center p-4 font-sans">
-        <div className="max-w-md w-full bg-[#121820] border border-brand-green/20 rounded-3xl p-8 text-left space-y-6 shadow-2xl">
-          <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-            <div className="w-12 h-12 rounded-2xl bg-brand-green/10 border border-brand-green/30 text-brand-green flex items-center justify-center">
-              <Truck className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-black uppercase text-white tracking-wide">
-                Delivery Partner Portal
-              </h2>
-              <p className="text-xs text-gray-400">
-                Taash Bhatti Central Rider Fleet Authentication
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            {loginError && (
-              <div className="p-3 bg-red-950/80 border border-red-500/50 rounded-xl text-xs text-red-200 flex items-center gap-2 font-medium">
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                <span>{loginError}</span>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">
-                Fleet ID, Email or Registered Phone
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="e.g. rider@taashbhatti.com or +91 98765..."
-                  required
-                  className="w-full pl-10 pr-4 py-3 bg-[#0A0E13] border border-white/10 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">
-                Fleet Security Passcode
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  required
-                  className="w-full pl-10 pr-10 py-3 bg-[#0A0E13] border border-white/10 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-brand-green font-medium font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white p-1"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="w-full py-3.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
-            >
-              {isLoggingIn ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Verifying Credentials...</span>
-                </>
-              ) : (
-                <>
-                  <span>Sign In to Rider Fleet</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-
-          <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
-            <span className="text-[10px] text-gray-500 font-mono">End-to-End Encrypted Fleet Link</span>
-            <button
-              type="button"
-              onClick={onExitGateway}
-              className="text-[10px] text-gray-400 hover:text-white uppercase font-bold tracking-wider cursor-pointer"
-            >
-              ← Back to App
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // LOGGED IN DELIVERY PARTNER CONSOLE

@@ -707,6 +707,7 @@ export default function App() {
     !authChecking &&
     currentGateway === 'customer' &&
     !!fbUser &&
+    !(user.role === 'rider' || user.role === 'delivery_partner' || user.isRider || (user.email && user.email.toLowerCase().includes('rider'))) &&
     !((user.phone && user.phone.replace(/\D/g, '').length >= 10 && user.isPhoneVerified) || !!fbUser.phoneNumber);
 
   // Developer Feature Flags & Menu State
@@ -1076,9 +1077,20 @@ export default function App() {
 
   // Mandatory Phone Verification Watcher:
   // Every customer logged in (via Google, Apple, or Email/Password) must have a verified phone number via SMS OTP.
+  // Note: Rider accounts do NOT need phone verification for now.
   useEffect(() => {
     if (authChecking) return;
     if (currentGateway === 'customer' && fbUser) {
+      const isRiderAccount = Boolean(
+        user.role === 'rider' ||
+        user.role === 'delivery_partner' ||
+        user.isRider ||
+        (user.email && user.email.toLowerCase().includes('rider'))
+      );
+      if (isRiderAccount) {
+        setShowMandatoryPhoneModal(false);
+        return;
+      }
       const cleanPhone = (user.phone || fbUser.phoneNumber || '').replace(/\D/g, '');
       const isVerified = user.isPhoneVerified || !!fbUser.phoneNumber;
       if (!cleanPhone || cleanPhone.length < 10 || !isVerified) {
@@ -1089,7 +1101,25 @@ export default function App() {
     } else {
       setShowMandatoryPhoneModal(false);
     }
-  }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified]);
+  }, [authChecking, currentGateway, fbUser, user.phone, user.isPhoneVerified, user.role, user.isRider, user.email]);
+
+  // Automatic Rider Gateway Route Guardian:
+  // When a rider account signs in or is active, automatically redirect them directly to the Rider Partner App Gateway (<DeliveryPartnerApp />) and NEVER show customer UI.
+  useEffect(() => {
+    if (authChecking) return;
+    if (!fbUser && !auth.currentUser) return;
+    const isRiderAccount = Boolean(
+      user.role === 'rider' ||
+      user.role === 'delivery_partner' ||
+      user.isRider ||
+      (user.email && user.email.toLowerCase().includes('rider')) ||
+      (fbUser?.email && fbUser.email.toLowerCase().includes('rider'))
+    );
+    if (isRiderAccount && currentGateway !== 'partner') {
+      setCurrentGateway('partner');
+      localStorage.setItem('taashbhatti_gateway', 'partner');
+    }
+  }, [authChecking, user.role, user.isRider, user.email, fbUser, currentGateway]);
 
   // Interactive Guided App Tour:
   // - Highlights buttons one-by-one with live in-app navigation
