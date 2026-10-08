@@ -1,10 +1,3 @@
-export const GOOGLE_MAPS_API_KEY: string =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY) ||
-  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY) ||
-  (typeof process !== 'undefined' && (process.env?.GOOGLE_MAPS_PLATFORM_KEY || process.env?.VITE_GOOGLE_MAPS_API_KEY || process.env?.VITE_GOOGLE_MAPS_PLATFORM_KEY)) ||
-  (typeof window !== 'undefined' && ((window as any).GOOGLE_MAPS_PLATFORM_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY)) ||
-  'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE';
-
 export function getGoogleMapsApiKey(): string {
   if (typeof window !== 'undefined') {
     try {
@@ -12,8 +5,16 @@ export function getGoogleMapsApiKey(): string {
       if (custom && custom.trim()) return custom.trim();
     } catch (e) {}
   }
-  return GOOGLE_MAPS_API_KEY;
+  return (
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY) ||
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY) ||
+    (typeof process !== 'undefined' && (process.env?.GOOGLE_MAPS_PLATFORM_KEY || process.env?.VITE_GOOGLE_MAPS_API_KEY || process.env?.VITE_GOOGLE_MAPS_PLATFORM_KEY)) ||
+    (typeof window !== 'undefined' && ((window as any).GOOGLE_MAPS_PLATFORM_KEY || (window as any).VITE_GOOGLE_MAPS_API_KEY)) ||
+    'AIzaSyCZju-0iZDXc3_Q-W4mDQsNjDS96nHRufE'
+  );
 }
+
+export const GOOGLE_MAPS_API_KEY: string = getGoogleMapsApiKey();
 
 export function setCustomGoogleMapsApiKey(key: string): void {
   if (typeof window !== 'undefined') {
@@ -23,22 +24,59 @@ export function setCustomGoogleMapsApiKey(key: string): void {
       } else {
         localStorage.removeItem('taashbhatti_custom_google_maps_key');
       }
+      sessionStorage.removeItem('taashbhatti_gmaps_auth_failed');
       window.dispatchEvent(new CustomEvent('taashbhatti_maps_key_updated'));
     } catch (e) {}
   }
 }
 
+// Global detection of Google Maps authentication errors (RefererNotAllowedMapError, etc.)
+let gmapsAuthFailed = false;
+
+if (typeof window !== 'undefined') {
+  try {
+    if (sessionStorage.getItem('taashbhatti_gmaps_auth_failed') === 'true') {
+      gmapsAuthFailed = true;
+    }
+    const prevAuthFailure = (window as any).gm_authFailure;
+    (window as any).gm_authFailure = () => {
+      console.warn('Google Maps authentication failure on this domain! Auto-activating resilient Leaflet map engine.');
+      gmapsAuthFailed = true;
+      try {
+        sessionStorage.setItem('taashbhatti_gmaps_auth_failed', 'true');
+      } catch (e) {}
+      window.dispatchEvent(new CustomEvent('taashbhatti_maps_auth_failed'));
+      if (typeof prevAuthFailure === 'function') {
+        prevAuthFailure();
+      }
+    };
+  } catch (e) {}
+}
+
 export function isGoogleMapsAuthFailed(): boolean {
-  return false;
+  if (typeof window !== 'undefined' && sessionStorage.getItem('taashbhatti_gmaps_auth_failed') === 'true') {
+    return true;
+  }
+  return gmapsAuthFailed;
 }
 
 export function markGoogleMapsFailed(): void {
-  // No-op: keep Google Maps engine active
+  gmapsAuthFailed = true;
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.setItem('taashbhatti_gmaps_auth_failed', 'true');
+      window.dispatchEvent(new CustomEvent('taashbhatti_maps_auth_failed'));
+    } catch (e) {}
+  }
 }
 
 let googleMapsPromise: Promise<typeof google.maps> | null = null;
 
 export function loadGoogleMaps(): Promise<typeof google.maps> {
+  if (isGoogleMapsAuthFailed()) {
+    return Promise.reject(new Error('Google Maps authentication failed on this domain'));
+  }
+
   if (typeof window !== 'undefined' && window.google && window.google.maps) {
     return Promise.resolve(window.google.maps);
   }
@@ -56,9 +94,19 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
         if (window.google && window.google.maps) resolve(window.google.maps);
         else reject(new Error('google.maps not loaded'));
       });
-      existingScript.addEventListener('error', (e) => reject(e));
+      existingScript.addEventListener('error', (e) => {
+        markGoogleMapsFailed();
+        reject(e);
+      });
       return;
     }
+
+    // Safety timeout: if Google Maps hangs or blocks referrer, reject after 3.5 seconds
+    const safetyTimer = setTimeout(() => {
+      console.warn('Google Maps load timeout. Falling back to Leaflet map engine.');
+      markGoogleMapsFailed();
+      reject(new Error('Google Maps loading timed out'));
+    }, 3500);
 
     const script = document.createElement('script');
     script.id = 'google-maps-js-sdk';
@@ -66,14 +114,18 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
     script.async = true;
     script.defer = true;
     script.onload = () => {
+      clearTimeout(safetyTimer);
       if (window.google && window.google.maps) {
         resolve(window.google.maps);
       } else {
+        markGoogleMapsFailed();
         reject(new Error('Google Maps script loaded but google.maps is not defined'));
       }
     };
     script.onerror = (err) => {
-      console.warn('Google Maps script load error:', err);
+      clearTimeout(safetyTimer);
+      console.warn('Google Maps script load error, switching to Leaflet:', err);
+      markGoogleMapsFailed();
       reject(err);
     };
     document.head.appendChild(script);
@@ -82,7 +134,7 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
   return googleMapsPromise;
 }
 
-// Reverse geocoding via Google Maps Geocoder with fallback
+// Fallback reverse geocoding via OpenStreetMap Nominatim with local fallback
 export async function reverseGeocodeCoords(lat: number, lng: number): Promise<string> {
   if (typeof window !== 'undefined' && window.google?.maps?.Geocoder) {
     try {
@@ -99,6 +151,18 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<st
       if (res) return res;
     } catch (e) {}
   }
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.display_name) {
+        return data.display_name;
+      }
+    }
+  } catch (e) {}
   return `Pinpoint (${lat.toFixed(4)}, ${lng.toFixed(4)}), Muzaffarpur`;
 }
 

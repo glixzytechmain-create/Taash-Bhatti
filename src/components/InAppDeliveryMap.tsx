@@ -43,7 +43,9 @@ import {
   calculateBearing,
   calculateHaversineDistanceKm,
   GOOGLE_MAPS_API_KEY,
+  isGoogleMapsAuthFailed,
 } from '../lib/googleMaps';
+import { LeafletMap } from './LeafletMap';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { ChatMessage, OrderDeliveryRating } from '../types';
 
@@ -159,6 +161,16 @@ export default function InAppDeliveryMap({
   const [userHasPanned, setUserHasPanned] = useState<boolean>(false);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+
+  useEffect(() => {
+    const handleAuthFail = () => {
+      setUseLeaflet(true);
+    };
+    window.addEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
+    return () => window.removeEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
+  }, []);
+
   const [fullscreenSearchQuery, setFullscreenSearchQuery] = useState<string>('');
   const [fullscreenZoomLevel, setFullscreenZoomLevel] = useState<number>(15);
   const [isFullscreenSearching, setIsFullscreenSearching] = useState<boolean>(false);
@@ -1384,7 +1396,21 @@ export default function InAppDeliveryMap({
         )}
 
         <div className={`relative w-full ${isFullscreen ? 'flex-1' : 'h-full'} overflow-hidden`}>
-          <div ref={mapContainerRef} className="w-full h-full z-0 cursor-grab active:cursor-grabbing" />
+          {useLeaflet || isGoogleMapsAuthFailed() || (mapError && !mapLoaded) ? (
+            <LeafletMap
+              center={currentRiderPos || customerCoords}
+              zoom={14}
+              interactive={true}
+              points={[
+                ...(customerCoords ? [{ lat: customerCoords.lat, lng: customerCoords.lng, label: customerName ? `${customerName} (Customer)` : 'Delivery Address', type: 'customer' as const }] : []),
+                ...(kitchenCoords ? [{ lat: kitchenCoords.lat, lng: kitchenCoords.lng, label: kitchenName ? `${kitchenName} (Kitchen)` : 'Bhatti Kitchen', type: 'kitchen' as const }] : []),
+                ...(!isTakeaway && isRiderAssigned && (isRiderLiveOnline || isRiderAtKitchenOrBeyond) && currentRiderPos ? [{ lat: currentRiderPos.lat, lng: currentRiderPos.lng, label: riderName ? `${riderName} (Rider)` : 'Delivery Partner', type: 'rider' as const }] : [])
+              ]}
+              className="w-full h-full"
+            />
+          ) : (
+            <div ref={mapContainerRef} className="w-full h-full z-0 cursor-grab active:cursor-grabbing" />
+          )}
 
           {/* Fullscreen Live Telemetry Badge */}
           {isFullscreen && (

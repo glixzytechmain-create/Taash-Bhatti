@@ -27,7 +27,9 @@ import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap } from '@vis
 import { 
   GOOGLE_MAPS_API_KEY, 
   TAASH_BHATTI_BRAND_MAP_STYLE,
+  isGoogleMapsAuthFailed
 } from '../lib/googleMaps';
+import { LeafletMap } from './LeafletMap';
 
 interface FullScreenAddressPinModalProps {
   isOpen: boolean;
@@ -94,8 +96,13 @@ export default function FullScreenAddressPinModal({
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(16);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
-  const [autocompletePredictions, setAutocompletePredictions] = useState<{ description: string; placeId?: string }[]>([]);
-  const [showPredictionsDropdown, setShowPredictionsDropdown] = useState(false);
+  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+
+  useEffect(() => {
+    const handleFail = () => setUseLeaflet(true);
+    window.addEventListener('taashbhatti_maps_auth_failed', handleFail);
+    return () => window.removeEventListener('taashbhatti_maps_auth_failed', handleFail);
+  }, []);
 
   // Sync initial props on open
   useEffect(() => {
@@ -468,68 +475,83 @@ export default function FullScreenAddressPinModal({
         </div>
       </div>
 
-      {/* FULLSCREEN GOOGLE MAP CONTAINER */}
+      {/* FULLSCREEN MAP CONTAINER */}
       <div className="relative flex-1 w-full bg-slate-950 overflow-hidden">
-        <APIProvider
-          apiKey={GOOGLE_MAPS_API_KEY}
-          version="weekly"
-          solutionChannel="gmp_git_agentskills_v1"
-          libraries={['places', 'geometry', 'drawing']}
-        >
-          <GoogleMap
-            defaultCenter={selectedCoords}
-            defaultZoom={zoomLevel}
-            styles={TAASH_BHATTI_BRAND_MAP_STYLE}
-            disableDefaultUI={true}
-            onClick={(e) => {
-              if (e.detail.latLng) {
-                const lat = typeof (e.detail.latLng as any).lat === 'function' ? (e.detail.latLng as any).lat() : e.detail.latLng.lat;
-                const lng = typeof (e.detail.latLng as any).lng === 'function' ? (e.detail.latLng as any).lng() : e.detail.latLng.lng;
-                handleMapPinMove(lat, lng);
-              }
-            }}
-            mapId="DEMO_MAP_ID"
-            internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
-            style={{ width: '100%', height: '100%' }}
+        {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
+          <LeafletMap
+            center={selectedCoords}
+            zoom={zoomLevel}
+            interactive={true}
+            draggableCustomerPin={true}
+            onCustomerPinMoved={(lat, lng) => handleMapPinMove(lat, lng)}
+            points={[
+              { lat: selectedCoords.lat, lng: selectedCoords.lng, label: 'Delivery Location', type: 'customer' },
+              { lat: kitchenCoords.lat, lng: kitchenCoords.lng, label: `${kitchenName} (Kitchen)`, type: 'kitchen' }
+            ]}
+            className="w-full h-full"
+          />
+        ) : (
+          <APIProvider
+            apiKey={GOOGLE_MAPS_API_KEY}
+            version="weekly"
+            solutionChannel="gmp_git_agentskills_v1"
+            libraries={['places', 'geometry', 'drawing']}
           >
-            <MapCameraController center={selectedCoords} zoom={zoomLevel} />
-
-            {/* Central Kitchen Hub Marker */}
-            <AdvancedMarker
-              position={kitchenCoords}
-              title={`${kitchenName} (Kitchen Hub)`}
-            >
-              <div className="flex flex-col items-center">
-                <div className="bg-amber-500 text-slate-950 font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white flex items-center gap-1 uppercase tracking-wider">
-                  <ChefHat className="w-3 h-3" />
-                  <span>{kitchenName}</span>
-                </div>
-                <Pin background="#F59E0B" glyphColor="#000000" borderColor="#78350F" />
-              </div>
-            </AdvancedMarker>
-
-            {/* Draggable Customer Delivery Pin */}
-            <AdvancedMarker
-              position={selectedCoords}
-              draggable={true}
-              onDragEnd={(e) => {
-                if (e.latLng) {
-                  const lat = typeof (e.latLng as any).lat === 'function' ? (e.latLng as any).lat() : (e.latLng as any).lat;
-                  const lng = typeof (e.latLng as any).lng === 'function' ? (e.latLng as any).lng() : (e.latLng as any).lng;
+            <GoogleMap
+              defaultCenter={selectedCoords}
+              defaultZoom={zoomLevel}
+              styles={TAASH_BHATTI_BRAND_MAP_STYLE}
+              disableDefaultUI={true}
+              onClick={(e) => {
+                if (e.detail.latLng) {
+                  const lat = typeof (e.detail.latLng as any).lat === 'function' ? (e.detail.latLng as any).lat() : e.detail.latLng.lat;
+                  const lng = typeof (e.detail.latLng as any).lng === 'function' ? (e.detail.latLng as any).lng() : e.detail.latLng.lng;
                   handleMapPinMove(lat, lng);
                 }
               }}
+              mapId="DEMO_MAP_ID"
+              internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
+              style={{ width: '100%', height: '100%' }}
             >
-              <div className="flex flex-col items-center">
-                <div className="bg-emerald-500 text-slate-950 font-black text-[9px] px-2.5 py-0.5 rounded-full shadow-xl border-2 border-white uppercase tracking-wider flex items-center gap-1 animate-bounce">
-                  <MapPin className="w-3 h-3" />
-                  <span>Doorstep Pin</span>
+              <MapCameraController center={selectedCoords} zoom={zoomLevel} />
+
+              {/* Central Kitchen Hub Marker */}
+              <AdvancedMarker
+                position={kitchenCoords}
+                title={`${kitchenName} (Kitchen Hub)`}
+              >
+                <div className="flex flex-col items-center">
+                  <div className="bg-amber-500 text-slate-950 font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white flex items-center gap-1 uppercase tracking-wider">
+                    <ChefHat className="w-3 h-3" />
+                    <span>{kitchenName}</span>
+                  </div>
+                  <Pin background="#F59E0B" glyphColor="#000000" borderColor="#78350F" />
                 </div>
-                <Pin background="#10B981" glyphColor="#FFFFFF" borderColor="#064E3B" />
-              </div>
-            </AdvancedMarker>
-          </GoogleMap>
-        </APIProvider>
+              </AdvancedMarker>
+
+              {/* Draggable Customer Delivery Pin */}
+              <AdvancedMarker
+                position={selectedCoords}
+                draggable={true}
+                onDragEnd={(e) => {
+                  if (e.latLng) {
+                    const lat = typeof (e.latLng as any).lat === 'function' ? (e.latLng as any).lat() : (e.latLng as any).lat;
+                    const lng = typeof (e.latLng as any).lng === 'function' ? (e.latLng as any).lng() : (e.latLng as any).lng;
+                    handleMapPinMove(lat, lng);
+                  }
+                }}
+              >
+                <div className="flex flex-col items-center">
+                  <div className="bg-emerald-500 text-slate-950 font-black text-[9px] px-2.5 py-0.5 rounded-full shadow-xl border-2 border-white uppercase tracking-wider flex items-center gap-1 animate-bounce">
+                    <MapPin className="w-3 h-3" />
+                    <span>Doorstep Pin</span>
+                  </div>
+                  <Pin background="#10B981" glyphColor="#FFFFFF" borderColor="#064E3B" />
+                </div>
+              </AdvancedMarker>
+            </GoogleMap>
+          </APIProvider>
+        )}
 
         {/* FLOATING CONTROLS: ZOOM & RECENTER */}
         <div className="absolute right-4 top-4 z-20 flex flex-col gap-2">

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MapPin,
   Flame,
@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { Kitchen } from '../types';
-import { GOOGLE_MAPS_API_KEY } from '../lib/googleMaps';
+import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed } from '../lib/googleMaps';
+import { LeafletMap } from './LeafletMap';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 
 // Default high-fidelity baseline Bhattis in Muzaffarpur, Bihar
@@ -91,6 +92,13 @@ export default function BhattisTab({
   const [filterCity, setFilterCity] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
+  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+
+  useEffect(() => {
+    const handleAuthFail = () => setUseLeaflet(true);
+    window.addEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
+    return () => window.removeEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
+  }, []);
 
   const bhattisToUse: Kitchen[] = (allKitchens && allKitchens.length > 0 ? allKitchens : DEFAULT_BHATTIS).map((k, idx) => ({
     ...k,
@@ -386,34 +394,49 @@ export default function BhattisTab({
               className="h-80 w-full rounded-2xl border border-stone-200 overflow-hidden relative shadow-3xs bg-slate-50 cursor-pointer group"
               title="Tap to enlarge map & search outlets"
             >
-              <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
-                <GoogleMap
+              {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
+                <LeafletMap
                   center={defaultCenter}
-                  defaultZoom={12}
-                  mapId="DEMO_MAP_ID"
-                  internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
-                  style={{ width: '100%', height: '100%' }}
-                >
-                  {filteredBhattis.map((bhatti) => {
-                    if (!bhatti.lat || !bhatti.lng) return null;
-                    const isSelected = activeSelected?.id === bhatti.id;
-                    return (
-                      <AdvancedMarker
-                        key={bhatti.id}
-                        position={{ lat: bhatti.lat, lng: bhatti.lng }}
-                        onClick={() => handleChooseBhatti(bhatti)}
-                      >
-                        <Pin
-                          background={isSelected ? '#FF5722' : '#143D27'}
-                          borderColor={isSelected ? '#C62828' : '#0E2B1B'}
-                          glyphColor="#fff"
-                          scale={isSelected ? 1.25 : 1.0}
-                        />
-                      </AdvancedMarker>
-                    );
-                  })}
-                </GoogleMap>
-              </APIProvider>
+                  zoom={12}
+                  interactive={true}
+                  points={filteredBhattis.filter(b => b.lat && b.lng).map(b => ({
+                    lat: b.lat,
+                    lng: b.lng,
+                    label: b.name,
+                    type: 'kitchen' as const,
+                    geofenceRadiusKm: b.geofenceRadius || 15
+                  }))}
+                />
+              ) : (
+                <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly" solutionChannel="gmp_git_agentskills_v1">
+                  <GoogleMap
+                    center={defaultCenter}
+                    defaultZoom={12}
+                    mapId="DEMO_MAP_ID"
+                    internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
+                    style={{ width: '100%', height: '100%' }}
+                  >
+                    {filteredBhattis.map((bhatti) => {
+                      if (!bhatti.lat || !bhatti.lng) return null;
+                      const isSelected = activeSelected?.id === bhatti.id;
+                      return (
+                        <AdvancedMarker
+                          key={bhatti.id}
+                          position={{ lat: bhatti.lat, lng: bhatti.lng }}
+                          onClick={() => handleChooseBhatti(bhatti)}
+                        >
+                          <Pin
+                            background={isSelected ? '#FF5722' : '#143D27'}
+                            borderColor={isSelected ? '#C62828' : '#0E2B1B'}
+                            glyphColor="#fff"
+                            scale={isSelected ? 1.25 : 1.0}
+                          />
+                        </AdvancedMarker>
+                      );
+                    })}
+                  </GoogleMap>
+                </APIProvider>
+              )}
 
               {/* Short message on map to tap to make the map bigger */}
               <div 
