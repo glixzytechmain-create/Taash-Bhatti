@@ -2387,17 +2387,19 @@ export default function AccountTab({
                 const riderName = order.deliveryPartnerName || (order as any).assignedRiderName;
                 const riderPhone = order.deliveryPartnerPhone || (order as any).assignedRiderPhone;
 
-                // Only orders formally accepted by a specific kitchen can be affected by rain mode to prevent confusion
-                const isKitchenAccepted = Boolean(order.acceptedByKitchenId && order.acceptedByKitchenId.trim() !== '') && order.status !== 'sent' && order.status !== 'cancelled';
+                // Robust check: Kitchen is accepted if explicitly assigned, or order is cooking/preparing/beyond
+                const isKitchenAccepted = Boolean(
+                  (order.acceptedByKitchenId && order.acceptedByKitchenId.trim() !== '') ||
+                  (order.kitchenId && order.status !== 'sent' && order.status !== 'cancelled') ||
+                  ['cooking', 'preparing', 'kitchen_accepted', 'ready_for_pickup', 'prepared', 'out_for_delivery', 'delivering', 'picked_up', 'delivered'].includes(order.status)
+                ) && order.status !== 'cancelled';
 
-                const acceptedKitchen = isKitchenAccepted && order.acceptedByKitchenId
-                  ? (kitchens || []).find(k => k.id === order.acceptedByKitchenId)
-                  : null;
-                const isRainingForOrder = Boolean(isKitchenAccepted && acceptedKitchen?.isRaining);
-                const resolvedKitchenName = order.acceptedKitchenName || acceptedKitchen?.name || (order.acceptedByKitchenId ? order.kitchenName : '');
-                const resolvedKitchenAddress = order.acceptedKitchenAddress || acceptedKitchen?.address || (acceptedKitchen?.city || '');
-                const resolvedKitchenLat = order.acceptedKitchenLat || acceptedKitchen?.lat;
-                const resolvedKitchenLng = order.acceptedKitchenLng || acceptedKitchen?.lng;
+                const matchedKitchen = (kitchens || []).find(k => k.id === order.acceptedByKitchenId || k.id === order.kitchenId) || (kitchens && kitchens[0]);
+                const isRainingForOrder = Boolean(isKitchenAccepted && matchedKitchen?.isRaining);
+                const resolvedKitchenName = order.acceptedKitchenName || order.kitchenName || matchedKitchen?.name || (isKitchenAccepted ? 'Taash Bhatti Kitchen' : '');
+                const resolvedKitchenAddress = order.acceptedKitchenAddress || order.kitchenAddress || matchedKitchen?.address || (matchedKitchen?.city || 'Muzaffarpur');
+                const resolvedKitchenLat = order.acceptedKitchenLat || order.kitchenLat || matchedKitchen?.lat || 26.1220;
+                const resolvedKitchenLng = order.acceptedKitchenLng || order.kitchenLng || matchedKitchen?.lng || 85.3780;
 
                 let orderTime = order.createdAt ? new Date(order.createdAt).getTime() : currentTime;
                 if (isNaN(orderTime)) orderTime = currentTime;
@@ -2790,7 +2792,7 @@ export default function AccountTab({
 
                     {/* IN-APP REAL-TIME LIVE ROUTE RADAR MAP */}
                     <InAppDeliveryMap
-                      acceptedByKitchenId={order.acceptedByKitchenId}
+                      acceptedByKitchenId={order.acceptedByKitchenId || (isKitchenAccepted ? (order.kitchenId || 'accepted_kitchen') : undefined)}
                       kitchenName={resolvedKitchenName}
                       kitchenAddress={resolvedKitchenAddress}
                       kitchenLat={resolvedKitchenLat}

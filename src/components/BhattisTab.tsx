@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { Kitchen } from '../types';
-import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed } from '../lib/googleMaps';
+import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed, TAASH_BHATTI_BRAND_MAP_STYLE } from '../lib/googleMaps';
 import { LeafletMap } from './LeafletMap';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 
@@ -92,13 +92,7 @@ export default function BhattisTab({
   const [filterCity, setFilterCity] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
-
-  useEffect(() => {
-    const handleAuthFail = () => setUseLeaflet(true);
-    window.addEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
-    return () => window.removeEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
-  }, []);
+  const [useLeaflet, setUseLeaflet] = useState<boolean>(false);
 
   const bhattisToUse: Kitchen[] = (allKitchens && allKitchens.length > 0 ? allKitchens : DEFAULT_BHATTIS).map((k, idx) => ({
     ...k,
@@ -394,7 +388,7 @@ export default function BhattisTab({
               className="h-80 w-full rounded-2xl border border-stone-200 overflow-hidden relative shadow-3xs bg-slate-50 cursor-pointer group"
               title="Tap to enlarge map & search outlets"
             >
-              {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
+              {useLeaflet || !GOOGLE_MAPS_API_KEY ? (
                 <LeafletMap
                   center={defaultCenter}
                   zoom={12}
@@ -413,6 +407,7 @@ export default function BhattisTab({
                     center={defaultCenter}
                     defaultZoom={12}
                     mapId="DEMO_MAP_ID"
+                    styles={TAASH_BHATTI_BRAND_MAP_STYLE}
                     internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
                     style={{ width: '100%', height: '100%' }}
                   >

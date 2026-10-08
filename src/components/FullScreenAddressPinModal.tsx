@@ -96,15 +96,9 @@ export default function FullScreenAddressPinModal({
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(16);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+  const [useLeaflet, setUseLeaflet] = useState<boolean>(false);
   const [autocompletePredictions, setAutocompletePredictions] = useState<{ description: string; placeId?: string }[]>([]);
   const [showPredictionsDropdown, setShowPredictionsDropdown] = useState<boolean>(false);
-
-  useEffect(() => {
-    const handleFail = () => setUseLeaflet(true);
-    window.addEventListener('taashbhatti_maps_auth_failed', handleFail);
-    return () => window.removeEventListener('taashbhatti_maps_auth_failed', handleFail);
-  }, []);
 
   // Sync initial props on open
   useEffect(() => {
@@ -479,7 +473,7 @@ export default function FullScreenAddressPinModal({
 
       {/* FULLSCREEN MAP CONTAINER */}
       <div className="relative flex-1 w-full bg-slate-950 overflow-hidden">
-        {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
+        {useLeaflet || !GOOGLE_MAPS_API_KEY ? (
           <LeafletMap
             center={selectedCoords}
             zoom={zoomLevel}

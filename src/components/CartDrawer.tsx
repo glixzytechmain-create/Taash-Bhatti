@@ -52,7 +52,7 @@ import { Meal, Gym, Order, User, OrderItem, Kitchen, AppFeatureFlags, SmartCoupo
 import { evaluateSmartCoupon, getEligibleCoupons, normalizeSmartCoupon, searchPublicCoupons, generateDefaultTerms } from '../lib/couponEngine';
 import { getStoredFeatureFlags, subscribeFeatureFlags } from '../lib/featureFlags';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-import { GOOGLE_MAPS_API_KEY, reverseGeocodeCoords, isGoogleMapsAuthFailed } from '../lib/googleMaps';
+import { GOOGLE_MAPS_API_KEY, reverseGeocodeCoords, isGoogleMapsAuthFailed, TAASH_BHATTI_BRAND_MAP_STYLE } from '../lib/googleMaps';
 import { LeafletMap } from './LeafletMap';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 import GoesWellWithExtension from './GoesWellWithExtension';
@@ -82,7 +82,7 @@ function CustomerLocationPicker({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
+  const [useLeaflet, setUseLeaflet] = useState<boolean>(false);
   const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
 
   useEffect(() => {
@@ -376,6 +376,7 @@ function CustomerMapAndSearchContent({
             zoom={14}
             gestureHandling={'cooperative'}
             disableDefaultUI={true}
+            styles={TAASH_BHATTI_BRAND_MAP_STYLE}
             mapId="DEMO_MAP_ID"
             internalUsageAttributionIds={['gmp_git_agentskills_v1', 'gmp_mcp_codeassist_v1_aistudio']}
             style={{ width: '100%', height: '100%' }}

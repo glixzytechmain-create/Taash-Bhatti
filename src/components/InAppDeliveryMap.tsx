@@ -163,15 +163,7 @@ export default function InAppDeliveryMap({
   const [userHasPanned, setUserHasPanned] = useState<boolean>(false);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
-
-  useEffect(() => {
-    const handleAuthFail = () => {
-      setUseLeaflet(true);
-    };
-    window.addEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
-    return () => window.removeEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
-  }, []);
+  const [useLeaflet, setUseLeaflet] = useState<boolean>(false);
 
   const [fullscreenSearchQuery, setFullscreenSearchQuery] = useState<string>('');
   const [fullscreenZoomLevel, setFullscreenZoomLevel] = useState<number>(15);
@@ -300,14 +292,16 @@ export default function InAppDeliveryMap({
       currentStatus.includes('delivered'))
   );
 
-  // RIDER ASSIGNED CHECK: True ONLY when rider name is provided and valid
+  // RIDER ASSIGNED CHECK: True when rider is assigned, or in rider view
   const isRiderAssigned = Boolean(
-    riderName &&
-    riderName.trim() !== '' &&
-    riderName !== 'Delivery Captain' &&
-    riderName !== 'Delivery Partner' &&
-    riderName !== 'Unassigned Rider' &&
-    riderName !== 'Searching...'
+    isRiderView || (
+      riderName &&
+      riderName.trim() !== '' &&
+      riderName !== 'Delivery Captain' &&
+      riderName !== 'Delivery Partner' &&
+      riderName !== 'Unassigned Rider' &&
+      riderName !== 'Searching...'
+    )
   );
 
   // The moment the rider arrives at the kitchen or beyond, their location is live and tracking starts!
@@ -713,7 +707,7 @@ export default function InAppDeliveryMap({
 
       const routeOrigin = isTakeaway
         ? customerCoords
-        : (isRiderAssigned && isRiderLiveOnline && riderMarkerRef.current ? currentRiderPos : (kitchenCoords || { lat: 26.1209, lng: 85.3647 }));
+        : ((isRiderView || (isRiderAssigned && isRiderLiveOnline)) && currentRiderPos ? currentRiderPos : (kitchenCoords || { lat: 26.1209, lng: 85.3647 }));
 
       const routeDestination = isTakeaway 
         ? (kitchenCoords || { lat: 26.1209, lng: 85.3647 })
@@ -863,10 +857,130 @@ export default function InAppDeliveryMap({
                 }
               }
             } else {
-              // If directions call failed, clear polylines so no straight displacement line is rendered
-              if (casingPolylineRef.current) casingPolylineRef.current.setPath([]);
-              if (polylineRef.current) polylineRef.current.setPath([]);
-              if (routeDurationMarkerRef.current) routeDurationMarkerRef.current.setMap(null);
+              // Google Directions status was not OK — fall back to OSRM real road routing
+              fetch(`https://router.project-osrm.org/route/v1/driving/${routeOrigin.lng},${routeOrigin.lat};${routeDestination.lng},${routeDestination.lat}?overview=full&geometries=geojson`)
+                .then((r) => r.json())
+                .then((osrmData) => {
+                  if (osrmData && osrmData.routes && osrmData.routes[0] && osrmData.routes[0].geometry) {
+                    const coords = osrmData.routes[0].geometry.coordinates; // [[lng, lat], ...]
+                    const osrmPath = coords.map((c: [number, number]) => new gMaps.LatLng(c[1], c[0]));
+
+                    if (osrmPath.length > 0) {
+                      try {
+                        setLeafletPolylineCoords(coords.map((c: [number, number]) => [c[1], c[0]]));
+                      } catch (e) {}
+
+                      if (!casingPolylineRef.current) {
+                        casingPolylineRef.current = new gMaps.Polyline({
+                          path: osrmPath,
+                          geodesic: true,
+                          strokeColor: '#09100C',
+                          strokeOpacity: 0.9,
+                          strokeWeight: 10,
+                          map,
+                        });
+                      } else {
+                        casingPolylineRef.current.setPath(osrmPath);
+                        casingPolylineRef.current.setMap(map);
+                      }
+
+                      if (!polylineRef.current) {
+                        polylineRef.current = new gMaps.Polyline({
+                          path: osrmPath,
+                          geodesic: true,
+                          strokeColor: '#C06C38',
+                          strokeOpacity: 1.0,
+                          strokeWeight: 6,
+                          map,
+                        });
+                      } else {
+                        polylineRef.current.setPath(osrmPath);
+                        polylineRef.current.setMap(map);
+                      }
+
+                      const distMeters = osrmData.routes[0].distance || 2400;
+                      const durSecs = osrmData.routes[0].duration || 720;
+                      const distKm = (distMeters / 1000).toFixed(1);
+                      const durMins = Math.max(1, Math.round(durSecs / 60));
+                      const durStr = `${durMins} mins`;
+                      const distStr = `${distKm} km`;
+
+                      setLiveDistanceKm(parseFloat(distKm));
+                      setLiveEtaMinutes(durStr);
+
+                      try {
+                        localStorage.setItem('taashbhatti_active_order_eta', durStr);
+                        localStorage.setItem('taashbhatti_active_order_distance', distStr);
+                        window.dispatchEvent(new CustomEvent('taashbhatti_order_eta_updated', {
+                          detail: { orderId, eta: durStr, distance: distStr }
+                        }));
+                        if (orderId) {
+                          updateDoc(doc(db, 'orders', orderId), {
+                            liveEta: durStr,
+                            liveDistance: distStr
+                          }).catch(() => {});
+                        }
+                      } catch (e) {}
+
+                      const midIndex = Math.floor(osrmPath.length / 2);
+                      const midPt = osrmPath[midIndex];
+                      if (midPt) {
+                        const durationSvg = `
+                          <svg xmlns="http://www.w3.org/2000/svg" width="96" height="38" viewBox="0 0 96 38">
+                            <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+                            </filter>
+                            <g filter="url(#shadow)">
+                              <rect x="3" y="3" width="90" height="32" rx="16" fill="#C06C38" stroke="#FFFFFF" stroke-width="2.5"/>
+                              <text x="48" y="19" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="800" fill="#FFFFFF" text-anchor="middle" dominant-baseline="central">${durStr}</text>
+                            </g>
+                          </svg>
+                        `;
+
+                        if (!routeDurationMarkerRef.current) {
+                          routeDurationMarkerRef.current = new gMaps.Marker({
+                            position: midPt,
+                            map,
+                            title: durStr,
+                            icon: {
+                              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(durationSvg),
+                              scaledSize: new gMaps.Size(96, 38),
+                              anchor: new gMaps.Point(48, 19),
+                            },
+                            zIndex: 9999,
+                          });
+                        } else {
+                          routeDurationMarkerRef.current.setPosition(midPt);
+                          routeDurationMarkerRef.current.setIcon({
+                            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(durationSvg),
+                            scaledSize: new gMaps.Size(96, 38),
+                            anchor: new gMaps.Point(48, 19),
+                          });
+                          routeDurationMarkerRef.current.setMap(map);
+                        }
+                      }
+                    }
+                  }
+                })
+                .catch(() => {
+                  // Fallback straight line in copper if OSRM also unreachable
+                  const straight = [
+                    new gMaps.LatLng(routeOrigin.lat, routeOrigin.lng),
+                    new gMaps.LatLng(routeDestination.lat, routeDestination.lng)
+                  ];
+                  if (!polylineRef.current) {
+                    polylineRef.current = new gMaps.Polyline({
+                      path: straight,
+                      strokeColor: '#C06C38',
+                      strokeOpacity: 0.9,
+                      strokeWeight: 5,
+                      map,
+                    });
+                  } else {
+                    polylineRef.current.setPath(straight);
+                    polylineRef.current.setMap(map);
+                  }
+                });
             }
           }
         );
@@ -1495,7 +1609,7 @@ export default function InAppDeliveryMap({
         })()}
 
         <div className={`relative w-full ${isFullscreen ? 'flex-1' : 'h-full'} overflow-hidden`}>
-          {useLeaflet || isGoogleMapsAuthFailed() || (mapError && !mapLoaded) ? (
+          {useLeaflet ? (
             <LeafletMap
               center={currentRiderPos || customerCoords}
               zoom={14}

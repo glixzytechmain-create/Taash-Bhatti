@@ -30,53 +30,24 @@ export function setCustomGoogleMapsApiKey(key: string): void {
   }
 }
 
-// Global detection of Google Maps authentication errors (RefererNotAllowedMapError, etc.)
-let gmapsAuthFailed = false;
-
+// Clean up any stale fallback lock from sessionStorage
 if (typeof window !== 'undefined') {
   try {
-    if (sessionStorage.getItem('taashbhatti_gmaps_auth_failed') === 'true') {
-      gmapsAuthFailed = true;
-    }
-    const prevAuthFailure = (window as any).gm_authFailure;
-    (window as any).gm_authFailure = () => {
-      console.warn('Google Maps authentication failure on this domain! Auto-activating resilient Leaflet map engine.');
-      gmapsAuthFailed = true;
-      try {
-        sessionStorage.setItem('taashbhatti_gmaps_auth_failed', 'true');
-      } catch (e) {}
-      window.dispatchEvent(new CustomEvent('taashbhatti_maps_auth_failed'));
-      if (typeof prevAuthFailure === 'function') {
-        prevAuthFailure();
-      }
-    };
+    sessionStorage.removeItem('taashbhatti_gmaps_auth_failed');
   } catch (e) {}
 }
 
 export function isGoogleMapsAuthFailed(): boolean {
-  if (typeof window !== 'undefined' && sessionStorage.getItem('taashbhatti_gmaps_auth_failed') === 'true') {
-    return true;
-  }
-  return gmapsAuthFailed;
+  return false;
 }
 
 export function markGoogleMapsFailed(): void {
-  gmapsAuthFailed = true;
-  if (typeof window !== 'undefined') {
-    try {
-      sessionStorage.setItem('taashbhatti_gmaps_auth_failed', 'true');
-      window.dispatchEvent(new CustomEvent('taashbhatti_maps_auth_failed'));
-    } catch (e) {}
-  }
+  console.warn('Google Maps notice encountered. Keeping standard Google Maps active.');
 }
 
 let googleMapsPromise: Promise<typeof google.maps> | null = null;
 
 export function loadGoogleMaps(): Promise<typeof google.maps> {
-  if (isGoogleMapsAuthFailed()) {
-    return Promise.reject(new Error('Google Maps authentication failed on this domain'));
-  }
-
   if (typeof window !== 'undefined' && window.google && window.google.maps) {
     return Promise.resolve(window.google.maps);
   }
@@ -95,18 +66,10 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
         else reject(new Error('google.maps not loaded'));
       });
       existingScript.addEventListener('error', (e) => {
-        markGoogleMapsFailed();
         reject(e);
       });
       return;
     }
-
-    // Safety timeout: if Google Maps hangs or blocks referrer, reject after 3.5 seconds
-    const safetyTimer = setTimeout(() => {
-      console.warn('Google Maps load timeout. Falling back to Leaflet map engine.');
-      markGoogleMapsFailed();
-      reject(new Error('Google Maps loading timed out'));
-    }, 3500);
 
     const script = document.createElement('script');
     script.id = 'google-maps-js-sdk';
@@ -114,18 +77,14 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
     script.async = true;
     script.defer = true;
     script.onload = () => {
-      clearTimeout(safetyTimer);
       if (window.google && window.google.maps) {
         resolve(window.google.maps);
       } else {
-        markGoogleMapsFailed();
         reject(new Error('Google Maps script loaded but google.maps is not defined'));
       }
     };
     script.onerror = (err) => {
-      clearTimeout(safetyTimer);
-      console.warn('Google Maps script load error, switching to Leaflet:', err);
-      markGoogleMapsFailed();
+      console.warn('Google Maps script load error:', err);
       reject(err);
     };
     document.head.appendChild(script);

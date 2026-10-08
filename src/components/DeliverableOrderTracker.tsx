@@ -366,8 +366,8 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
                   acceptedByKitchenId={order.acceptedByKitchenId || order.kitchenId}
                   kitchenName={order.acceptedKitchenName || kitchen?.name || "TAASH BHATTI Hub"}
                   kitchenAddress={order.acceptedKitchenAddress || kitchen?.address || "Central Kitchen"}
-                  kitchenLat={order.acceptedKitchenLat || kitchen?.lat || 26.12}
-                  kitchenLng={order.acceptedKitchenLng || kitchen?.lng || 85.39}
+                  kitchenLat={order.acceptedKitchenLat || kitchen?.lat || 26.1220}
+                  kitchenLng={order.acceptedKitchenLng || kitchen?.lng || 85.3780}
                   customerAddress={order.address}
                   customerLat={order.deliveryLat}
                   customerLng={order.deliveryLng}

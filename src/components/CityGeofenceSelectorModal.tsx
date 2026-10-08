@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, ChefHat, CheckCircle2, AlertTriangle, X, Search, Navigation, Compass, Building2, LocateFixed, ZoomIn, ZoomOut, RefreshCw, Maximize2 } from 'lucide-react';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap } from '@vis.gl/react-google-maps';
 import { Kitchen } from '../types';
-import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed } from '../lib/googleMaps';
+import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed, TAASH_BHATTI_BRAND_MAP_STYLE } from '../lib/googleMaps';
 import { LeafletMap } from './LeafletMap';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 
@@ -107,13 +107,7 @@ export default function CityGeofenceSelectorModal({
 
   const [addressLabel, setAddressLabel] = useState<string>(`Selected Pin, ${selectedCity}`);
   const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
-  const [useLeaflet, setUseLeaflet] = useState(() => isGoogleMapsAuthFailed());
-
-  useEffect(() => {
-    const handleAuthFail = () => setUseLeaflet(true);
-    window.addEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
-    return () => window.removeEventListener('taashbhatti_maps_auth_failed', handleAuthFail);
-  }, []);
+  const [useLeaflet, setUseLeaflet] = useState<boolean>(false);
 
   // When city changes, update center & pin, zoom to city level
   const handleSelectCity = (cityName: string) => {
@@ -471,7 +465,7 @@ export default function CityGeofenceSelectorModal({
             </div>
 
             <div className="relative w-full h-64 sm:h-72 rounded-2xl overflow-hidden border-2 border-brand-green/25 bg-[#12181E] shadow-inner">
-              {useLeaflet || isGoogleMapsAuthFailed() || !GOOGLE_MAPS_API_KEY ? (
+              {useLeaflet || !GOOGLE_MAPS_API_KEY ? (
                 <LeafletMap
                   center={customerPos}
                   zoom={mapZoom}
@@ -501,6 +495,7 @@ export default function CityGeofenceSelectorModal({
                     defaultZoom={12}
                     gestureHandling="greedy"
                     disableDefaultUI={false}
+                    styles={TAASH_BHATTI_BRAND_MAP_STYLE}
                     onClick={(e) => {
                       if (e.detail.latLng) {
                         const lat = typeof (e.detail.latLng as any).lat === 'function' ? (e.detail.latLng as any).lat() : e.detail.latLng.lat;
