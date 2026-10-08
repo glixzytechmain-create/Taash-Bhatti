@@ -1396,7 +1396,17 @@ export default function CartDrawer({
     const newOrder: Order = {
       id: orderId,
       items: enrichedItems,
-      userId: auth.currentUser?.uid || fbUser?.uid || user.id || (isDineIn ? `guest_table_${orderId}` : ''),
+      userId: (() => {
+        const uid = auth.currentUser?.uid || fbUser?.uid || user.id;
+        if (uid && uid.trim().length > 0) return uid;
+        if (isDineIn) return `guest_table_${orderId}`;
+        let guestId = typeof window !== 'undefined' ? localStorage.getItem('taashbhatti_guest_user_id') : null;
+        if (!guestId) {
+          guestId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          try { localStorage.setItem('taashbhatti_guest_user_id', guestId); } catch (e) {}
+        }
+        return guestId;
+      })(),
       isDineInGuest: isDineIn && !isUserAuthenticated,
       customerName: finalCustomerName,
       customerPhone: finalCustomerPhone,

@@ -131,74 +131,99 @@ export const SmartNotificationEngine: React.FC<SmartNotificationEngineProps> = (
 
   // 1. Real-time Listener for User's Active Orders
   useEffect(() => {
-    if (!user.id) return;
+    const targetUserId = user.id || auth.currentUser?.uid || (typeof window !== 'undefined' ? localStorage.getItem('taashbhatti_guest_user_id') : null);
+    const activeSingleId = typeof window !== 'undefined' ? (localStorage.getItem('tb_most_recent_active_order_id') || localStorage.getItem('tb_active_tracking_order_id')) : null;
 
-    try {
-      const ordersQ = query(
-        collection(db, 'orders'),
-        where('userId', '==', user.id)
-      );
+    const unsubs: (() => void)[] = [];
 
-      const unsubscribe = onSnapshot(ordersQ, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          const order = { id: change.doc.id, ...change.doc.data() } as Order;
-          const prevStatus = previousOrderStatusRef.current[order.id];
+    const handleOrderChange = (order: Order) => {
+      const prevStatus = previousOrderStatusRef.current[order.id];
+      if (prevStatus && prevStatus !== order.status) {
+        const currentLiveEta = order.liveEta || localStorage.getItem('taashbhatti_active_order_eta') || '12-15 Mins';
+        if (order.status === 'cooking') {
+          addNotification({
+            title: '🔥 Clay Oven In Action!',
+            message: `Order #${order.id.slice(-4)} is now being prepared fresh in the bhatti.`,
+            type: 'order',
+            orderId: order.id,
+            orderStatus: order.status,
+            progressPercent: 50,
+            liveEta: currentLiveEta,
+            icon: 'flame'
+          });
+        } else if (order.status === 'ready_for_pickup' || order.status === 'prepared') {
+          addNotification({
+            title: '✨ Plated & Packed!',
+            message: `Order #${order.id.slice(-4)} is packed warm. Proximity courier assigned.`,
+            type: 'order',
+            orderId: order.id,
+            orderStatus: order.status,
+            progressPercent: 70,
+            liveEta: currentLiveEta,
+            icon: 'bike'
+          });
+        } else if (order.status === 'out_for_delivery') {
+          addNotification({
+            title: '⚡ On The Way!',
+            message: `Courier ${order.deliveryPartnerName || 'Rider'} is heading your way in thermal gear.`,
+            type: 'order',
+            orderId: order.id,
+            orderStatus: order.status,
+            progressPercent: 85,
+            liveEta: currentLiveEta,
+            icon: 'bike'
+          });
+        } else if (order.status === 'delivered') {
+          addNotification({
+            title: '🎉 Order Delivered!',
+            message: `Order #${order.id.slice(-4)} delivered! +10% Standard Embers added to Bhatti Wallet.`,
+            type: 'order',
+            orderId: order.id,
+            orderStatus: order.status,
+            progressPercent: 100,
+            liveEta: 'Delivered',
+            icon: 'sparkles'
+          });
+        }
+      }
+      previousOrderStatusRef.current[order.id] = order.status;
+    };
 
-          if (change.type === 'modified' && prevStatus && prevStatus !== order.status) {
-            const currentLiveEta = order.liveEta || localStorage.getItem('taashbhatti_active_order_eta') || '12-15 Mins';
-            if (order.status === 'cooking') {
-              addNotification({
-                title: '🔥 Clay Oven In Action!',
-                message: `Order #${order.id.slice(-4)} is now being prepared fresh in the bhatti.`,
-                type: 'order',
-                orderId: order.id,
-                orderStatus: order.status,
-                progressPercent: 50,
-                liveEta: currentLiveEta,
-                icon: 'flame'
-              });
-            } else if (order.status === 'ready_for_pickup' || order.status === 'prepared') {
-              addNotification({
-                title: '✨ Plated & Packed!',
-                message: `Order #${order.id.slice(-4)} is packed warm. Proximity courier assigned.`,
-                type: 'order',
-                orderId: order.id,
-                orderStatus: order.status,
-                progressPercent: 70,
-                liveEta: currentLiveEta,
-                icon: 'bike'
-              });
-            } else if (order.status === 'out_for_delivery') {
-              addNotification({
-                title: '⚡ On The Way!',
-                message: `Courier ${order.deliveryPartnerName || 'Rider'} is heading your way in thermal gear.`,
-                type: 'order',
-                orderId: order.id,
-                orderStatus: order.status,
-                progressPercent: 85,
-                liveEta: currentLiveEta,
-                icon: 'bike'
-              });
-            } else if (order.status === 'delivered') {
-              addNotification({
-                title: '🎉 Order Delivered!',
-                message: `Order #${order.id.slice(-4)} delivered! +10% Standard Embers added to Bhatti Wallet.`,
-                type: 'order',
-                orderId: order.id,
-                orderStatus: order.status,
-                progressPercent: 100,
-                liveEta: 'Delivered',
-                icon: 'sparkles'
-              });
+    if (targetUserId) {
+      try {
+        const ordersQ = query(
+          collection(db, 'orders'),
+          where('userId', '==', targetUserId)
+        );
+        const unsubUserOrders = onSnapshot(ordersQ, (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            const order = { id: change.doc.id, ...change.doc.data() } as Order;
+            if (change.type === 'modified') {
+              handleOrderChange(order);
+            } else {
+              previousOrderStatusRef.current[order.id] = order.status;
             }
-          }
-
-          previousOrderStatusRef.current[order.id] = order.status;
+          });
         });
-      });
+        unsubs.push(unsubUserOrders);
+      } catch (e) {}
+    }
 
-      return () => unsubscribe();
-    } catch (e) {}
+    if (activeSingleId) {
+      try {
+        const unsubSingle = onSnapshot(doc(db, 'orders', activeSingleId), (snap) => {
+          if (snap.exists()) {
+            const order = { id: snap.id, ...snap.data() } as Order;
+            handleOrderChange(order);
+          }
+        });
+        unsubs.push(unsubSingle);
+      } catch (e) {}
+    }
+
+    return () => {
+      unsubs.forEach(fn => fn());
+    };
   }, [user.id]);
 
   // Real-time synchronization of unified Google Maps ETA & Local status events

@@ -32,7 +32,6 @@
   html {
     max-width: 100vw;
     width: 100%;
-    overflow-x: clip;
   }
 
   body {
@@ -42,7 +41,6 @@
     -webkit-tap-highlight-color: transparent;
     transition: background-color 0.3s ease, color 0.3s ease;
     user-select: auto;
-    overflow-x: clip;
     min-height: 100vh;
     width: 100%;
   }

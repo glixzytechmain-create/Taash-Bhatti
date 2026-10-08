@@ -68,6 +68,7 @@ import KitchenWastageManager from './KitchenWastageManager';
 import { syncLowStockMenuWithFirestore, computeEODShiftReport } from '../lib/kitchenSettlement';
 import { autoDispatchPlatedOrder } from '../lib/proximityDispatch';
 import { generateQRCodeDataUrl, generateQRCodeSvg, downloadFile } from '../lib/qrCodeGenerator';
+import { creditGoldenEmbersForShortfall, awardStandardEmberCoinsOnOrderCompletion } from '../lib/walletService';
 
 // Web Audio API Synthesizer Chimes
 const playKitchenChime = (type: 'new' | 'complete' | 'alert' | 'bell') => {
@@ -1041,8 +1042,9 @@ export default function KitchenManagerApp({
       });
       playKitchenChime('complete');
 
-      // Auto-vacate table if dine-in order
       const targetOrder = liveOrders.find(o => o.id === orderId);
+
+      // Auto-vacate table if dine-in order
       if (targetOrder?.fulfillmentMode === 'dine_in' && activeKitchen) {
         const currentTables = activeKitchen.tables || [];
         const updated = currentTables.map(t => {
@@ -1052,6 +1054,30 @@ export default function KitchenManagerApp({
           return t;
         });
         await updateDoc(doc(db, 'kitchens', activeKitchen.id), { tables: updated }).catch(() => {});
+      }
+
+      // Credit deferred Golden Embers for COD orders only now that customer paid and received order
+      if (targetOrder) {
+        const targetCustomerUserId = targetOrder.userId || (targetOrder as any).guestId || 'guest_user';
+        if (targetOrder.pendingEmberBonus && targetOrder.pendingEmberBonus > 0 && !targetOrder.gecBonusAwarded) {
+          try {
+            await creditGoldenEmbersForShortfall({
+              userId: targetCustomerUserId,
+              orderId: targetOrder.id,
+              amount: targetOrder.pendingEmberBonus
+            });
+            await updateDoc(doc(db, 'orders', orderId), { gecBonusAwarded: true });
+          } catch (e) {
+            console.warn("Could not credit deferred Golden Embers on delivery:", e);
+          }
+        }
+
+        // Award standard ember reward on delivery completion
+        try {
+          await awardStandardEmberCoinsOnOrderCompletion(targetOrder, targetCustomerUserId);
+        } catch (e) {
+          console.warn("Could not award standard embers on delivery:", e);
+        }
       }
     } catch (e) {
       console.warn("Failed to mark delivered:", e);

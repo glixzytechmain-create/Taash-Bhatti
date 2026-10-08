@@ -273,8 +273,35 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
       line.addTo(mapRef.current);
       polylineRef.current = line;
+    } else if (points && points.length >= 2) {
+      // Auto-query OSRM for road geometry between points so route polyline is never missing
+      const p1 = points[0];
+      const p2 = points[points.length - 1];
+      const url = `https://router.project-osrm.org/route/v1/driving/${p1.lng},${p1.lat};${p2.lng},${p2.lat}?overview=full&geometries=geojson`;
+      fetch(url)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.routes?.[0]?.geometry?.coordinates && mapRef.current) {
+            const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
+              ([lon, lat]: [number, number]) => [lat, lon]
+            );
+            if (polylineRef.current) {
+              polylineRef.current.remove();
+            }
+            const line = L.polyline(coords, {
+              color: '#C06C38',
+              weight: 6,
+              opacity: 0.95,
+              lineCap: 'round',
+              lineJoin: 'round',
+            });
+            line.addTo(mapRef.current);
+            polylineRef.current = line;
+          }
+        })
+        .catch(() => {});
     }
-  }, [polylineCoords]);
+  }, [polylineCoords, points]);
 
   // Recenter / Zoom Controls
   const handleZoomIn = () => {

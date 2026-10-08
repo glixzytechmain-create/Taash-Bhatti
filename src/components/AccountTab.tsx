@@ -2884,20 +2884,20 @@ export default function AccountTab({
                       <button
                         type="button"
                         onClick={() => setInvoiceModalOrder(order)}
-                        className="flex-1 min-w-[120px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 border border-amber-500/20 font-bold text-[10px] py-2 px-3 rounded-xl uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                        className="flex-1 min-w-0 bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 border border-amber-500/20 font-bold text-[10px] py-2 px-3 rounded-xl uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                       >
-                        <FileText className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Tax Invoice</span>
+                        <FileText className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        <span className="truncate">Tax Invoice</span>
                       </button>
 
                       {order.status === 'delivered' && (
                         <button
                           type="button"
                           onClick={() => setRatingOrderFromHistory(order)}
-                          className="flex-1 min-w-[140px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] py-2 px-3 rounded-xl uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                          className="flex-1 min-w-0 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] py-2 px-3 rounded-xl uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
                         >
-                          <Star className="w-3.5 h-3.5 fill-slate-950" />
-                          <span>{order.deliveryRating ? `Edit Review (★${order.deliveryRating.rating})` : 'Rate Delivered Order'}</span>
+                          <Star className="w-3.5 h-3.5 fill-slate-950 shrink-0" />
+                          <span className="truncate">{order.deliveryRating ? `Edit Review (★${order.deliveryRating.rating})` : 'Rate Delivered Order'}</span>
                         </button>
                       )}
                     </div>

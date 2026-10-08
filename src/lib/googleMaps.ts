@@ -48,7 +48,7 @@ export function markGoogleMapsFailed(): void {
 let googleMapsPromise: Promise<typeof google.maps> | null = null;
 
 export function loadGoogleMaps(): Promise<typeof google.maps> {
-  if (typeof window !== 'undefined' && window.google && window.google.maps) {
+  if (typeof window !== 'undefined' && window.google?.maps) {
     return Promise.resolve(window.google.maps);
   }
 
@@ -57,34 +57,71 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
   }
 
   googleMapsPromise = new Promise((resolve, reject) => {
-    const apiKey = getGoogleMapsApiKey();
+    // 1. Immediate availability check
+    if (typeof window !== 'undefined' && window.google?.maps) {
+      resolve(window.google.maps);
+      return;
+    }
 
-    const existingScript = document.getElementById('google-maps-js-sdk');
+    const checkReady = () => {
+      if (typeof window !== 'undefined' && window.google?.maps) {
+        resolve(window.google.maps);
+        return true;
+      }
+      return false;
+    };
+
+    if (checkReady()) return;
+
+    // 2. Check if script already exists in document (e.g. from index.html or earlier mount)
+    const existingScript =
+      document.getElementById('google-maps-js-sdk') ||
+      document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+
     if (existingScript) {
-      existingScript.addEventListener('load', () => {
-        if (window.google && window.google.maps) resolve(window.google.maps);
-        else reject(new Error('google.maps not loaded'));
-      });
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (checkReady()) {
+          clearInterval(interval);
+        } else if (attempts > 80) { // 8 seconds
+          clearInterval(interval);
+          googleMapsPromise = null;
+          reject(new Error('Google Maps script tag present but google.maps did not initialize'));
+        }
+      }, 100);
+
       existingScript.addEventListener('error', (e) => {
+        clearInterval(interval);
+        googleMapsPromise = null;
         reject(e);
       });
       return;
     }
 
+    // 3. Dynamically inject script if not present
+    const apiKey = getGoogleMapsApiKey();
     const script = document.createElement('script');
     script.id = 'google-maps-js-sdk';
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry,drawing`;
     script.async = true;
     script.defer = true;
     script.onload = () => {
-      if (window.google && window.google.maps) {
-        resolve(window.google.maps);
-      } else {
-        reject(new Error('Google Maps script loaded but google.maps is not defined'));
-      }
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (checkReady()) {
+          clearInterval(interval);
+        } else if (attempts > 50) {
+          clearInterval(interval);
+          googleMapsPromise = null;
+          reject(new Error('Google Maps script loaded but google.maps is not defined'));
+        }
+      }, 50);
     };
     script.onerror = (err) => {
       console.warn('Google Maps script load error:', err);
+      googleMapsPromise = null;
       reject(err);
     };
     document.head.appendChild(script);

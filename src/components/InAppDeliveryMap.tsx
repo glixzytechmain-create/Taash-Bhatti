@@ -383,43 +383,63 @@ export default function InAppDeliveryMap({
   // Load Google Maps SDK
   useEffect(() => {
     let isMounted = true;
+
+    const tryInitMap = (gMaps: typeof google.maps, frame = 0) => {
+      if (!isMounted) return;
+      if (googleMapRef.current) return;
+
+      if (!mapContainerRef.current) {
+        if (frame < 30) {
+          requestAnimationFrame(() => tryInitMap(gMaps, frame + 1));
+        } else {
+          console.warn("Map container not found after 30 frames, falling back to Leaflet");
+          setUseLeaflet(true);
+        }
+        return;
+      }
+
+      try {
+        const map = new gMaps.Map(mapContainerRef.current, {
+          center: customerCoords,
+          zoom: 14,
+          styles: isDarkMode ? DARK_MAP_STYLE : LIGHT_MAP_STYLE,
+          disableDefaultUI: true,
+          zoomControl: false,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        });
+
+        googleMapRef.current = map;
+
+        // Allow free panning and scrolling without aggressive auto-snapping
+        map.addListener('dragstart', () => {
+          isUserPanningRef.current = true;
+          setUserHasPanned(true);
+        });
+
+        directionsServiceRef.current = new gMaps.DirectionsService();
+        directionsRendererRef.current = new gMaps.DirectionsRenderer({
+          map,
+          suppressMarkers: true,
+          suppressPolylines: true,
+        });
+
+        setMapLoaded(true);
+      } catch (err) {
+        console.warn("Failed to instantiate Google Map, falling back to Leaflet:", err);
+        setUseLeaflet(true);
+      }
+    };
+
     loadGoogleMaps()
       .then((gMaps) => {
-        if (!isMounted || !mapContainerRef.current) return;
-
-        if (!googleMapRef.current) {
-          const map = new gMaps.Map(mapContainerRef.current, {
-            center: customerCoords,
-            zoom: 14,
-            styles: isDarkMode ? DARK_MAP_STYLE : LIGHT_MAP_STYLE,
-            disableDefaultUI: true,
-            zoomControl: false,
-            mapTypeControl: false,
-            streetViewControl: false,
-            fullscreenControl: false,
-          });
-
-          googleMapRef.current = map;
-
-          // Allow free panning and scrolling without aggressive auto-snapping
-          map.addListener('dragstart', () => {
-            isUserPanningRef.current = true;
-            setUserHasPanned(true);
-          });
-
-          directionsServiceRef.current = new gMaps.DirectionsService();
-          directionsRendererRef.current = new gMaps.DirectionsRenderer({
-            map,
-            suppressMarkers: true,
-            suppressPolylines: true,
-          });
-
-          setMapLoaded(true);
-        }
+        tryInitMap(gMaps);
       })
       .catch((err) => {
-        console.warn("Failed to load Google Maps SDK:", err);
+        console.warn("Failed to load Google Maps SDK, falling back to Leaflet:", err);
         setMapError("Google Maps API Loading Error. Check internet connection.");
+        setUseLeaflet(true);
       });
 
     return () => {
@@ -435,6 +455,19 @@ export default function InAppDeliveryMap({
       });
     }
   }, [isDarkMode]);
+
+  // Handle Fullscreen transitions & trigger Google Maps resize & bounds recalculation
+  useEffect(() => {
+    lastBoundsSignatureRef.current = '';
+    if (googleMapRef.current && window.google?.maps) {
+      setTimeout(() => {
+        window.google.maps.event.trigger(googleMapRef.current, 'resize');
+        if (customerCoords) {
+          googleMapRef.current.panTo(customerCoords);
+        }
+      }, 120);
+    }
+  }, [isFullscreen]);
 
   // Dynamic Geocoding for Customer Submitted Address & Accepted Kitchen Location
   useEffect(() => {
@@ -1088,7 +1121,7 @@ export default function InAppDeliveryMap({
       }
     }
 
-  }, [mapLoaded, customerCoords, kitchenCoords, isKitchenAccepted, isRiderAssigned, isRiderLiveOnline, currentRiderPos, riderLat, riderLng, kitchenName, currentStatus, cameraMode, isNavigating, isTakeaway, userHasPanned, gpsPermissionState]);
+  }, [mapLoaded, customerCoords, kitchenCoords, isKitchenAccepted, isRiderAssigned, isRiderLiveOnline, currentRiderPos, riderLat, riderLng, kitchenName, currentStatus, cameraMode, isNavigating, isTakeaway, userHasPanned, gpsPermissionState, isFullscreen]);
 
   // Render Admin Fleet Markers
   useEffect(() => {
@@ -1413,7 +1446,7 @@ export default function InAppDeliveryMap({
         onClick={!isFullscreen ? () => setIsFullscreen(true) : undefined}
         className={isFullscreen
           ? "fixed inset-0 z-[99999] bg-slate-950 flex flex-col select-none overflow-hidden animate-fade-in"
-          : "relative w-full h-80 sm:h-96 bg-[#121820] rounded-2xl border border-white/10 overflow-hidden shadow-inner my-2 cursor-pointer group"
+          : "-mx-3 sm:mx-0 w-[calc(100%+1.5rem)] sm:w-full relative h-80 sm:h-96 bg-[#121820] rounded-none sm:rounded-2xl border-y sm:border border-white/10 overflow-hidden shadow-inner my-2 cursor-pointer group"
         }
         title={!isFullscreen ? "Click to view full-screen live tracking" : undefined}
       >
@@ -1609,7 +1642,7 @@ export default function InAppDeliveryMap({
         })()}
 
         <div className={`relative w-full ${isFullscreen ? 'flex-1' : 'h-full'} overflow-hidden`}>
-          {useLeaflet ? (
+          {useLeaflet || (mapError && !mapLoaded) ? (
             <LeafletMap
               center={currentRiderPos || customerCoords}
               zoom={14}
