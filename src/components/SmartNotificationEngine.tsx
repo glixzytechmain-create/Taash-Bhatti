@@ -16,7 +16,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Order, User } from '../types';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, doc, query, where, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { smartPushService } from '../lib/smartPushService';
 

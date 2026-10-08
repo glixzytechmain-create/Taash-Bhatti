@@ -20,6 +20,7 @@ import {
   Package, 
   Plus, 
   Sparkles, 
+  Crown,
   RefreshCw, 
   BarChart2, 
   UtensilsCrossed, 
