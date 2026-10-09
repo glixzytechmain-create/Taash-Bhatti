@@ -46,13 +46,21 @@ export async function generateQRCodeDataUrl(
       const ctx = canvas.getContext('2d');
       if (ctx) {
         const logoImg = new Image();
-        logoImg.src = QR_CENTER_LOGO_BASE64;
         await new Promise((resolve) => {
+          let resolved = false;
+          const done = (ok: boolean) => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              resolve(ok);
+            }
+          };
+          const timer = setTimeout(() => done(true), 250);
+          logoImg.onload = () => done(true);
+          logoImg.onerror = () => done(false);
+          logoImg.src = QR_CENTER_LOGO_BASE64;
           if (logoImg.complete && logoImg.naturalWidth > 0) {
-            resolve(true);
-          } else {
-            logoImg.onload = () => resolve(true);
-            logoImg.onerror = () => resolve(false);
+            done(true);
           }
         });
 
@@ -84,7 +92,9 @@ export async function generateQRCodeDataUrl(
           ctx.arc(width / 2, width / 2, centerSize / 2, 0, Math.PI * 2);
         }
         ctx.clip();
-        ctx.drawImage(logoImg, centerPos, centerPos, centerSize, centerSize);
+        if (logoImg.naturalWidth > 0) {
+          ctx.drawImage(logoImg, centerPos, centerPos, centerSize, centerSize);
+        }
         ctx.restore();
 
         return canvas.toDataURL('image/png');

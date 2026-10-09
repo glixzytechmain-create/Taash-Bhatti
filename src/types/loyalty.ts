@@ -21,6 +21,8 @@ export const CARD_RANKS: {
   id: CardRankType;
   symbol: string;
   name: string;
+  rankBadge: string;
+  rankLevel: number;
   tag: string;
   description: string;
   defaultTitle: string;
@@ -29,7 +31,9 @@ export const CARD_RANKS: {
     id: 'ace',
     symbol: 'A',
     name: 'Ace (Ikka)',
-    tag: 'The Sovereign Ace',
+    rankBadge: 'RANK I • SOVEREIGN',
+    rankLevel: 1,
+    tag: 'Supreme Sovereign Ace',
     description: 'Supreme rank of the Bhatti deck. The singular sovereign flame.',
     defaultTitle: 'Sovereign of Bhatti'
   },
@@ -37,6 +41,8 @@ export const CARD_RANKS: {
     id: 'king',
     symbol: 'K',
     name: 'King (Badshah)',
+    rankBadge: 'RANK II • HEARTH KING',
+    rankLevel: 2,
     tag: 'Ruler of the Hearth',
     description: 'Master of the clay tandoor and commander of royal banquets.',
     defaultTitle: 'Badshah of the Hearth'
@@ -45,7 +51,9 @@ export const CARD_RANKS: {
     id: 'queen',
     symbol: 'Q',
     name: 'Queen (Begum)',
-    tag: 'Empress of Flavor',
+    rankBadge: 'RANK III • EMPRESS',
+    rankLevel: 3,
+    tag: 'Empress of Saffron & Flavor',
     description: 'The keeper of secret saffron masalas and royal dawat hospitality.',
     defaultTitle: 'Begum of Royal Dawat'
   },
@@ -53,7 +61,9 @@ export const CARD_RANKS: {
     id: 'jack',
     symbol: 'J',
     name: 'Jack (Ghulam / Wazir)',
-    tag: 'Valiant Flame Knight',
+    rankBadge: 'RANK IV • KNIGHT',
+    rankLevel: 4,
+    tag: 'Valiant Charcoal Knight',
     description: 'Fearless guardian of authentic coal heat and iron skewers.',
     defaultTitle: 'Wazir of the Charcoal Guild'
   },
@@ -61,6 +71,8 @@ export const CARD_RANKS: {
     id: 'joker',
     symbol: '★',
     name: 'Joker (Bhatti Wildcard)',
+    rankBadge: 'WILDCARD • JESTER',
+    rankLevel: 5,
     tag: 'The Untamed Wildcard',
     description: 'Playful jester of spices that transforms any royal feast.',
     defaultTitle: 'Court Jester & Spice Trickster'

@@ -21,8 +21,10 @@ import {
   Save, 
   Zap,
   Award,
-  Gem
+  Gem,
+  Swords
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { 
   CustomCardConfig, 
   CardArtStyle, 
@@ -33,6 +35,7 @@ import {
   DEFAULT_CUSTOM_CARD_CONFIG 
 } from '../../types/loyalty';
 import { generateQRCodeDataUrl } from '../../lib/qrCodeGenerator';
+import { QR_CENTER_LOGO_BASE64 } from '../../lib/qrLogoBase64';
 import { saveUserCustomCard, getOrGenerateReferralCodeSync } from '../../lib/loyaltyService';
 import { User } from '../../types';
 
@@ -182,7 +185,7 @@ export function RoyalRankInsignia({
           <div className="relative -mb-1 z-10 flex items-center justify-center">
             <Crown className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-amber-400 drop-shadow-[0_2px_8px_rgba(245,158,11,0.6)]`} />
           </div>
-          <div className={`relative ${sizeClasses} rounded-2xl bg-gradient-to-b from-amber-500/20 via-stone-900/80 to-black border-2 border-amber-400/80 flex items-center justify-center shadow-xl shadow-amber-500/25 backdrop-blur-xs`}>
+          <div className={`relative ${sizeClasses} rounded-2xl bg-gradient-to-b from-amber-500/20 via-stone-900/80 to-black border-2 border-amber-400/80 flex items-center justify-center shadow-xl shadow-amber-500/25 backdrop-blur-xs ring-2 ring-amber-500/20`}>
             <div className="absolute top-1 left-1 w-1 h-1 rounded-full bg-amber-400" />
             <div className="absolute top-1 right-1 w-1 h-1 rounded-full bg-amber-400" />
             <div className="absolute bottom-1 left-1 w-1 h-1 rounded-full bg-amber-400" />
@@ -190,7 +193,7 @@ export function RoyalRankInsignia({
             <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_12px_currentColor] select-none font-bold`}>{house.symbol}</span>
           </div>
           <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40">
-            BADSHAH • HEARTH KING
+            RANK II • KING (BADSHAH)
           </span>
         </div>
       );
@@ -199,13 +202,13 @@ export function RoyalRankInsignia({
       return (
         <div className="relative flex flex-col items-center justify-center">
           <div className="relative -mb-1 z-10 flex items-center justify-center gap-1">
-            <Gem className={`${isMini ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} text-rose-300 drop-shadow-[0_0_8px_#fda4af]`} />
+            <Crown className={`${isMini ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} text-rose-300 drop-shadow-[0_0_8px_#fda4af]`} />
           </div>
           <div className={`relative ${sizeClasses} rounded-full bg-gradient-to-b from-rose-950/40 via-stone-900/80 to-amber-950/40 border-2 border-rose-300/80 flex items-center justify-center shadow-xl shadow-rose-500/25 backdrop-blur-xs ring-2 ring-amber-400/30`}>
             <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_12px_currentColor] select-none font-bold`}>{house.symbol}</span>
           </div>
           <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-500/40">
-            BEGUM • EMPRESS OF FLAVOR
+            RANK III • QUEEN (BEGUM)
           </span>
         </div>
       );
@@ -214,13 +217,13 @@ export function RoyalRankInsignia({
       return (
         <div className="relative flex flex-col items-center justify-center">
           <div className="relative -mb-1 z-10 flex items-center justify-center">
-            <ShieldCheck className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-cyan-400 drop-shadow-[0_0_8px_#22d3ee]`} />
+            <Swords className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-cyan-400 drop-shadow-[0_0_10px_#22d3ee]`} />
           </div>
-          <div className={`relative ${sizeClasses} rounded-xl bg-gradient-to-b from-stone-850 via-stone-950 to-stone-900 border-2 border-cyan-400/70 flex items-center justify-center shadow-xl shadow-cyan-500/20 backdrop-blur-xs`}>
+          <div className={`relative ${sizeClasses} rounded-xl bg-gradient-to-b from-stone-850 via-slate-900 to-black border-2 border-cyan-400/80 flex items-center justify-center shadow-xl shadow-cyan-500/25 backdrop-blur-xs ring-2 ring-cyan-500/20`}>
             <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_12px_currentColor] select-none font-bold`}>{house.symbol}</span>
           </div>
           <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-cyan-300 bg-stone-900/90 px-2 py-0.5 rounded border border-cyan-500/40">
-            WAZIR • CHARCOAL KNIGHT
+            RANK IV • JACK (GHULAM / WAZIR)
           </span>
         </div>
       );
@@ -231,12 +234,12 @@ export function RoyalRankInsignia({
           <div className="relative -mb-1 z-10 flex items-center justify-center">
             <Sparkles className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-amber-300 animate-spin drop-shadow-[0_0_10px_#fde047]`} style={{ animationDuration: '6s' }} />
           </div>
-          <div className={`relative ${sizeClasses} rounded-2xl bg-gradient-to-tr from-purple-950/70 via-red-950/70 to-amber-950/70 border-2 border-amber-300/80 flex items-center justify-center shadow-xl shadow-purple-500/30 backdrop-blur-xs`}>
+          <div className={`relative ${sizeClasses} rounded-2xl bg-gradient-to-tr from-purple-950/70 via-red-950/70 to-amber-950/70 border-2 border-amber-300/80 flex items-center justify-center shadow-xl shadow-purple-500/30 backdrop-blur-xs ring-2 ring-purple-500/20`}>
             <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-500/20 via-amber-500/20 to-purple-500/20 animate-pulse pointer-events-none" />
             <span className={`${symbolClasses} text-amber-300 drop-shadow-[0_0_14px_#f59e0b] select-none font-black`}>★</span>
           </div>
           <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-amber-300 bg-purple-950/80 px-2 py-0.5 rounded border border-amber-400/40">
-            JOKER • BHATTI WILDCARD
+            WILDCARD • JOKER
           </span>
         </div>
       );
@@ -252,7 +255,7 @@ export function RoyalRankInsignia({
             <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_14px_currentColor] select-none font-bold`}>{house.symbol}</span>
           </div>
           <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40">
-            IKKA • SOVEREIGN ACE
+            RANK I • ACE (IKKA)
           </span>
         </div>
       );
@@ -302,6 +305,17 @@ export default function CustomReferralCardStudio({
   useEffect(() => {
     let active = true;
     if (effectiveReferralCode) {
+      // 1. Instant generation so QR is never delayed or empty on tick 0
+      QRCode.toDataURL(signupReferralUrl, {
+        width: 320,
+        margin: 1,
+        color: { dark: '#121820', light: '#ffffff' },
+        errorCorrectionLevel: 'H'
+      }).then((fastUrl) => {
+        if (active && fastUrl) setQrDataUrl((prev) => prev || fastUrl);
+      }).catch(() => {});
+
+      // 2. High-res canvas with embedded center logo
       generateQRCodeDataUrl(signupReferralUrl, {
         width: 320,
         margin: 1,
@@ -541,9 +555,16 @@ export default function CustomReferralCardStudio({
 
                     {/* FRONT QR MINI-PASS (if showQrOnFront enabled) */}
                     {config.showQrOnFront && (
-                      <div className="mt-2 p-1 bg-white rounded-lg shadow-md border border-amber-400/50">
+                      <div className="mt-2 p-1 bg-white rounded-lg shadow-md border border-amber-400/50 relative flex items-center justify-center">
                         {qrDataUrl ? (
-                          <img src={qrDataUrl} alt="Referral QR" className="w-14 h-14 object-contain" />
+                          <div className="relative w-14 h-14 flex items-center justify-center">
+                            <img src={qrDataUrl} alt="Referral QR" className="w-full h-full object-contain rounded" />
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="w-3.5 h-3.5 rounded bg-stone-950 border border-amber-400 p-0.5 overflow-hidden shadow-xs">
+                                <img src={QR_CENTER_LOGO_BASE64} alt="Emblem" className="w-full h-full object-contain" />
+                              </div>
+                            </div>
+                          </div>
                         ) : (
                           <div className="w-14 h-14 bg-stone-100 flex items-center justify-center text-[8px] font-mono text-stone-500">
                             QR
@@ -592,15 +613,27 @@ export default function CustomReferralCardStudio({
                     <p className="text-[11px] text-stone-300 font-semibold mt-1">Scan for ₹150 OFF Inaugural Feast</p>
                   </div>
 
-                  {/* Centered QR Code with High-Contrast Canvas */}
+                  {/* Centered QR Code with High-Contrast Canvas and Authentic Bhatti Center Emblem */}
                   <div className="my-auto flex flex-col items-center justify-center">
-                    <div className="p-2.5 bg-white rounded-2xl shadow-xl border-2 border-amber-400/60 relative group/qr">
+                    <div className="p-2 sm:p-2.5 bg-white rounded-2xl shadow-xl border-2 border-amber-400/80 relative flex items-center justify-center">
                       {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="Referral QR Code" className="w-36 h-36 object-contain rounded-xl" />
+                        <div className="relative w-36 h-36 flex items-center justify-center">
+                          <img src={qrDataUrl} alt="Referral QR Code" className="w-full h-full object-contain rounded-xl" />
+                          {/* Centered Authentic Taash Bhatti Woodfire Spade Logo Overlay */}
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-10 h-10 rounded-xl bg-stone-950 border-2 border-amber-400 p-0.5 shadow-2xl flex items-center justify-center overflow-hidden ring-2 ring-black/40">
+                              <img
+                                src={QR_CENTER_LOGO_BASE64}
+                                alt="Taash Bhatti Emblem"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                          </div>
+                        </div>
                       ) : (
-                        <div className="w-36 h-36 bg-stone-100 flex flex-col items-center justify-center text-stone-700 text-xs font-mono p-2">
-                          <QrCode className="w-10 h-10 text-stone-700 animate-pulse" />
-                          <span className="text-[10px] mt-1 font-bold">Generating Pass...</span>
+                        <div className="w-36 h-36 bg-stone-100 flex flex-col items-center justify-center text-stone-700 text-xs font-mono p-2 rounded-xl">
+                          <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                          <span className="text-[10px] mt-2 font-bold text-stone-600">Generating Pass...</span>
                         </div>
                       )}
                     </div>
@@ -709,13 +742,32 @@ export default function CustomReferralCardStudio({
 
             {/* TAB CONTENT: RANKS (Ace, King, Queen, Jack, Joker) */}
             {activeCustomTab === 'rank' && (
-              <div className="space-y-2.5 animate-fade-in">
+              <div className="space-y-3 animate-fade-in">
+                {/* Royal Deck Hierarchy Banner */}
+                <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-300 font-bold">
+                    <Crown className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Deck Hierarchy:</span>
+                  </div>
+                  <div className="flex items-center flex-wrap gap-1 text-[10px] sm:text-xs font-mono font-black">
+                    <span className="text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-400/40">Ace (I)</span>
+                    <span className="text-stone-500 font-bold">&gt;</span>
+                    <span className="text-amber-200 bg-stone-800 px-1.5 py-0.5 rounded border border-amber-400/30">King (II)</span>
+                    <span className="text-stone-500 font-bold">&gt;</span>
+                    <span className="text-rose-300 bg-stone-800 px-1.5 py-0.5 rounded border border-rose-400/30">Queen (III)</span>
+                    <span className="text-stone-500 font-bold">&gt;</span>
+                    <span className="text-cyan-300 bg-stone-800 px-1.5 py-0.5 rounded border border-cyan-400/30">Jack (IV)</span>
+                    <span className="text-stone-600 font-bold">•</span>
+                    <span className="text-purple-300 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-400/30">Joker (★)</span>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-mono text-stone-400 uppercase tracking-wider block">
                     Choose Card Rank & Royal Crest:
                   </span>
                   <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
-                    Current: {currentRank.name}
+                    Active: {currentRank.name}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -744,8 +796,8 @@ export default function CustomReferralCardStudio({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1 mb-0.5">
                           <span className="text-xs font-black text-white">{rk.name}</span>
-                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-stone-800 text-amber-300 shrink-0">
-                            {rk.symbol}
+                          <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-stone-800 text-amber-300 border border-amber-400/30 shrink-0">
+                            {rk.rankBadge}
                           </span>
                         </div>
                         <p className="text-[11px] text-stone-400 leading-snug">{rk.description}</p>
@@ -1009,6 +1061,17 @@ export function CustomReferralCardView({
   useEffect(() => {
     let active = true;
     if (effectiveReferralCode) {
+      // 1. Instant generation so QR is never delayed or empty on tick 0
+      QRCode.toDataURL(signupReferralUrl, {
+        width: 320,
+        margin: 1,
+        color: { dark: '#121820', light: '#ffffff' },
+        errorCorrectionLevel: 'H'
+      }).then((fastUrl) => {
+        if (active && fastUrl) setQrDataUrl((prev) => prev || fastUrl);
+      }).catch(() => {});
+
+      // 2. High-res canvas with embedded center logo
       generateQRCodeDataUrl(signupReferralUrl, {
         width: 320,
         margin: 1,
@@ -1179,9 +1242,16 @@ export function CustomReferralCardView({
               </p>
 
               {config.showQrOnFront && (
-                <div className="mt-2.5 p-1 bg-white rounded-lg shadow-md border border-amber-400/50">
+                <div className="mt-2.5 p-1 bg-white rounded-lg shadow-md border border-amber-400/50 relative flex items-center justify-center">
                   {qrDataUrl ? (
-                    <img src={qrDataUrl} alt="Referral QR" className="w-14 h-14 object-contain" />
+                    <div className="relative w-14 h-14 flex items-center justify-center">
+                      <img src={qrDataUrl} alt="Referral QR" className="w-full h-full object-contain rounded" />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-3.5 h-3.5 rounded bg-stone-950 border border-amber-400 p-0.5 overflow-hidden shadow-xs">
+                          <img src={QR_CENTER_LOGO_BASE64} alt="Emblem" className="w-full h-full object-contain" />
+                        </div>
+                      </div>
+                    </div>
                   ) : (
                     <div className="w-14 h-14 bg-stone-100 flex items-center justify-center text-[8px] font-mono text-stone-500">
                       QR
@@ -1229,13 +1299,25 @@ export function CustomReferralCardView({
             </div>
 
             <div className="my-auto flex flex-col items-center justify-center">
-              <div className="p-2.5 bg-white rounded-2xl shadow-xl border-2 border-amber-400/60">
+              <div className="p-2 sm:p-2.5 bg-white rounded-2xl shadow-xl border-2 border-amber-400/80 relative flex items-center justify-center">
                 {qrDataUrl ? (
-                  <img src={qrDataUrl} alt="Referral QR Code" className="w-36 h-36 sm:w-40 sm:h-40 object-contain rounded-xl" />
+                  <div className="relative w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center">
+                    <img src={qrDataUrl} alt="Referral QR Code" className="w-full h-full object-contain rounded-xl" />
+                    {/* Centered Authentic Taash Bhatti Woodfire Spade Logo Overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-stone-950 border-2 border-amber-400 p-0.5 shadow-2xl flex items-center justify-center overflow-hidden ring-2 ring-black/40">
+                        <img
+                          src={QR_CENTER_LOGO_BASE64}
+                          alt="Taash Bhatti Emblem"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="w-36 h-36 sm:w-40 sm:h-40 bg-stone-100 flex flex-col items-center justify-center text-stone-700 text-xs font-mono p-2">
-                    <QrCode className="w-12 h-12 text-stone-700 animate-pulse" />
-                    <span className="text-[10px] mt-1 font-bold">Generating pass...</span>
+                  <div className="w-36 h-36 sm:w-40 sm:h-40 bg-stone-100 flex flex-col items-center justify-center text-stone-700 text-xs font-mono p-2 rounded-xl">
+                    <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-[10px] mt-2 font-bold text-stone-600">Generating pass...</span>
                   </div>
                 )}
               </div>
