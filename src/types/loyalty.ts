@@ -5,6 +5,63 @@
 
 export type RoyalRankId = 'shagird' | 'ustaad' | 'wazir' | 'badshah';
 
+export type CardArtStyle = 
+  | 'royal_gold'      // 24K Royal Gold Leaf & Obsidian
+  | 'cyber_tandoor'   // Cyberpunk Tandoor & Neon Embers
+  | 'charcoal_noir'   // Charcoal Noir & Rose Gold
+  | 'bhatti_magma'    // Volcanic Bhatti Magma & Crimson
+  | 'imperial_jade'   // Imperial Jade & Mughal Emerald
+  | 'terracotta_dum'; // Vedic Terracotta & Earthen Handi
+
+export type CardHouse = 'spades' | 'hearts' | 'diamonds' | 'clubs';
+
+export type CardVisualEffect = 
+  | 'holographic'     // Dynamic rainbow angle shift
+  | 'ember_particles' // Rising flame spark particles
+  | 'gold_glint'      // Sweeping reflective glint
+  | 'smoke_aura'      // Atmospheric charcoal smoke wisps
+  | 'neon_pulse'      // Breathing thermal edge glow
+  | 'none';
+
+export interface CustomCardConfig {
+  artStyle: CardArtStyle;
+  house: CardHouse;
+  visualEffect: CardVisualEffect;
+  patronTitle: string; // e.g. "Nawab of Bhatti", "Grill Knight", "Feast Baron"
+  customQuote?: string; // e.g. "Slow cooked over embers, shared with kings."
+  serialNumber: string; // e.g. "#TB-0042 • MINT 2026"
+  showQrOnFront: boolean;
+}
+
+export interface ReferralMilestoneStep {
+  step: number; // 1 to 10
+  ordersRequired: number; // 1 to 10
+  rewardType: 'wallet_standard' | 'wallet_golden' | 'free_dish' | 'discount_voucher';
+  amount: number; // Coins or Rupees
+  mealId?: string; // active dish ID
+  mealName?: string;
+  label: string; // e.g. "50 Ember Coins", "Free Saffron Tandoori Paneer"
+  description: string;
+}
+
+export interface ReferredFriendProgress {
+  id: string; // referral doc ID (ref_referrerUid_refereeUid)
+  referrerUserId: string;
+  referrerCode: string;
+  refereeUserId: string;
+  refereeName: string;
+  refereePhone?: string;
+  refereeEmail?: string;
+  refereeAvatar?: string;
+  joinedAt: string;
+  completedOrdersCount: number;
+  lastOrderDate?: string;
+  claimedMilestones: number[]; // e.g. [1, 2, 3]
+  totalEmbersEarned: number;
+  totalGoldenCashEarned: number;
+  freeDishesEarned: string[];
+}
+
 export interface RoyalRankTier {
   id: RoyalRankId;
   title: string;
@@ -25,6 +82,7 @@ export type RefereeRewardType = 'discount_flat' | 'wallet_credit' | 'free_dish';
 export interface LoyaltyConfig {
   // Referrals
   referralsEnabled: boolean;
+  milestoneSteps: ReferralMilestoneStep[]; // 10 progressive order milestones
   referrerReward: {
     type: ReferrerRewardType;
     amount: number; // e.g. 300 (for ₹300 Golden Wallet Cash)
@@ -179,8 +237,108 @@ export const DEFAULT_ROYAL_RANKS: RoyalRankTier[] = [
   },
 ];
 
+export const DEFAULT_MILESTONE_STEPS: ReferralMilestoneStep[] = [
+  {
+    step: 1,
+    ordersRequired: 1,
+    rewardType: 'wallet_standard',
+    amount: 50,
+    label: '50 Standard Embers',
+    description: 'Awarded when friend completes their 1st feast delivery.'
+  },
+  {
+    step: 2,
+    ordersRequired: 2,
+    rewardType: 'wallet_standard',
+    amount: 50,
+    label: '50 Standard Embers',
+    description: 'Awarded when friend completes their 2nd feast delivery.'
+  },
+  {
+    step: 3,
+    ordersRequired: 3,
+    rewardType: 'free_dish',
+    amount: 349,
+    mealId: 'm1',
+    mealName: 'Saffron-Infused Tandoori Paneer Platter',
+    label: 'Free Gourmet Dish (Next Order)',
+    description: 'Complimentary signature platter reward on your next order.'
+  },
+  {
+    step: 4,
+    ordersRequired: 4,
+    rewardType: 'wallet_standard',
+    amount: 75,
+    label: '75 Standard Embers',
+    description: 'Awarded when friend completes their 4th feast.'
+  },
+  {
+    step: 5,
+    ordersRequired: 5,
+    rewardType: 'wallet_golden',
+    amount: 100,
+    label: '₹100 Golden Wallet Cash',
+    description: 'Direct 100% bill-applicable Golden Cash credit.'
+  },
+  {
+    step: 6,
+    ordersRequired: 6,
+    rewardType: 'wallet_standard',
+    amount: 100,
+    label: '100 Standard Embers',
+    description: 'Awarded when friend completes their 6th feast.'
+  },
+  {
+    step: 7,
+    ordersRequired: 7,
+    rewardType: 'free_dish',
+    amount: 249,
+    mealId: 'm3',
+    mealName: 'Saffron Oats & Almond Delight Shake',
+    label: 'Free Gourmet Shake Perk',
+    description: 'Complimentary delight shake voucher on your next feast.'
+  },
+  {
+    step: 8,
+    ordersRequired: 8,
+    rewardType: 'wallet_standard',
+    amount: 150,
+    label: '150 Standard Embers',
+    description: 'Awarded when friend completes their 8th feast.'
+  },
+  {
+    step: 9,
+    ordersRequired: 9,
+    rewardType: 'wallet_golden',
+    amount: 200,
+    label: '₹200 Golden Wallet Cash',
+    description: 'Direct 100% bill-applicable Golden Cash credit.'
+  },
+  {
+    step: 10,
+    ordersRequired: 10,
+    rewardType: 'wallet_golden',
+    amount: 500,
+    mealId: 'm1',
+    mealName: 'Saffron-Infused Tandoori Paneer Platter',
+    label: '₹500 Grand Royal Bounty',
+    description: 'The ultimate 10-Feast Sovereign Bounty credited to your wallet.'
+  }
+];
+
+export const DEFAULT_CUSTOM_CARD_CONFIG: CustomCardConfig = {
+  artStyle: 'royal_gold',
+  house: 'spades',
+  visualEffect: 'holographic',
+  patronTitle: 'Nawab of Bhatti',
+  customQuote: 'Slow cooked over embers, shared with kings.',
+  serialNumber: '#TB-0001 • HERITAGE DECK',
+  showQrOnFront: false
+};
+
 export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfig = {
   referralsEnabled: true,
+  milestoneSteps: DEFAULT_MILESTONE_STEPS,
   referrerReward: {
     type: 'wallet_golden',
     amount: 300,

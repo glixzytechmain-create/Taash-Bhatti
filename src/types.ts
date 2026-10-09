@@ -106,6 +106,7 @@ export interface User {
   lastOrderDate?: string;
   pokerCards?: any[];
   claimedCombos?: string[];
+  customCard?: import('./types/loyalty').CustomCardConfig;
 }
 
 export interface WalletTransaction {

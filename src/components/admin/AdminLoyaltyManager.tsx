@@ -30,7 +30,9 @@ import {
   DEFAULT_LOYALTY_CONFIG, 
   DEFAULT_ROYAL_RANKS, 
   RoyalRankTier, 
-  RoyalRankId 
+  RoyalRankId,
+  ReferralMilestoneStep,
+  DEFAULT_MILESTONE_STEPS
 } from '../../types/loyalty';
 import { subscribeToLoyaltyConfig, saveLoyaltyConfig } from '../../lib/loyaltyService';
 import { auth } from '../../lib/firebase';
@@ -80,6 +82,14 @@ export default function AdminLoyaltyManager({ meals = [] }: AdminLoyaltyManagerP
     const updated = [...config.royalRanks];
     updated[index] = { ...updated[index], ...updates };
     setConfig({ ...config, royalRanks: updated });
+  };
+
+  const updateMilestone = (index: number, updates: Partial<ReferralMilestoneStep>) => {
+    const currentSteps = Array.isArray(config.milestoneSteps) && config.milestoneSteps.length > 0
+      ? [...config.milestoneSteps]
+      : [...DEFAULT_MILESTONE_STEPS];
+    currentSteps[index] = { ...currentSteps[index], ...updates };
+    setConfig({ ...config, milestoneSteps: currentSteps });
   };
 
   // Helper to get meal details by ID
@@ -552,6 +562,196 @@ export default function AdminLoyaltyManager({ meals = [] }: AdminLoyaltyManagerP
                   </select>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* 10-STEP PROGRESSIVE REFERRAL MILESTONES (PER-FRIEND JOURNEY) */}
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <Trophy className="w-5 h-5" />
+                  <h4 className="text-base font-black text-white">
+                    10-Step Progressive Referral Milestones (Per-Friend Journey)
+                  </h4>
+                </div>
+                <p className="text-xs text-stone-400 max-w-2xl leading-relaxed">
+                  Referral rewards unlock progressively across each friend's first 10 feast deliveries. You have 100% control over the order thresholds, Ember coins, Golden Cash, and complimentary menu dishes for every single step.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Reset all 10 milestone steps to standard defaults?')) {
+                    setConfig({ ...config, milestoneSteps: DEFAULT_MILESTONE_STEPS });
+                  }
+                }}
+                className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-750 text-stone-300 hover:text-white border border-stone-700 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset 10 Steps</span>
+              </button>
+            </div>
+
+            {/* List of 10 Steps */}
+            <div className="space-y-4">
+              {(config.milestoneSteps && config.milestoneSteps.length > 0
+                ? config.milestoneSteps
+                : DEFAULT_MILESTONE_STEPS
+              ).map((m, idx) => {
+                const stepMeal = m.mealId ? getMeal(m.mealId) : undefined;
+
+                return (
+                  <div
+                    key={m.step}
+                    className="p-4 sm:p-5 rounded-2xl bg-stone-950/70 border border-stone-800 hover:border-amber-500/40 transition-all space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center justify-center font-mono font-black text-xs">
+                          #{m.step}
+                        </span>
+                        <div>
+                          <span className="text-xs font-black text-white block">
+                            Milestone Step #{m.step}
+                          </span>
+                          <span className="text-[10px] text-stone-400 font-mono">
+                            Unlocks on Friend's Feast #{m.ordersRequired}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-[10px] text-stone-400 font-bold uppercase">
+                            Delivered Feasts Req:
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            value={m.ordersRequired}
+                            onChange={(e) =>
+                              updateMilestone(idx, { ordersRequired: Number(e.target.value) })
+                            }
+                            className="w-16 bg-stone-800 border border-stone-700 rounded-lg px-2 py-1 text-xs text-white text-center font-mono font-bold focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-[10px] text-stone-400 font-bold uppercase">
+                            Reward:
+                          </label>
+                          <select
+                            value={m.rewardType}
+                            onChange={(e) => {
+                              const newType = e.target.value as any;
+                              updateMilestone(idx, {
+                                rewardType: newType,
+                                amount: newType === 'wallet_standard' ? 50 : newType === 'wallet_golden' ? 100 : 250,
+                                label: newType === 'free_dish' ? 'Free Gourmet Dish' : newType === 'wallet_golden' ? '₹100 Golden Cash' : '50 Standard Embers'
+                              });
+                            }}
+                            className="bg-stone-800 border border-stone-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="wallet_standard">Standard Ember Coins</option>
+                            <option value="wallet_golden">Golden Wallet Cash (₹)</option>
+                            <option value="free_dish">Free Dish from Menu</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step Detail Controls */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-stone-850">
+                      {m.rewardType !== 'free_dish' ? (
+                        <div>
+                          <label className="text-[10px] font-bold text-stone-400 uppercase block mb-1">
+                            {m.rewardType === 'wallet_golden' ? 'Golden Cash Amount (₹)' : 'Ember Coins Count'}
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={m.amount}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              updateMilestone(idx, {
+                                amount: val,
+                                label: m.rewardType === 'wallet_golden' ? `₹${val} Golden Wallet Cash` : `${val} Standard Embers`
+                              });
+                            }}
+                            className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="text-[10px] font-bold text-stone-400 uppercase block mb-1">
+                            Select Complimentary Dish
+                          </label>
+                          <select
+                            value={m.mealId || ''}
+                            onChange={(e) => {
+                              const sel = meals.find((dish) => dish.id === e.target.value);
+                              updateMilestone(idx, {
+                                mealId: sel?.id,
+                                mealName: sel?.name,
+                                label: sel?.name ? `Free ${sel.name}` : 'Free Gourmet Dish'
+                              });
+                            }}
+                            className="w-full bg-stone-800 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="">-- Choose active meal --</option>
+                            {meals.map((dish) => (
+                              <option key={dish.id} value={dish.id}>
+                                {dish.name} (₹{dish.price}) {dish.isVeg ? '🌱 Veg' : '🍗 Non-Veg'}
+                              </option>
+                            ))}
+                          </select>
+
+                          {stepMeal && (
+                            <div className="mt-2 p-1.5 bg-stone-850 rounded-lg flex items-center gap-2 border border-stone-750">
+                              <img
+                                src={stepMeal.image}
+                                alt=""
+                                className="w-8 h-8 rounded-md object-cover"
+                              />
+                              <div className="text-[10px] leading-tight">
+                                <span className="text-white font-bold block line-clamp-1">{stepMeal.name}</span>
+                                <span className="text-amber-400 font-mono">₹{stepMeal.price}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-400 uppercase block mb-1">
+                          Display Label
+                        </label>
+                        <input
+                          type="text"
+                          value={m.label}
+                          onChange={(e) => updateMilestone(idx, { label: e.target.value })}
+                          className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-400 uppercase block mb-1">
+                          Customer Description Note
+                        </label>
+                        <input
+                          type="text"
+                          value={m.description}
+                          onChange={(e) => updateMilestone(idx, { description: e.target.value })}
+                          className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

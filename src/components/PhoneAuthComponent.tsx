@@ -22,7 +22,8 @@ import {
   EyeOff, 
   Zap,
   Mail,
-  User as UserIcon
+  User as UserIcon,
+  Ticket
 } from 'lucide-react';
 import { 
   RecaptchaVerifier, 
@@ -33,6 +34,7 @@ import {
 import { auth, db } from '../lib/firebase';
 import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { User } from '../types';
+import { registerReferralRelationship } from '../lib/loyaltyService';
 
 interface CountryCode {
   code: string;
@@ -82,7 +84,23 @@ export default function PhoneAuthComponent({
   const [phoneNumber, setPhoneNumber] = useState(initialPhone ? initialPhone.replace(/\D/g, '') : '');
   const [fullName, setFullName] = useState(defaultName);
   const [email, setEmail] = useState('');
+  const [referralCode, setReferralCode] = useState<string>(() => {
+    try {
+      return localStorage.getItem('taashbhatti_pending_referral_code') || '';
+    } catch {
+      return '';
+    }
+  });
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+
+  useEffect(() => {
+    try {
+      const code = localStorage.getItem('taashbhatti_pending_referral_code');
+      if (code && !referralCode) {
+        setReferralCode(code);
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     if (initialPhone && initialPhone.replace(/\D/g, '').length > 0) {
@@ -711,6 +729,26 @@ export default function PhoneAuthComponent({
       await setDoc(userRef, finalProfile, { merge: true }).catch((err) =>
         console.warn('User creation warning:', err)
       );
+
+      // Auto-link referral if code was provided during registration or captured via QR link
+      const codeToApply = referralCode.trim().toUpperCase() || (typeof localStorage !== 'undefined' ? localStorage.getItem('taashbhatti_pending_referral_code') : null);
+      if (codeToApply) {
+        try {
+          await registerReferralRelationship({
+            referrerCode: codeToApply,
+            refereeUserId: uid,
+            refereeName: fullName.trim(),
+            refereePhone: fullE164Phone,
+            refereeEmail: cleanEmail || ''
+          });
+          try {
+            localStorage.removeItem('taashbhatti_pending_referral_code');
+            sessionStorage.removeItem('taashbhatti_pending_referral_code');
+          } catch (e) {}
+        } catch (refErr) {
+          console.warn('Could not register referral relationship on phone signup:', refErr);
+        }
+      }
 
       // Update Firebase Auth display name
       if (currentUser && fullName.trim()) {
@@ -1417,6 +1455,29 @@ export default function PhoneAuthComponent({
             </div>
             <p className="text-[10px] text-brand-charcoal/60 leading-tight pt-0.5">
               💡 Add an email to sign in using either email or phone for this account. Cannot be an email already in use.
+            </p>
+          </div>
+
+          {/* Optional Referral / Invite Code */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase text-brand-charcoal/70 flex items-center justify-between">
+              <span>Invite / Referral Code</span>
+              <span className="text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded text-[9px] font-black">
+                Optional • ₹150 OFF
+              </span>
+            </label>
+            <div className="relative">
+              <Ticket className="w-4 h-4 text-brand-charcoal/40 absolute left-3.5 top-3.5" />
+              <input
+                type="text"
+                placeholder="e.g. TB1234 (auto-filled from QR/link)"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                className="w-full h-11 bg-brand-cream/15 border border-brand-green/15 rounded-xl pl-10 pr-3.5 text-xs font-mono font-bold tracking-wider uppercase text-brand-charcoal focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+              />
+            </div>
+            <p className="text-[10px] text-brand-charcoal/60 leading-tight pt-0.5">
+              🎁 Friends get ₹150 OFF their inaugural feast; your inviter unlocks progressive 10-step royal rewards!
             </p>
           </div>
 

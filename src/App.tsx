@@ -83,6 +83,7 @@ import { App as CapApp } from '@capacitor/app';
 import { getStoredFeatureFlags, subscribeFeatureFlags, saveFeatureFlags } from './lib/featureFlags';
 import { AppFeatureFlags } from './types';
 import BhattiGameOnPortal from './components/gameon/BhattiGameOnPortal';
+import { registerReferralRelationship } from './lib/loyaltyService';
 import { saveWonRewardToUserVault } from './lib/gameonService';
 import DineInPortal from './components/dinein/DineInPortal';
 import OrderInvoiceModal from './components/OrderInvoiceModal';
@@ -233,8 +234,24 @@ export default function App() {
       if (typeof window !== 'undefined') {
         const path = window.location.pathname;
         const params = new URLSearchParams(window.location.search);
+        
+        // Capture referral code from URL parameter (?ref=TB1234 or ?referral=...)
+        const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
+        if (refCode) {
+          const cleanRef = refCode.trim().toUpperCase();
+          try {
+            localStorage.setItem('taashbhatti_pending_referral_code', cleanRef);
+            sessionStorage.setItem('taashbhatti_pending_referral_code', cleanRef);
+          } catch (e) {}
+        }
+
         if (path.startsWith('/buddydeck') || params.get('page') === 'buddydeck' || params.has('deckId')) {
           return 'buddydeck';
+        }
+
+        // Direct to account/signup if requested in referral pass QR scan
+        if (params.get('mode') === 'signup' || params.get('tab') === 'account') {
+          return 'account';
         }
       }
     } catch (e) {}
@@ -1408,7 +1425,15 @@ export default function App() {
         const userRef = doc(db, 'users', firebaseUser.uid);
         unsubscribeUser = onSnapshot(userRef, (snapshot) => {
           if (snapshot.exists()) {
-            const profile = snapshot.data() as User;
+            const profileData = snapshot.data() as User;
+            const profile: User = {
+              ...profileData,
+              id: snapshot.id || firebaseUser.uid,
+              referralCode: profileData.referralCode || localStorage.getItem('taashbhatti_user_referral_code') || undefined,
+            };
+            if (profile.referralCode) {
+              try { localStorage.setItem('taashbhatti_user_referral_code', profile.referralCode); } catch (e) {}
+            }
             if (firebaseUser.phoneNumber && (!profile.phone || !profile.isPhoneVerified)) {
               profile.phone = firebaseUser.phoneNumber;
               profile.isPhoneVerified = true;
@@ -1438,6 +1463,7 @@ export default function App() {
             }
           } else {
             const initialProfile: User = {
+              id: firebaseUser.uid,
               name: firebaseUser.displayName || (firebaseUser.phoneNumber ? `Foodie (${firebaseUser.phoneNumber.slice(-4)})` : 'Taash Bhatti Foodie'),
               email: firebaseUser.email || '',
               avatar: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
@@ -2137,7 +2163,13 @@ export default function App() {
     }
   };
 
-  const handleSignUpWithEmail = async (email: string, pass: string, name: string, goal: 'fat_loss' | 'muscle_gain' | 'maintenance' | 'general') => {
+  const handleSignUpWithEmail = async (
+    email: string, 
+    pass: string, 
+    name: string, 
+    goal: 'fat_loss' | 'muscle_gain' | 'maintenance' | 'general',
+    referralCode?: string
+  ) => {
     const emailClean = email.trim().toLowerCase();
     const passClean = pass.trim();
     const isAdminEmail = emailClean === 'glixzytechmain@gmail.com' || emailClean.endsWith('@taashbhatti.com') || emailClean.endsWith('@taashbhatti.com');
@@ -2220,6 +2252,25 @@ export default function App() {
         onboardingCompleted: false,
       };
       await setDoc(doc(db, 'users', cred.user.uid), initialProfile);
+
+      // Auto-link referral if code was provided during registration or captured via QR link
+      const codeToApply = referralCode || (typeof localStorage !== 'undefined' ? localStorage.getItem('taashbhatti_pending_referral_code') : null);
+      if (codeToApply) {
+        try {
+          await registerReferralRelationship({
+            referrerCode: codeToApply,
+            refereeUserId: cred.user.uid,
+            refereeName: name,
+            refereeEmail: emailClean
+          });
+          try {
+            localStorage.removeItem('taashbhatti_pending_referral_code');
+            sessionStorage.removeItem('taashbhatti_pending_referral_code');
+          } catch (e) {}
+        } catch (refErr) {
+          console.warn("Could not register referral relationship on email signup:", refErr);
+        }
+      }
       
       showToast("🌱 Account registered & profiles synced!");
       return { success: true };

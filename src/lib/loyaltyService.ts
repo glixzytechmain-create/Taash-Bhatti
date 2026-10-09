@@ -23,7 +23,12 @@ import {
   PokerCardItem, 
   CardSuit, 
   CardRank, 
-  UserLoyaltyState 
+  UserLoyaltyState,
+  CustomCardConfig,
+  DEFAULT_CUSTOM_CARD_CONFIG,
+  ReferralMilestoneStep,
+  DEFAULT_MILESTONE_STEPS,
+  ReferredFriendProgress
 } from '../types/loyalty';
 import { Order, User, WalletTransaction } from '../types';
 
@@ -43,6 +48,9 @@ export function subscribeToLoyaltyConfig(callback: (config: LoyaltyConfig) => vo
         callback({
           ...DEFAULT_LOYALTY_CONFIG,
           ...data,
+          milestoneSteps: Array.isArray(data.milestoneSteps) && data.milestoneSteps.length > 0
+            ? data.milestoneSteps
+            : DEFAULT_MILESTONE_STEPS,
           royalRanks: Array.isArray(data.royalRanks) && data.royalRanks.length > 0 
             ? data.royalRanks 
             : DEFAULT_ROYAL_RANKS,
@@ -77,6 +85,9 @@ export async function getLoyaltyConfig(): Promise<LoyaltyConfig> {
       return {
         ...DEFAULT_LOYALTY_CONFIG,
         ...data,
+        milestoneSteps: Array.isArray(data.milestoneSteps) && data.milestoneSteps.length > 0
+          ? data.milestoneSteps
+          : DEFAULT_MILESTONE_STEPS,
         royalRanks: Array.isArray(data.royalRanks) && data.royalRanks.length > 0 
           ? data.royalRanks 
           : DEFAULT_ROYAL_RANKS,
@@ -128,20 +139,36 @@ export function generateUserReferralCode(user?: { name?: string; email?: string 
 
 /**
  * Ensures a user has a permanent referral code assigned and saved.
+ * Resolves ID reliably across sessions, utilizes instant local caching,
+ * and uses setDoc with merge to prevent document missing errors.
  */
-export async function ensureUserReferralCode(user: User, userId: string): Promise<string> {
-  if (user.referralCode && user.referralCode.trim().length > 3) {
+export async function ensureUserReferralCode(user?: User | null, userId?: string): Promise<string> {
+  // 1. Direct profile field check
+  if (user?.referralCode && user.referralCode.trim().length > 3) {
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('taashbhatti_user_referral_code', user.referralCode); } catch (e) {}
+    }
     return user.referralCode;
   }
 
+  // 2. Local storage cache check
+  if (typeof localStorage !== 'undefined') {
+    const cachedCode = localStorage.getItem('taashbhatti_user_referral_code');
+    if (cachedCode && cachedCode.trim().length > 3) {
+      if (user) user.referralCode = cachedCode;
+      return cachedCode;
+    }
+  }
+
+  // 3. Generate permanent code
   const newCode = generateUserReferralCode(user);
-  try {
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { referralCode: newCode });
+  if (user) {
     user.referralCode = newCode;
-    
-    // Update local cache
+  }
+
+  if (typeof localStorage !== 'undefined') {
     try {
+      localStorage.setItem('taashbhatti_user_referral_code', newCode);
       ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
         const cached = localStorage.getItem(key);
         if (cached) {
@@ -150,11 +177,183 @@ export async function ensureUserReferralCode(user: User, userId: string): Promis
           localStorage.setItem(key, JSON.stringify(parsed));
         }
       });
-    } catch {}
-  } catch (e) {
-    console.warn('Could not persist referral code in Firestore:', e);
+    } catch (e) {}
   }
+
+  // 4. Persist to Firestore
+  const targetUid = userId || user?.id || (user as any)?.uid || (typeof localStorage !== 'undefined' ? localStorage.getItem('taashbhatti_guest_user_id') : null);
+  if (targetUid) {
+    try {
+      const userRef = doc(db, 'users', targetUid);
+      await setDoc(userRef, { referralCode: newCode }, { merge: true });
+    } catch (e) {
+      console.warn('Could not persist referral code in Firestore:', e);
+    }
+  }
+
   return newCode;
+}
+
+/**
+ * Gets or initializes the user's custom referral card configuration.
+ */
+export function getUserCustomCard(user?: User | null): CustomCardConfig {
+  if (user?.customCard && user.customCard.artStyle) {
+    return user.customCard;
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('taashbhatti_custom_card');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.artStyle) return parsed;
+      }
+    } catch (e) {}
+  }
+
+  return {
+    ...DEFAULT_CUSTOM_CARD_CONFIG,
+    patronTitle: user?.name ? `Nawab ${user.name.split(' ')[0]}` : 'Nawab of Bhatti',
+    serialNumber: `#TB-${Math.floor(1000 + Math.random() * 9000)} • HERITAGE DECK`
+  };
+}
+
+/**
+ * Saves a user's customized referral card configuration.
+ */
+export async function saveUserCustomCard(
+  userId: string,
+  cardConfig: CustomCardConfig
+): Promise<boolean> {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem('taashbhatti_custom_card', JSON.stringify(cardConfig));
+      ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
+        const cached = localStorage.getItem(key);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          parsed.customCard = cardConfig;
+          localStorage.setItem(key, JSON.stringify(parsed));
+        }
+      });
+      window.dispatchEvent(new CustomEvent('taashbhatti_card_customized', { detail: cardConfig }));
+    } catch (e) {}
+  }
+
+  if (userId) {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, { customCard: cardConfig }, { merge: true });
+      return true;
+    } catch (e) {
+      console.warn('Could not persist custom card in Firestore:', e);
+    }
+  }
+  return true;
+}
+
+/**
+ * Registers a new referee-to-referrer relationship in Firestore.
+ */
+export async function registerReferralRelationship({
+  referrerCode,
+  refereeUserId,
+  refereeName,
+  refereePhone,
+  refereeEmail
+}: {
+  referrerCode: string;
+  refereeUserId: string;
+  refereeName?: string;
+  refereePhone?: string;
+  refereeEmail?: string;
+}): Promise<{ success: boolean; referrerId?: string; error?: string }> {
+  try {
+    const cleanCode = (referrerCode || '').trim().toUpperCase();
+    if (!cleanCode) return { success: false, error: 'No referral code provided.' };
+
+    const usersCol = collection(db, 'users');
+    const q = query(usersCol, where('referralCode', '==', cleanCode));
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+      return { success: false, error: 'Invalid referral code.' };
+    }
+
+    const referrerDoc = snap.docs[0];
+    const referrerId = referrerDoc.id;
+
+    if (referrerId === refereeUserId) {
+      return { success: false, error: 'You cannot use your own referral code!' };
+    }
+
+    const referralDocId = `ref_${referrerId}_${refereeUserId}`;
+    const referralRef = doc(db, 'referrals', referralDocId);
+    const existingSnap = await getDoc(referralRef);
+
+    if (!existingSnap.exists()) {
+      const initialRecord: ReferredFriendProgress = {
+        id: referralDocId,
+        referrerUserId: referrerId,
+        referrerCode: cleanCode,
+        refereeUserId,
+        refereeName: refereeName || 'New Royal Patron',
+        refereePhone: refereePhone || '',
+        refereeEmail: refereeEmail || '',
+        joinedAt: new Date().toISOString(),
+        completedOrdersCount: 0,
+        claimedMilestones: [],
+        totalEmbersEarned: 0,
+        totalGoldenCashEarned: 0,
+        freeDishesEarned: []
+      };
+      await setDoc(referralRef, initialRecord);
+    }
+
+    // Link on referee user doc
+    const refereeRef = doc(db, 'users', refereeUserId);
+    await setDoc(refereeRef, {
+      referredByCode: cleanCode,
+      referredByUserId: referrerId
+    }, { merge: true });
+
+    return { success: true, referrerId };
+  } catch (err: any) {
+    console.warn('Could not register referral relationship:', err);
+    return { success: false, error: err?.message || 'Failed to register referral.' };
+  }
+}
+
+/**
+ * Real-time subscription to friends referred by this user.
+ */
+export function subscribeToUserReferrals(
+  userId: string,
+  callback: (friends: ReferredFriendProgress[]) => void
+): () => void {
+  if (!userId) {
+    callback([]);
+    return () => {};
+  }
+  const referralsCol = collection(db, 'referrals');
+  const q = query(referralsCol, where('referrerUserId', '==', userId));
+  const unsub = onSnapshot(
+    q,
+    (snapshot) => {
+      const friends: ReferredFriendProgress[] = [];
+      snapshot.forEach((d) => {
+        friends.push({ id: d.id, ...d.data() } as ReferredFriendProgress);
+      });
+      friends.sort((a, b) => new Date(b.joinedAt || 0).getTime() - new Date(a.joinedAt || 0).getTime());
+      callback(friends);
+    },
+    (err) => {
+      console.warn('Error subscribing to user referrals:', err);
+      callback([]);
+    }
+  );
+  return unsub;
 }
 
 /**
@@ -515,7 +714,8 @@ export async function claimPokerBounty({
 }
 
 /**
- * Processes referrer reward when referee's first order is delivered.
+ * Processes referrer progressive milestone rewards when referee's orders are delivered.
+ * Supports 10 distinct order milestones per referred friend.
  */
 export async function processReferralOnOrderDelivered({
   order,
@@ -526,14 +726,32 @@ export async function processReferralOnOrderDelivered({
 }): Promise<{
   rewarded: boolean;
   referrerId?: string;
+  milestonesAwarded?: number[];
   squadBountyUnlocked?: boolean;
 }> {
-  if (!config.referralsEnabled || !order.referrerUserId) {
+  if (!config.referralsEnabled) {
     return { rewarded: false };
   }
 
-  const referrerId = order.referrerUserId;
-  const rewardAmount = config.referrerReward.amount || 300;
+  // 1. Identify referrer UID: either from order or from referee's user profile
+  let referrerId = order.referrerUserId;
+  let refereeId = order.userId;
+  let refereeName = order.customerName || 'Friend';
+
+  if (!referrerId && refereeId) {
+    try {
+      const refereeSnap = await getDoc(doc(db, 'users', refereeId));
+      if (refereeSnap.exists()) {
+        const u = refereeSnap.data() as User;
+        referrerId = u.referredByUserId;
+        if (u.name) refereeName = u.name;
+      }
+    } catch {}
+  }
+
+  if (!referrerId || !refereeId || referrerId === refereeId) {
+    return { rewarded: false };
+  }
 
   try {
     const referrerRef = doc(db, 'users', referrerId);
@@ -541,65 +759,159 @@ export async function processReferralOnOrderDelivered({
     if (!referrerSnap.exists()) return { rewarded: false };
 
     const refData = referrerSnap.data() as User;
-    const currentGolden = Number(refData.goldenEmberBalance || 0);
-    const currentStandard = Number(refData.standardEmberBalance || 0);
-    const currentTx: WalletTransaction[] = Array.isArray(refData.walletTransactions) ? refData.walletTransactions : [];
-    const successfulCount = (refData.successfulReferralCount || 0) + 1;
+    const referralDocId = `ref_${referrerId}_${refereeId}`;
+    const referralRef = doc(db, 'referrals', referralDocId);
+    const referralSnap = await getDoc(referralRef);
 
-    // Credit referrer with configured reward
-    const newGolden = currentGolden + rewardAmount;
-    const newTotal = newGolden + currentStandard;
-
-    const rewardTx: WalletTransaction = {
-      id: `tx-ref-bonus-${order.id.slice(-6)}-${Date.now()}`,
-      type: 'credit',
-      amount: rewardAmount,
-      emberType: 'golden',
-      description: `🎁 ₹${rewardAmount} Bhatti Golden Wallet Cash: Friend Referral Bonus for Order #${order.id.slice(-6)}`,
-      orderId: order.id,
-      createdAt: new Date().toISOString()
-    };
-
-    let squadUnlocked = false;
-    let extraTxList: WalletTransaction[] = [rewardTx];
-    let finalGolden = newGolden;
-
-    // Check "Table of 4" Squad Goal
-    if (
-      config.squadGoal.enabled &&
-      successfulCount >= config.squadGoal.targetReferrals &&
-      !refData.squadBountyClaimed
-    ) {
-      squadUnlocked = true;
-      const squadCash = config.squadGoal.rewardAmount || 1000;
-      finalGolden += squadCash;
-
-      const squadTx: WalletTransaction = {
-        id: `tx-squad-goal-${Date.now()}`,
-        type: 'credit',
-        amount: squadCash,
-        emberType: 'golden',
-        description: `👑 Table of 4 Royal Feast Squad Bounty: 4 Friends Seated! Awarded ₹${squadCash} Golden Wallet Cash`,
-        createdAt: new Date().toISOString()
+    let friendRecord: ReferredFriendProgress;
+    if (referralSnap.exists()) {
+      friendRecord = referralSnap.data() as ReferredFriendProgress;
+    } else {
+      friendRecord = {
+        id: referralDocId,
+        referrerUserId: referrerId,
+        referrerCode: refData.referralCode || '',
+        refereeUserId: refereeId,
+        refereeName,
+        refereePhone: order.customerPhone || (order as any).phone || '',
+        joinedAt: new Date().toISOString(),
+        completedOrdersCount: 0,
+        claimedMilestones: [],
+        totalEmbersEarned: 0,
+        totalGoldenCashEarned: 0,
+        freeDishesEarned: []
       };
-      extraTxList.push(squadTx);
     }
 
-    await updateDoc(referrerRef, {
-      goldenEmberBalance: finalGolden,
-      walletBalance: finalGolden + currentStandard,
-      walletTransactions: [...extraTxList, ...currentTx],
-      successfulReferralCount: successfulCount,
-      ...(squadUnlocked ? { squadBountyClaimed: true } : {})
-    });
+    // Increment completed order count for this specific friend
+    const newOrderCount = (friendRecord.completedOrdersCount || 0) + 1;
+    const claimedMilestones = Array.isArray(friendRecord.claimedMilestones) ? [...friendRecord.claimedMilestones] : [];
+    
+    // Milestones definition
+    const milestoneSteps = Array.isArray(config.milestoneSteps) && config.milestoneSteps.length > 0
+      ? config.milestoneSteps
+      : DEFAULT_MILESTONE_STEPS;
+
+    // Check which milestones are eligible to claim
+    const newMilestonesAwarded: number[] = [];
+    let standardEmbersToAdd = 0;
+    let goldenCashToAdd = 0;
+    const newFreeDishesEarned = [...(friendRecord.freeDishesEarned || [])];
+    const newTxList: WalletTransaction[] = [];
+    const newVouchers: any[] = [];
+
+    for (const m of milestoneSteps) {
+      if (newOrderCount >= m.ordersRequired && !claimedMilestones.includes(m.step)) {
+        newMilestonesAwarded.push(m.step);
+        claimedMilestones.push(m.step);
+
+        if (m.rewardType === 'wallet_standard') {
+          standardEmbersToAdd += m.amount;
+          newTxList.push({
+            id: `tx-milestone-${m.step}-${order.id.slice(-6)}-${Date.now()}`,
+            type: 'credit',
+            amount: m.amount,
+            emberType: 'standard',
+            description: `🎁 Step ${m.step} Milestone (${m.label}): Awarded for ${refereeName}'s Feast #${newOrderCount}`,
+            orderId: order.id,
+            createdAt: new Date().toISOString()
+          });
+        } else if (m.rewardType === 'wallet_golden') {
+          goldenCashToAdd += m.amount;
+          newTxList.push({
+            id: `tx-milestone-${m.step}-${order.id.slice(-6)}-${Date.now()}`,
+            type: 'credit',
+            amount: m.amount,
+            emberType: 'golden',
+            description: `🎁 Step ${m.step} Milestone (${m.label}): Awarded for ${refereeName}'s Feast #${newOrderCount}`,
+            orderId: order.id,
+            createdAt: new Date().toISOString()
+          });
+        } else if (m.rewardType === 'free_dish') {
+          const dishLabel = m.mealName || 'Free Gourmet Dish';
+          newFreeDishesEarned.push(`${dishLabel} (Step ${m.step})`);
+          newVouchers.push({
+            id: `voucher-step-${m.step}-${Date.now()}`,
+            couponCode: `PERK${m.step}${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+            title: `Complimentary ${dishLabel}`,
+            description: `Unlocked via Step ${m.step} milestone for friend ${refereeName}'s Feast #${newOrderCount}!`,
+            mealId: m.mealId,
+            mealName: m.mealName,
+            isUsed: false,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+    }
+
+    // Check Squad Bounty (e.g. 4 friends completed at least 1 feast)
+    let squadUnlocked = false;
+    if (config.squadGoal.enabled && !refData.squadBountyClaimed && newOrderCount === 1) {
+      const qFriends = query(collection(db, 'referrals'), where('referrerUserId', '==', referrerId));
+      const friendsSnap = await getDocs(qFriends);
+      let countWithOrders = 1; // including current
+      friendsSnap.forEach(d => {
+        const fr = d.data();
+        if (fr.refereeUserId !== refereeId && (fr.completedOrdersCount || 0) >= 1) {
+          countWithOrders++;
+        }
+      });
+      if (countWithOrders >= config.squadGoal.targetReferrals) {
+        squadUnlocked = true;
+        const squadCash = config.squadGoal.rewardAmount || 1000;
+        goldenCashToAdd += squadCash;
+        newTxList.push({
+          id: `tx-squad-goal-${Date.now()}`,
+          type: 'credit',
+          amount: squadCash,
+          emberType: 'golden',
+          description: `👑 Table of 4 Royal Feast Squad Bounty: 4 Friends Seated! Awarded ₹${squadCash} Golden Wallet Cash`,
+          createdAt: new Date().toISOString()
+        });
+      }
+    }
+
+    // Update friend record in Firestore
+    const updatedRecord: ReferredFriendProgress = {
+      ...friendRecord,
+      completedOrdersCount: newOrderCount,
+      lastOrderDate: new Date().toISOString(),
+      claimedMilestones,
+      totalEmbersEarned: (friendRecord.totalEmbersEarned || 0) + standardEmbersToAdd,
+      totalGoldenCashEarned: (friendRecord.totalGoldenCashEarned || 0) + goldenCashToAdd,
+      freeDishesEarned: newFreeDishesEarned
+    };
+    await setDoc(referralRef, updatedRecord, { merge: true });
+
+    // Update referrer user document if rewards were earned
+    if (newTxList.length > 0 || newVouchers.length > 0 || squadUnlocked) {
+      const currentGolden = Number(refData.goldenEmberBalance || 0);
+      const currentStandard = Number(refData.standardEmberBalance || 0);
+      const currentTx: WalletTransaction[] = Array.isArray(refData.walletTransactions) ? refData.walletTransactions : [];
+      const currentVouchers = Array.isArray((refData as any).wonRewards) ? (refData as any).wonRewards : [];
+
+      const newGolden = currentGolden + goldenCashToAdd;
+      const newStandard = currentStandard + standardEmbersToAdd;
+      const newTotal = newGolden + newStandard;
+
+      await setDoc(referrerRef, {
+        goldenEmberBalance: newGolden,
+        standardEmberBalance: newStandard,
+        walletBalance: newTotal,
+        walletTransactions: [...newTxList, ...currentTx],
+        ...(newVouchers.length > 0 ? { wonRewards: [...newVouchers, ...currentVouchers] } : {}),
+        ...(squadUnlocked ? { squadBountyClaimed: true } : {})
+      }, { merge: true });
+    }
 
     return {
-      rewarded: true,
+      rewarded: newMilestonesAwarded.length > 0 || squadUnlocked,
       referrerId,
+      milestonesAwarded: newMilestonesAwarded,
       squadBountyUnlocked: squadUnlocked
     };
   } catch (err) {
-    console.warn('Could not award referral bonus in Firestore:', err);
+    console.warn('Could not process progressive referral milestones in Firestore:', err);
     return { rewarded: false };
   }
 }

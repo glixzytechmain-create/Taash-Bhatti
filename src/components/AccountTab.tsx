@@ -361,7 +361,7 @@ interface AccountTabProps {
   fbUser?: any;
   deckCount?: number;
   onSignInWithEmail?: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
-  onSignUpWithEmail?: (email: string, pass: string, name: string, goal: 'fat_loss' | 'muscle_gain' | 'maintenance' | 'general') => Promise<{ success: boolean; error?: string }>;
+  onSignUpWithEmail?: (email: string, pass: string, name: string, goal: 'fat_loss' | 'muscle_gain' | 'maintenance' | 'general', referralCode?: string) => Promise<{ success: boolean; error?: string }>;
   onSignInWithGoogle?: () => Promise<{ success: boolean; error?: string }>;
   onSignInWithApple?: () => Promise<{ success: boolean; error?: string }>;
   onPhoneAuthSuccess?: (data: { user: User; fbUser: any; isNewUser: boolean }) => void;
@@ -915,6 +915,23 @@ export default function AccountTab({
   const [authGoal, setAuthGoal] = useState<'fat_loss' | 'muscle_gain' | 'maintenance'>('muscle_gain');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [authReferralCode, setAuthReferralCode] = useState<string>(() => {
+    try {
+      return localStorage.getItem('taashbhatti_pending_referral_code') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const code = localStorage.getItem('taashbhatti_pending_referral_code');
+      if (code && !authReferralCode) {
+        setAuthReferralCode(code);
+      }
+    } catch {}
+  }, []);
+
   const [showGuestProfile, setShowGuestProfile] = useState(false);
   const [showPhoneLinkModal, setShowPhoneLinkModal] = useState(false);
 
@@ -958,7 +975,13 @@ export default function AccountTab({
         setAuthLoading(false);
         return;
       }
-      const res = await onSignUpWithEmail?.(authEmail, authPassword, authName, authGoal);
+      const res = await onSignUpWithEmail?.(
+        authEmail, 
+        authPassword, 
+        authName, 
+        authGoal,
+        authReferralCode.trim().toUpperCase()
+      );
       if (res && !res.success) {
         setAuthError(res.error || "Failed to create account.");
       }
@@ -1505,6 +1528,32 @@ export default function AccountTab({
                   </button>
                 </div>
               </div>
+
+              {authMode === 'register' && (
+                <div className="space-y-1.5 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">
+                      Invite / Referral Code
+                    </label>
+                    <span className="text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded text-[9px] font-black">
+                      Optional • ₹150 OFF
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <Ticket className="w-4 h-4 text-brand-charcoal/40 absolute left-3.5 top-3.5" />
+                    <input
+                      type="text"
+                      placeholder="e.g. TB1234 (auto-filled from QR/link)"
+                      value={authReferralCode}
+                      onChange={(e) => setAuthReferralCode(e.target.value.toUpperCase())}
+                      className="w-full bg-brand-cream/15 border border-brand-green/10 rounded-xl pl-10 pr-3.5 py-3 text-xs font-mono font-bold tracking-wider uppercase focus:outline-none focus:ring-2 focus:ring-brand-green/20"
+                    />
+                  </div>
+                  <p className="text-[10px] text-brand-charcoal/60 leading-tight">
+                    🎁 Friends get ₹150 OFF their inaugural feast; your inviter unlocks progressive 10-step royal rewards!
+                  </p>
+                </div>
+              )}
 
               {authError && (
                 <p className="text-[11px] text-red-600 font-bold bg-red-50 p-2.5 rounded-xl border border-red-200/40 text-center animate-shake">
