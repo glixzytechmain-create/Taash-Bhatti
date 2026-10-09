@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Sparkles, 
   Flame, 
@@ -17,22 +17,23 @@ import {
   Palette, 
   Layers, 
   Wand2, 
-  Sliders, 
   X, 
   Save, 
-  Eye,
   Zap,
-  Award
+  Award,
+  Gem
 } from 'lucide-react';
 import { 
   CustomCardConfig, 
   CardArtStyle, 
   CardHouse, 
+  CardRankType,
   CardVisualEffect, 
+  CARD_RANKS,
   DEFAULT_CUSTOM_CARD_CONFIG 
 } from '../../types/loyalty';
 import { generateQRCodeDataUrl } from '../../lib/qrCodeGenerator';
-import { saveUserCustomCard } from '../../lib/loyaltyService';
+import { saveUserCustomCard, getOrGenerateReferralCodeSync } from '../../lib/loyaltyService';
 import { User } from '../../types';
 
 interface CustomReferralCardStudioProps {
@@ -131,21 +132,22 @@ export const HOUSES: { id: CardHouse; name: string; symbol: string; title: strin
 ];
 
 export const VISUAL_EFFECTS: { id: CardVisualEffect; name: string; desc: string; icon: any }[] = [
-  { id: 'holographic', name: 'Holo Rainbow Sheen', desc: 'Dynamic rainbow sheen angle shift', icon: Sparkles },
-  { id: 'ember_particles', name: 'Floating Ember Sparks', desc: 'Fiery glowing sparks rising from coals', icon: Flame },
-  { id: 'gold_glint', name: 'Reflective Light Sweep', desc: 'Periodic metallic glint across surface', icon: Zap },
-  { id: 'smoke_aura', name: 'Charcoal Smoke Wisps', desc: 'Subtle curling tendrils of handi smoke', icon: Layers },
-  { id: 'neon_pulse', name: 'Thermal Heat Rim Pulse', desc: 'Breathing neon glow around card perimeter', icon: Crown },
+  { id: 'holographic', name: 'Holo Rainbow Sheen', desc: 'Dynamic rainbow angle shift with spectral light', icon: Sparkles },
+  { id: 'ember_particles', name: 'Floating Ember Sparks', desc: 'Fiery glowing sparks rising from live coals', icon: Flame },
+  { id: 'gold_glint', name: '24K Foil Light Sweep', desc: 'Periodic metallic gold gleam across surface', icon: Zap },
+  { id: 'neon_pulse', name: 'Thermal Heat Rim Pulse', desc: 'Breathing neon plasma pulse around card edge', icon: Crown },
+  { id: 'smoke_aura', name: 'Charcoal Smoke Wisps', desc: 'Subtle curling tendrils of authentic wood smoke', icon: Layers },
   { id: 'none', name: 'Minimalist Clean', desc: 'Pure unembellished royal card surface', icon: ShieldCheck }
 ];
 
 export const TITLE_SUGGESTIONS = [
   'Nawab of Bhatti',
+  'Badshah of the Hearth',
+  'Begum of Royal Dawat',
+  'Wazir of the Charcoal Guild',
+  'Court Jester & Spice Trickster',
+  'Sultan of Dum Biryani',
   'Grand Tandoor Knight',
-  'Sultan of Spice',
-  'Dum Biryani Sovereign',
-  'Handi Alchemist',
-  'Royal Charcoal Master',
   'Feast Baron'
 ];
 
@@ -156,6 +158,106 @@ export const QUOTE_SUGGESTIONS = [
   'Sealed in clay, crowned with saffron.',
   'Good food takes time, great food takes embers.'
 ];
+
+/**
+ * Royal Rank Insignia Crest Component
+ * Displays distinct historical royal emblems for Ace, King, Queen, Jack, and Joker.
+ */
+export function RoyalRankInsignia({ 
+  rank, 
+  house, 
+  isMini = false 
+}: { 
+  rank: CardRankType; 
+  house: { symbol: string; color: string; name: string }; 
+  isMini?: boolean 
+}) {
+  const sizeClasses = isMini ? 'w-14 h-14' : 'w-16 h-16 sm:w-20 sm:h-20';
+  const symbolClasses = isMini ? 'text-2xl' : 'text-3xl sm:text-4xl';
+
+  switch (rank) {
+    case 'king':
+      return (
+        <div className="relative flex flex-col items-center justify-center">
+          <div className="relative -mb-1 z-10 flex items-center justify-center">
+            <Crown className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-amber-400 drop-shadow-[0_2px_8px_rgba(245,158,11,0.6)]`} />
+          </div>
+          <div className={`relative ${sizeClasses} rounded-2xl bg-gradient-to-b from-amber-500/20 via-stone-900/80 to-black border-2 border-amber-400/80 flex items-center justify-center shadow-xl shadow-amber-500/25 backdrop-blur-xs`}>
+            <div className="absolute top-1 left-1 w-1 h-1 rounded-full bg-amber-400" />
+            <div className="absolute top-1 right-1 w-1 h-1 rounded-full bg-amber-400" />
+            <div className="absolute bottom-1 left-1 w-1 h-1 rounded-full bg-amber-400" />
+            <div className="absolute bottom-1 right-1 w-1 h-1 rounded-full bg-amber-400" />
+            <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_12px_currentColor] select-none font-bold`}>{house.symbol}</span>
+          </div>
+          <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40">
+            BADSHAH • HEARTH KING
+          </span>
+        </div>
+      );
+
+    case 'queen':
+      return (
+        <div className="relative flex flex-col items-center justify-center">
+          <div className="relative -mb-1 z-10 flex items-center justify-center gap-1">
+            <Gem className={`${isMini ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} text-rose-300 drop-shadow-[0_0_8px_#fda4af]`} />
+          </div>
+          <div className={`relative ${sizeClasses} rounded-full bg-gradient-to-b from-rose-950/40 via-stone-900/80 to-amber-950/40 border-2 border-rose-300/80 flex items-center justify-center shadow-xl shadow-rose-500/25 backdrop-blur-xs ring-2 ring-amber-400/30`}>
+            <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_12px_currentColor] select-none font-bold`}>{house.symbol}</span>
+          </div>
+          <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-500/40">
+            BEGUM • EMPRESS OF FLAVOR
+          </span>
+        </div>
+      );
+
+    case 'jack':
+      return (
+        <div className="relative flex flex-col items-center justify-center">
+          <div className="relative -mb-1 z-10 flex items-center justify-center">
+            <ShieldCheck className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-cyan-400 drop-shadow-[0_0_8px_#22d3ee]`} />
+          </div>
+          <div className={`relative ${sizeClasses} rounded-xl bg-gradient-to-b from-stone-850 via-stone-950 to-stone-900 border-2 border-cyan-400/70 flex items-center justify-center shadow-xl shadow-cyan-500/20 backdrop-blur-xs`}>
+            <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_12px_currentColor] select-none font-bold`}>{house.symbol}</span>
+          </div>
+          <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-cyan-300 bg-stone-900/90 px-2 py-0.5 rounded border border-cyan-500/40">
+            WAZIR • CHARCOAL KNIGHT
+          </span>
+        </div>
+      );
+
+    case 'joker':
+      return (
+        <div className="relative flex flex-col items-center justify-center">
+          <div className="relative -mb-1 z-10 flex items-center justify-center">
+            <Sparkles className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-amber-300 animate-spin drop-shadow-[0_0_10px_#fde047]`} style={{ animationDuration: '6s' }} />
+          </div>
+          <div className={`relative ${sizeClasses} rounded-2xl bg-gradient-to-tr from-purple-950/70 via-red-950/70 to-amber-950/70 border-2 border-amber-300/80 flex items-center justify-center shadow-xl shadow-purple-500/30 backdrop-blur-xs`}>
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-500/20 via-amber-500/20 to-purple-500/20 animate-pulse pointer-events-none" />
+            <span className={`${symbolClasses} text-amber-300 drop-shadow-[0_0_14px_#f59e0b] select-none font-black`}>★</span>
+          </div>
+          <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-amber-300 bg-purple-950/80 px-2 py-0.5 rounded border border-amber-400/40">
+            JOKER • BHATTI WILDCARD
+          </span>
+        </div>
+      );
+
+    case 'ace':
+    default:
+      return (
+        <div className="relative flex flex-col items-center justify-center">
+          <div className="relative -mb-1 z-10 flex items-center justify-center">
+            <Crown className={`${isMini ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-amber-400 drop-shadow-[0_0_10px_rgba(245,158,11,0.7)]`} />
+          </div>
+          <div className={`relative ${sizeClasses} rounded-full bg-gradient-to-b from-amber-500/20 via-stone-900/80 to-black border-2 border-amber-400/90 flex items-center justify-center shadow-xl shadow-amber-500/30 backdrop-blur-xs ring-4 ring-amber-500/10`}>
+            <span className={`${symbolClasses} ${house.color} drop-shadow-[0_0_14px_currentColor] select-none font-bold`}>{house.symbol}</span>
+          </div>
+          <span className="mt-1 text-[8px] font-mono tracking-widest uppercase font-black text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40">
+            IKKA • SOVEREIGN ACE
+          </span>
+        </div>
+      );
+  }
+}
 
 export default function CustomReferralCardStudio({
   user,
@@ -168,6 +270,7 @@ export default function CustomReferralCardStudio({
   const [config, setConfig] = useState<CustomCardConfig>(() => {
     return initialConfig || {
       ...DEFAULT_CUSTOM_CARD_CONFIG,
+      rank: 'ace',
       patronTitle: user?.name ? `Nawab ${user.name.split(' ')[0]}` : 'Nawab of Bhatti',
       serialNumber: `#TB-${Math.floor(1000 + Math.random() * 9000)} • HERITAGE DECK`
     };
@@ -178,41 +281,82 @@ export default function CustomReferralCardStudio({
   const [copiedCode, setCopiedCode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [activeCustomTab, setActiveCustomTab] = useState<'style' | 'house' | 'effect' | 'identity'>('style');
+  const [activeCustomTab, setActiveCustomTab] = useState<'rank' | 'style' | 'house' | 'effect' | 'identity'>('rank');
 
-  // Parallax angle for holographic effect
-  const [holoAngle, setHoloAngle] = useState(45);
+  // Interactive 3D Perspective Tilt State
+  const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0, glareX: 50, glareY: 50, isHovered: false });
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Generate QR code encoding signup referral link
+  // Synchronously guaranteed referral code (never stalls on empty)
+  const effectiveReferralCode = useMemo(() => {
+    if (referralCode && referralCode.trim().length >= 4) {
+      return referralCode.trim().toUpperCase();
+    }
+    return getOrGenerateReferralCodeSync(user, user?.id);
+  }, [referralCode, user]);
+
   const signupReferralUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/?ref=${referralCode}&mode=signup`
-    : `https://taashbhatti.com/?ref=${referralCode}&mode=signup`;
+    ? `${window.location.origin}/?ref=${effectiveReferralCode}&mode=signup`
+    : `https://taashbhatti.com/?ref=${effectiveReferralCode}&mode=signup`;
 
   useEffect(() => {
-    if (referralCode) {
+    let active = true;
+    if (effectiveReferralCode) {
       generateQRCodeDataUrl(signupReferralUrl, {
         width: 320,
         margin: 1,
         color: { dark: '#121820', light: '#ffffff' }
-      }).then((url) => setQrDataUrl(url));
+      }).then((url) => {
+        if (active && url) setQrDataUrl(url);
+      }).catch((err) => {
+        console.warn('QR generation notice:', err);
+      });
     }
-  }, [referralCode, signupReferralUrl]);
+    return () => { active = false; };
+  }, [effectiveReferralCode, signupReferralUrl]);
 
-  // Mouse move for holographic angle shift
+  // Interactive 3D tilt tracking for cursor and touch
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current || config.visualEffect !== 'holographic') return;
+    if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const angle = Math.atan2(y - rect.height / 2, x - rect.width / 2) * (180 / Math.PI) + 180;
-    setHoloAngle(Math.round(angle));
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const rotateX = -((y - centerY) / centerY) * 14;
+    const rotateY = ((x - centerX) / centerX) * 14;
+    const glareX = (x / rect.width) * 100;
+    const glareY = (y / rect.height) * 100;
+    setTilt({ rotateX, rotateY, glareX, glareY, isHovered: true });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ rotateX: 0, rotateY: 0, glareX: 50, glareY: 50, isHovered: false });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!cardRef.current || !e.touches[0]) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const rotateX = -((y - centerY) / centerY) * 12;
+    const rotateY = ((x - centerX) / centerX) * 12;
+    const glareX = (x / rect.width) * 100;
+    const glareY = (y / rect.height) * 100;
+    setTilt({ rotateX, rotateY, glareX, glareY, isHovered: true });
+  };
+
+  const handleTouchEnd = () => {
+    setTilt({ rotateX: 0, rotateY: 0, glareX: 50, glareY: 50, isHovered: false });
   };
 
   const handleCopyCode = async () => {
-    if (!referralCode) return;
+    if (!effectiveReferralCode) return;
     try {
-      await navigator.clipboard.writeText(referralCode);
+      await navigator.clipboard.writeText(effectiveReferralCode);
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2000);
     } catch {}
@@ -234,21 +378,21 @@ export default function CustomReferralCardStudio({
   if (!isOpen) return null;
 
   const currentHouse = HOUSES.find((h) => h.id === config.house) || HOUSES[0];
-  const currentStyle = ART_STYLES.find((s) => s.id === config.artStyle) || ART_STYLES[0];
+  const currentRank = CARD_RANKS.find((r) => r.id === (config.rank || 'ace')) || CARD_RANKS[0];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-4xl max-h-[92vh] bg-stone-950 border border-amber-500/30 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-stone-100">
         
         {/* Studio Header */}
-        <div className="px-5 py-4 border-b border-stone-800 flex items-center justify-between bg-gradient-to-r from-amber-950/40 via-stone-900/50 to-stone-950">
+        <div className="px-5 py-4 border-b border-stone-800 flex items-center justify-between bg-gradient-to-r from-amber-950/50 via-stone-900/60 to-stone-950">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
-              <Palette className="w-5 h-5" />
+              <Crown className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-black tracking-wide text-amber-300 uppercase">Taash Royal Card Atelier</h3>
-              <p className="text-xs text-stone-400">Handcraft your personalized 5:7 royal referral pass</p>
+              <p className="text-xs text-stone-400">Custom 5:7 Royal Deck Pass with Ranks, Shaders & 3D Interactive Tilt</p>
             </div>
           </div>
           <button
@@ -262,14 +406,14 @@ export default function CustomReferralCardStudio({
         {/* Studio Body: Split View (Live 5:7 Card on Left, Atelier Controls on Right) */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* LEFT: LIVE 5:7 CARD PREVIEW (Strict 5:7 Aspect Ratio) */}
+          {/* LEFT: LIVE 5:7 CARD PREVIEW */}
           <div className="lg:col-span-5 flex flex-col items-center">
             
-            {/* Card Flip Controls Top */}
+            {/* Flip / Ratio Bar */}
             <div className="w-full flex items-center justify-between mb-3 px-2">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-amber-400/80 font-bold flex items-center gap-1.5">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-amber-400/90 font-bold flex items-center gap-1.5">
                 <Crown className="w-3.5 h-3.5" />
-                <span>5:7 Royale Ratio</span>
+                <span>5:7 Aspect Ratio</span>
               </span>
               <button
                 type="button"
@@ -281,25 +425,30 @@ export default function CustomReferralCardStudio({
               </button>
             </div>
 
-            {/* 3D FLIP CONTAINER: STRICT 5:7 ASPECT RATIO */}
+            {/* 3D INTERACTIVE TILT CONTAINER: STRICT 5:7 RATIO */}
             <div
               className="relative w-[280px] sm:w-[300px] aspect-[5/7] cursor-pointer select-none group"
               style={{ perspective: '1200px' }}
               onClick={() => setIsFlipped(!isFlipped)}
               onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
               ref={cardRef}
             >
               <div
-                className="w-full h-full relative transition-transform duration-700 ease-out"
+                className="w-full h-full relative"
                 style={{
                   transformStyle: 'preserve-3d',
-                  transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
+                  transform: `rotateY(${isFlipped ? 180 + tilt.rotateY : tilt.rotateY}deg) rotateX(${tilt.rotateX}deg)`,
+                  transition: tilt.isHovered ? 'transform 0.08s ease-out' : 'transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)',
+                  filter: tilt.isHovered
+                    ? `drop-shadow(${-tilt.rotateY * 1.5}px ${tilt.rotateX * 1.5 + 16}px 24px rgba(0,0,0,0.7))`
+                    : 'drop-shadow(0 20px 25px rgba(0,0,0,0.5))'
                 }}
               >
                 
-                {/* ============================================================ */}
                 {/* FRONT FACE (5:7 STRICT RATIO) */}
-                {/* ============================================================ */}
                 <div
                   className={`absolute inset-0 w-full h-full rounded-2xl border-2 p-4 flex flex-col justify-between overflow-hidden shadow-2xl transition-all ${
                     config.artStyle === 'royal_gold' ? 'bg-gradient-to-br from-stone-950 via-amber-950/60 to-black border-amber-400/80 shadow-amber-500/20' :
@@ -311,41 +460,56 @@ export default function CustomReferralCardStudio({
                   }`}
                   style={{ backfaceVisibility: 'hidden' }}
                 >
-                  {/* EFFECT: HOLOGRAPHIC SHEEN OVERLAY */}
-                  {config.visualEffect === 'holographic' && (
+                  {/* SPECULAR INTERACTIVE GLARE SHEEN */}
+                  {tilt.isHovered && (
                     <div
-                      className="absolute inset-0 pointer-events-none opacity-40 mix-blend-color-dodge transition-opacity duration-300"
+                      className="absolute inset-0 pointer-events-none rounded-2xl z-30 transition-opacity duration-150 mix-blend-overlay"
                       style={{
-                        background: `linear-gradient(${holoAngle}deg, rgba(255,0,128,0.3) 0%, rgba(0,255,200,0.4) 25%, rgba(255,215,0,0.5) 50%, rgba(138,43,226,0.3) 75%, rgba(255,0,128,0.3) 100%)`
+                        background: `radial-gradient(circle 200px at ${tilt.glareX}% ${tilt.glareY}%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.06) 50%, transparent 100%)`
                       }}
                     />
                   )}
 
-                  {/* EFFECT: GOLD GLINT SWEEP */}
+                  {/* EFFECT: HOLOGRAPHIC SPECTRAL SHEEN OVERLAY */}
+                  {config.visualEffect === 'holographic' && (
+                    <div
+                      className="absolute inset-0 pointer-events-none opacity-45 mix-blend-color-dodge transition-opacity duration-300 animate-holo-spectral"
+                      style={{
+                        background: `linear-gradient(${tilt.isHovered ? (tilt.glareX * 3.6) : 45}deg, rgba(255,0,128,0.4) 0%, rgba(0,255,200,0.45) 25%, rgba(255,215,0,0.5) 50%, rgba(138,43,226,0.45) 75%, rgba(255,0,128,0.4) 100%)`
+                      }}
+                    />
+                  )}
+
+                  {/* EFFECT: 24K GOLD FOIL SHIMMER SWEEP */}
                   {config.visualEffect === 'gold_glint' && (
-                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                      <div className="w-[200%] h-full bg-gradient-to-r from-transparent via-amber-200/25 to-transparent -skew-x-45 animate-pulse" />
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+                      <div className="w-[90px] h-[250%] bg-gradient-to-r from-transparent via-amber-200/50 to-transparent -top-[50%] animate-gold-foil blur-[1px]" />
                     </div>
                   )}
 
-                  {/* EFFECT: NEON HEAT PULSE */}
+                  {/* EFFECT: NEON PLASMA PULSE */}
                   {config.visualEffect === 'neon_pulse' && (
-                    <div className="absolute inset-0 rounded-2xl border-2 border-amber-400/40 animate-ping pointer-events-none opacity-30" />
+                    <div className="absolute inset-0 rounded-2xl border-2 border-cyan-400/60 animate-plasma-pulse pointer-events-none z-20" />
                   )}
 
-                  {/* EFFECT: EMBER SPARKS PARTICLES */}
+                  {/* EFFECT: FLOATING LIVING EMBER PARTICLES */}
                   {config.visualEffect === 'ember_particles' && (
-                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                      <div className="absolute bottom-2 left-6 w-1.5 h-1.5 rounded-full bg-amber-400 blur-[0.5px] animate-bounce" />
-                      <div className="absolute bottom-5 right-8 w-1 h-1 rounded-full bg-orange-400 blur-[0.5px] animate-pulse" />
-                      <div className="absolute bottom-10 left-1/2 w-1.5 h-1.5 rounded-full bg-amber-300 blur-[0.5px] animate-ping" />
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+                      <div className="absolute bottom-1 left-[15%] w-2 h-2 rounded-full bg-amber-400 blur-[0.6px] shadow-[0_0_8px_#f59e0b] animate-ember-1" />
+                      <div className="absolute bottom-2 left-[35%] w-2.5 h-2.5 rounded-full bg-orange-500 blur-[0.8px] shadow-[0_0_10px_#ea580c] animate-ember-2" />
+                      <div className="absolute bottom-0 left-[60%] w-1.5 h-1.5 rounded-full bg-amber-300 blur-[0.5px] shadow-[0_0_6px_#fde047] animate-ember-3" />
+                      <div className="absolute bottom-3 left-[80%] w-2 h-2 rounded-full bg-red-500 blur-[0.7px] shadow-[0_0_8px_#ef4444] animate-ember-4" />
+                      <div className="absolute bottom-1 left-[48%] w-3 h-3 rounded-full bg-amber-500/80 blur-[1px] shadow-[0_0_12px_#f59e0b] animate-ember-2" style={{ animationDelay: '1.2s' }} />
+                      <div className="absolute bottom-2 left-[25%] w-1.5 h-1.5 rounded-full bg-yellow-300 blur-[0.5px] shadow-[0_0_6px_#facc15] animate-ember-1" style={{ animationDelay: '0.5s' }} />
                     </div>
                   )}
 
-                  {/* Top Header Corner Pips: Rank & Suit */}
+                  {/* Top Corner Pips: Rank Symbol & Suit */}
                   <div className="relative z-10 flex items-start justify-between">
                     <div className="flex flex-col items-center leading-none">
-                      <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">A</span>
+                      <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">
+                        {currentRank.symbol}
+                      </span>
                       <span className={`text-base ${currentHouse.color}`}>{currentHouse.symbol}</span>
                     </div>
                     <div className="text-right">
@@ -358,17 +522,14 @@ export default function CustomReferralCardStudio({
                     </div>
                   </div>
 
-                  {/* Center Emblem: House Sigil & Crown */}
+                  {/* Center Emblem: Royal Rank Insignia Crest */}
                   <div className="relative z-10 my-auto flex flex-col items-center justify-center text-center px-2">
-                    <div className="relative mb-2">
-                      <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-400/40 flex items-center justify-center shadow-lg">
-                        <span className={`text-3xl ${currentHouse.color}`}>{currentHouse.symbol}</span>
-                      </div>
-                      <Crown className="w-4 h-4 text-amber-400 absolute -top-2 left-1/2 -translate-x-1/2" />
+                    <div className="mb-2">
+                      <RoyalRankInsignia rank={config.rank || 'ace'} house={currentHouse} isMini={false} />
                     </div>
 
-                    <h4 className="text-sm font-black tracking-wider text-amber-200 uppercase font-serif">
-                      {config.patronTitle || 'Nawab of Bhatti'}
+                    <h4 className="text-sm font-black tracking-wider text-amber-200 uppercase font-serif mt-1">
+                      {config.patronTitle || currentRank.defaultTitle}
                     </h4>
                     <p className="text-[12px] font-bold text-white tracking-wide mt-0.5">
                       {user?.name || 'Royal Patron'}
@@ -378,24 +539,32 @@ export default function CustomReferralCardStudio({
                       "{config.customQuote || currentHouse.motto}"
                     </p>
 
-                    {/* FRONT QR THUMBNAIL (if showQrOnFront enabled) */}
-                    {config.showQrOnFront && qrDataUrl && (
-                      <div className="mt-2 p-1 bg-white rounded-lg shadow-md">
-                        <img src={qrDataUrl} alt="Referral QR" className="w-14 h-14 object-contain" />
+                    {/* FRONT QR MINI-PASS (if showQrOnFront enabled) */}
+                    {config.showQrOnFront && (
+                      <div className="mt-2 p-1 bg-white rounded-lg shadow-md border border-amber-400/50">
+                        {qrDataUrl ? (
+                          <img src={qrDataUrl} alt="Referral QR" className="w-14 h-14 object-contain" />
+                        ) : (
+                          <div className="w-14 h-14 bg-stone-100 flex items-center justify-center text-[8px] font-mono text-stone-500">
+                            QR
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* Bottom Strip: Permanent Code & Inverted Corner Pip */}
+                  {/* Bottom Strip: Invite Code & Inverted Corner Pip */}
                   <div className="relative z-10 pt-2 border-t border-amber-500/30 flex items-end justify-between">
                     <div>
                       <span className="text-[8px] font-mono text-stone-400 uppercase tracking-wider block">Invite Code</span>
                       <span className="text-sm font-mono font-black text-amber-300 tracking-wider">
-                        {referralCode || 'TB-ROYAL'}
+                        {effectiveReferralCode}
                       </span>
                     </div>
                     <div className="flex flex-col items-center leading-none rotate-180">
-                      <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">A</span>
+                      <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">
+                        {currentRank.symbol}
+                      </span>
                       <span className={`text-base ${currentHouse.color}`}>{currentHouse.symbol}</span>
                     </div>
                   </div>
@@ -406,11 +575,9 @@ export default function CustomReferralCardStudio({
                   </div>
                 </div>
 
-                {/* ============================================================ */}
-                {/* BACK FACE (QR CODE INVITATION PASS - 5:7 STRICT RATIO) */}
-                {/* ============================================================ */}
+                {/* BACK FACE (QR CODE INVITATION PASS - STRICT 5:7 RATIO) */}
                 <div
-                  className="absolute inset-0 w-full h-full rounded-2xl border-2 border-amber-400/80 p-5 flex flex-col justify-between overflow-hidden shadow-2xl bg-gradient-to-br from-stone-950 via-amber-950/70 to-black"
+                  className="absolute inset-0 w-full h-full rounded-2xl border-2 border-amber-400/80 p-5 flex flex-col justify-between overflow-hidden shadow-2xl bg-gradient-to-br from-stone-950 via-amber-950/70 to-black text-white"
                   style={{
                     backfaceVisibility: 'hidden',
                     transform: 'rotateY(180deg)'
@@ -418,36 +585,37 @@ export default function CustomReferralCardStudio({
                 >
                   {/* Top Crest */}
                   <div className="text-center">
-                    <div className="inline-flex items-center gap-1 text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                    <div className="inline-flex items-center gap-1 text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
                       <Crown className="w-3 h-3 text-amber-400" />
                       <span>Taash Bhatti Royal Pass</span>
                     </div>
                     <p className="text-[11px] text-stone-300 font-semibold mt-1">Scan for ₹150 OFF Inaugural Feast</p>
                   </div>
 
-                  {/* Centered QR Code with Spade Emblem */}
+                  {/* Centered QR Code with High-Contrast Canvas */}
                   <div className="my-auto flex flex-col items-center justify-center">
-                    <div className="p-2.5 bg-white rounded-2xl shadow-xl border border-amber-400/50 relative group/qr">
+                    <div className="p-2.5 bg-white rounded-2xl shadow-xl border-2 border-amber-400/60 relative group/qr">
                       {qrDataUrl ? (
                         <img src={qrDataUrl} alt="Referral QR Code" className="w-36 h-36 object-contain rounded-xl" />
                       ) : (
-                        <div className="w-36 h-36 bg-stone-100 flex items-center justify-center text-stone-400 text-xs font-mono">
-                          Generating QR...
+                        <div className="w-36 h-36 bg-stone-100 flex flex-col items-center justify-center text-stone-700 text-xs font-mono p-2">
+                          <QrCode className="w-10 h-10 text-stone-700 animate-pulse" />
+                          <span className="text-[10px] mt-1 font-bold">Generating Pass...</span>
                         </div>
                       )}
                     </div>
 
                     <div className="mt-2.5 text-center">
-                      <span className="text-[9px] font-mono text-amber-300 uppercase tracking-wider block">Scan with Any Camera</span>
-                      <span className="text-xs font-mono font-black text-white bg-amber-500/20 px-2 py-0.5 rounded border border-amber-400/30 inline-block mt-0.5">
-                        {referralCode}
+                      <span className="text-[9px] font-mono text-amber-300 uppercase tracking-wider block">Scan to Auto-Fill Signup Code</span>
+                      <span className="text-xs font-mono font-black text-white bg-amber-500/20 px-2.5 py-0.5 rounded border border-amber-400/40 inline-block mt-0.5">
+                        {effectiveReferralCode}
                       </span>
                     </div>
                   </div>
 
                   {/* Bottom Scan Instructions */}
                   <div className="text-center border-t border-amber-500/20 pt-2 text-[10px] text-stone-400">
-                    <p>New signup accounts receive ₹150 discount automatically applied.</p>
+                    <p>New signups receive ₹150 OFF automatically. Existing accounts cannot claim.</p>
                   </div>
                 </div>
 
@@ -467,7 +635,7 @@ export default function CustomReferralCardStudio({
               <button
                 type="button"
                 onClick={() => {
-                  const text = `🔥 Claim ₹150 OFF your first authentic clay-oven feast at Taash Bhatti!\nUse code: *${referralCode}*\nSign up here: ${signupReferralUrl}`;
+                  const text = `🔥 Claim ₹150 OFF your first authentic clay-oven feast at Taash Bhatti!\nUse code: *${effectiveReferralCode}*\nSign up here: ${signupReferralUrl}`;
                   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
                 }}
                 className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
@@ -481,12 +649,23 @@ export default function CustomReferralCardStudio({
           {/* RIGHT: ATELIER CUSTOMIZATION TABS & OPTIONS */}
           <div className="lg:col-span-7 flex flex-col space-y-4">
             
-            {/* Atelier Navigation Tabs */}
-            <div className="grid grid-cols-4 gap-1 p-1 bg-stone-900/90 rounded-2xl border border-stone-800">
+            {/* Atelier Navigation Tabs: 5 Full Categories */}
+            <div className="grid grid-cols-5 gap-1 p-1 bg-stone-900/90 rounded-2xl border border-stone-800">
+              <button
+                type="button"
+                onClick={() => setActiveCustomTab('rank')}
+                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  activeCustomTab === 'rank' ? 'bg-amber-500 text-stone-950 shadow-md font-black' : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                <Crown className="w-3.5 h-3.5" />
+                <span>Rank</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setActiveCustomTab('style')}
-                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   activeCustomTab === 'style' ? 'bg-amber-500 text-stone-950 shadow-md font-black' : 'text-stone-400 hover:text-white'
                 }`}
               >
@@ -497,18 +676,18 @@ export default function CustomReferralCardStudio({
               <button
                 type="button"
                 onClick={() => setActiveCustomTab('house')}
-                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   activeCustomTab === 'house' ? 'bg-amber-500 text-stone-950 shadow-md font-black' : 'text-stone-400 hover:text-white'
                 }`}
               >
-                <Crown className="w-3.5 h-3.5" />
+                <ShieldCheck className="w-3.5 h-3.5" />
                 <span>House</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveCustomTab('effect')}
-                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   activeCustomTab === 'effect' ? 'bg-amber-500 text-stone-950 shadow-md font-black' : 'text-stone-400 hover:text-white'
                 }`}
               >
@@ -519,7 +698,7 @@ export default function CustomReferralCardStudio({
               <button
                 type="button"
                 onClick={() => setActiveCustomTab('identity')}
-                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   activeCustomTab === 'identity' ? 'bg-amber-500 text-stone-950 shadow-md font-black' : 'text-stone-400 hover:text-white'
                 }`}
               >
@@ -527,6 +706,55 @@ export default function CustomReferralCardStudio({
                 <span>Identity</span>
               </button>
             </div>
+
+            {/* TAB CONTENT: RANKS (Ace, King, Queen, Jack, Joker) */}
+            {activeCustomTab === 'rank' && (
+              <div className="space-y-2.5 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono text-stone-400 uppercase tracking-wider block">
+                    Choose Card Rank & Royal Crest:
+                  </span>
+                  <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                    Current: {currentRank.name}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {CARD_RANKS.map((rk) => (
+                    <button
+                      key={rk.id}
+                      type="button"
+                      onClick={() => {
+                        setConfig({
+                          ...config,
+                          rank: rk.id,
+                          patronTitle: (config.patronTitle === currentRank.defaultTitle || !config.patronTitle) 
+                            ? rk.defaultTitle 
+                            : config.patronTitle
+                        });
+                      }}
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
+                        (config.rank || 'ace') === rk.id
+                          ? 'border-amber-400 bg-amber-500/15 shadow-md ring-1 ring-amber-400/50'
+                          : 'border-stone-800 bg-stone-900/60 hover:border-stone-700'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-serif font-black text-xl shrink-0">
+                        {rk.symbol}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="text-xs font-black text-white">{rk.name}</span>
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-stone-800 text-amber-300 shrink-0">
+                            {rk.symbol}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-400 leading-snug">{rk.description}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* TAB CONTENT: ARTSTYLES (6 Visual Aesthetics) */}
             {activeCustomTab === 'style' && (
@@ -742,6 +970,10 @@ export default function CustomReferralCardStudio({
   );
 }
 
+/**
+ * CustomReferralCardView Component
+ * Renders the user's custom 5:7 royal referral card with rank insignias, interactive 3D perspective tilt, and shader animations.
+ */
 export function CustomReferralCardView({
   user,
   referralCode,
@@ -757,52 +989,105 @@ export function CustomReferralCardView({
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [holoAngle, setHoloAngle] = useState(45);
+  
+  // Interactive 3D Perspective Tilt State
+  const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0, glareX: 50, glareY: 50, isHovered: false });
   const cardRef = useRef<HTMLDivElement>(null);
 
+  // Synchronously guaranteed referral code
+  const effectiveReferralCode = useMemo(() => {
+    if (referralCode && referralCode.trim().length >= 4) {
+      return referralCode.trim().toUpperCase();
+    }
+    return getOrGenerateReferralCodeSync(user, user?.id);
+  }, [referralCode, user]);
+
   const signupReferralUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/?ref=${referralCode}&mode=signup`
-    : `https://taashbhatti.com/?ref=${referralCode}&mode=signup`;
+    ? `${window.location.origin}/?ref=${effectiveReferralCode}&mode=signup`
+    : `https://taashbhatti.com/?ref=${effectiveReferralCode}&mode=signup`;
 
   useEffect(() => {
-    if (referralCode) {
+    let active = true;
+    if (effectiveReferralCode) {
       generateQRCodeDataUrl(signupReferralUrl, {
         width: 320,
         margin: 1,
         color: { dark: '#121820', light: '#ffffff' }
-      }).then((url) => setQrDataUrl(url));
+      }).then((url) => {
+        if (active && url) setQrDataUrl(url);
+      }).catch((err) => {
+        console.warn('QR generation notice:', err);
+      });
     }
-  }, [referralCode, signupReferralUrl]);
+    return () => { active = false; };
+  }, [effectiveReferralCode, signupReferralUrl]);
 
+  // Interactive 3D tilt tracking for cursor and touch
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current || config.visualEffect !== 'holographic') return;
+    if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const angle = Math.atan2(y - rect.height / 2, x - rect.width / 2) * (180 / Math.PI) + 180;
-    setHoloAngle(Math.round(angle));
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const rotateX = -((y - centerY) / centerY) * 14;
+    const rotateY = ((x - centerX) / centerX) * 14;
+    const glareX = (x / rect.width) * 100;
+    const glareY = (y / rect.height) * 100;
+    setTilt({ rotateX, rotateY, glareX, glareY, isHovered: true });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ rotateX: 0, rotateY: 0, glareX: 50, glareY: 50, isHovered: false });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!cardRef.current || !e.touches[0]) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const rotateX = -((y - centerY) / centerY) * 12;
+    const rotateY = ((x - centerX) / centerX) * 12;
+    const glareX = (x / rect.width) * 100;
+    const glareY = (y / rect.height) * 100;
+    setTilt({ rotateX, rotateY, glareX, glareY, isHovered: true });
+  };
+
+  const handleTouchEnd = () => {
+    setTilt({ rotateX: 0, rotateY: 0, glareX: 50, glareY: 50, isHovered: false });
   };
 
   const currentHouse = HOUSES.find((h) => h.id === config.house) || HOUSES[0];
+  const currentRank = CARD_RANKS.find((r) => r.id === (config.rank || 'ace')) || CARD_RANKS[0];
 
   return (
     <div className={`flex flex-col items-center ${className}`}>
-      {/* Aspect Ratio 5:7 Card */}
+      {/* Aspect Ratio 5:7 Card Container */}
       <div
-        className="relative w-[280px] sm:w-[320px] aspect-[5/7] cursor-pointer select-none group shadow-2xl rounded-2xl"
+        className="relative w-[280px] sm:w-[320px] aspect-[5/7] cursor-pointer select-none group rounded-2xl"
         style={{ perspective: '1200px' }}
         onClick={() => setIsFlipped(!isFlipped)}
         onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         ref={cardRef}
       >
         <div
-          className="w-full h-full relative transition-transform duration-700 ease-out"
+          className="w-full h-full relative"
           style={{
             transformStyle: 'preserve-3d',
-            transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
+            transform: `rotateY(${isFlipped ? 180 + tilt.rotateY : tilt.rotateY}deg) rotateX(${tilt.rotateX}deg)`,
+            transition: tilt.isHovered ? 'transform 0.08s ease-out' : 'transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)',
+            filter: tilt.isHovered
+              ? `drop-shadow(${-tilt.rotateY * 1.5}px ${tilt.rotateX * 1.5 + 18}px 26px rgba(0,0,0,0.7))`
+              : 'drop-shadow(0 20px 25px rgba(0,0,0,0.5))'
           }}
         >
-          {/* Front Face (5:7) */}
+          {/* Front Face (5:7 STRICT RATIO) */}
           <div
             className={`absolute inset-0 w-full h-full rounded-2xl border-2 p-4 sm:p-5 flex flex-col justify-between overflow-hidden shadow-2xl transition-all ${
               config.artStyle === 'royal_gold' ? 'bg-gradient-to-br from-stone-950 via-amber-950/60 to-black border-amber-400/80 shadow-amber-500/20' :
@@ -814,34 +1099,56 @@ export function CustomReferralCardView({
             }`}
             style={{ backfaceVisibility: 'hidden' }}
           >
-            {config.visualEffect === 'holographic' && (
+            {/* SPECULAR INTERACTIVE GLARE SHEEN */}
+            {tilt.isHovered && (
               <div
-                className="absolute inset-0 pointer-events-none opacity-40 mix-blend-color-dodge transition-opacity duration-300"
+                className="absolute inset-0 pointer-events-none rounded-2xl z-30 transition-opacity duration-150 mix-blend-overlay"
                 style={{
-                  background: `linear-gradient(${holoAngle}deg, rgba(255,0,128,0.3) 0%, rgba(0,255,200,0.4) 25%, rgba(255,215,0,0.5) 50%, rgba(138,43,226,0.3) 75%, rgba(255,0,128,0.3) 100%)`
+                  background: `radial-gradient(circle 220px at ${tilt.glareX}% ${tilt.glareY}%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.06) 50%, transparent 100%)`
                 }}
               />
             )}
+
+            {/* EFFECT: HOLOGRAPHIC SPECTRAL SHEEN OVERLAY */}
+            {config.visualEffect === 'holographic' && (
+              <div
+                className="absolute inset-0 pointer-events-none opacity-45 mix-blend-color-dodge transition-opacity duration-300 animate-holo-spectral"
+                style={{
+                  background: `linear-gradient(${tilt.isHovered ? (tilt.glareX * 3.6) : 45}deg, rgba(255,0,128,0.4) 0%, rgba(0,255,200,0.45) 25%, rgba(255,215,0,0.5) 50%, rgba(138,43,226,0.45) 75%, rgba(255,0,128,0.4) 100%)`
+                }}
+              />
+            )}
+
+            {/* EFFECT: 24K GOLD FOIL SHIMMER SWEEP */}
             {config.visualEffect === 'gold_glint' && (
-              <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="w-[200%] h-full bg-gradient-to-r from-transparent via-amber-200/25 to-transparent -skew-x-45 animate-pulse" />
-              </div>
-            )}
-            {config.visualEffect === 'neon_pulse' && (
-              <div className="absolute inset-0 rounded-2xl border-2 border-amber-400/40 animate-ping pointer-events-none opacity-30" />
-            )}
-            {config.visualEffect === 'ember_particles' && (
-              <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="absolute bottom-2 left-6 w-1.5 h-1.5 rounded-full bg-amber-400 blur-[0.5px] animate-bounce" />
-                <div className="absolute bottom-5 right-8 w-1 h-1 rounded-full bg-orange-400 blur-[0.5px] animate-pulse" />
-                <div className="absolute bottom-10 left-1/2 w-1.5 h-1.5 rounded-full bg-amber-300 blur-[0.5px] animate-ping" />
+              <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+                <div className="w-[90px] h-[250%] bg-gradient-to-r from-transparent via-amber-200/50 to-transparent -top-[50%] animate-gold-foil blur-[1px]" />
               </div>
             )}
 
-            {/* Top Bar */}
+            {/* EFFECT: NEON PLASMA HEAT RIM PULSE */}
+            {config.visualEffect === 'neon_pulse' && (
+              <div className="absolute inset-0 rounded-2xl border-2 border-cyan-400/60 animate-plasma-pulse pointer-events-none z-20" />
+            )}
+
+            {/* EFFECT: FLOATING LIVING EMBER PARTICLES */}
+            {config.visualEffect === 'ember_particles' && (
+              <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+                <div className="absolute bottom-1 left-[15%] w-2 h-2 rounded-full bg-amber-400 blur-[0.6px] shadow-[0_0_8px_#f59e0b] animate-ember-1" />
+                <div className="absolute bottom-2 left-[35%] w-2.5 h-2.5 rounded-full bg-orange-500 blur-[0.8px] shadow-[0_0_10px_#ea580c] animate-ember-2" />
+                <div className="absolute bottom-0 left-[60%] w-1.5 h-1.5 rounded-full bg-amber-300 blur-[0.5px] shadow-[0_0_6px_#fde047] animate-ember-3" />
+                <div className="absolute bottom-3 left-[80%] w-2 h-2 rounded-full bg-red-500 blur-[0.7px] shadow-[0_0_8px_#ef4444] animate-ember-4" />
+                <div className="absolute bottom-1 left-[48%] w-3 h-3 rounded-full bg-amber-500/80 blur-[1px] shadow-[0_0_12px_#f59e0b] animate-ember-2" style={{ animationDelay: '1.2s' }} />
+                <div className="absolute bottom-2 left-[25%] w-1.5 h-1.5 rounded-full bg-yellow-300 blur-[0.5px] shadow-[0_0_6px_#facc15] animate-ember-1" style={{ animationDelay: '0.5s' }} />
+              </div>
+            )}
+
+            {/* Top Bar: Corner Pip with Rank & House */}
             <div className="relative z-10 flex items-start justify-between">
               <div className="flex flex-col items-center leading-none">
-                <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">A</span>
+                <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">
+                  {currentRank.symbol}
+                </span>
                 <span className={`text-base ${currentHouse.color}`}>{currentHouse.symbol}</span>
               </div>
               <div className="text-right">
@@ -854,17 +1161,14 @@ export function CustomReferralCardView({
               </div>
             </div>
 
-            {/* Center Area */}
+            {/* Center Area: Royal Rank Insignia Crest */}
             <div className="relative z-10 my-auto flex flex-col items-center justify-center text-center px-2">
-              <div className="relative mb-2">
-                <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full bg-amber-500/10 border border-amber-400/40 flex items-center justify-center shadow-lg">
-                  <span className={`text-3xl sm:text-4xl ${currentHouse.color}`}>{currentHouse.symbol}</span>
-                </div>
-                <Crown className="w-4 h-4 text-amber-400 absolute -top-2 left-1/2 -translate-x-1/2" />
+              <div className="mb-2">
+                <RoyalRankInsignia rank={config.rank || 'ace'} house={currentHouse} isMini={false} />
               </div>
 
-              <h4 className="text-sm sm:text-base font-black tracking-wider text-amber-200 uppercase font-serif">
-                {config.patronTitle || 'Nawab of Bhatti'}
+              <h4 className="text-sm sm:text-base font-black tracking-wider text-amber-200 uppercase font-serif mt-1">
+                {config.patronTitle || currentRank.defaultTitle}
               </h4>
               <p className="text-[13px] font-bold text-white tracking-wide mt-0.5">
                 {user?.name || 'Royal Patron'}
@@ -874,23 +1178,31 @@ export function CustomReferralCardView({
                 "{config.customQuote || currentHouse.motto}"
               </p>
 
-              {config.showQrOnFront && qrDataUrl && (
-                <div className="mt-2.5 p-1 bg-white rounded-lg shadow-md">
-                  <img src={qrDataUrl} alt="Referral QR" className="w-14 h-14 object-contain" />
+              {config.showQrOnFront && (
+                <div className="mt-2.5 p-1 bg-white rounded-lg shadow-md border border-amber-400/50">
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt="Referral QR" className="w-14 h-14 object-contain" />
+                  ) : (
+                    <div className="w-14 h-14 bg-stone-100 flex items-center justify-center text-[8px] font-mono text-stone-500">
+                      QR
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Bottom Bar */}
+            {/* Bottom Bar: Invite Code & Inverted Corner Pip */}
             <div className="relative z-10 pt-2 border-t border-amber-500/30 flex items-end justify-between">
               <div>
                 <span className="text-[8px] font-mono text-stone-400 uppercase tracking-wider block">Invite Code</span>
                 <span className="text-sm sm:text-base font-mono font-black text-amber-300 tracking-wider">
-                  {referralCode || 'TB-ROYAL'}
+                  {effectiveReferralCode}
                 </span>
               </div>
               <div className="flex flex-col items-center leading-none rotate-180">
-                <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">A</span>
+                <span className="font-serif text-2xl font-black text-amber-300 tracking-tighter">
+                  {currentRank.symbol}
+                </span>
                 <span className={`text-base ${currentHouse.color}`}>{currentHouse.symbol}</span>
               </div>
             </div>
@@ -909,7 +1221,7 @@ export function CustomReferralCardView({
             }}
           >
             <div className="text-center">
-              <div className="inline-flex items-center gap-1 text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full">
+              <div className="inline-flex items-center gap-1 text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
                 <Crown className="w-3 h-3 text-amber-400" />
                 <span>Taash Bhatti Royal Pass</span>
               </div>
@@ -917,20 +1229,21 @@ export function CustomReferralCardView({
             </div>
 
             <div className="my-auto flex flex-col items-center justify-center">
-              <div className="p-2.5 bg-white rounded-2xl shadow-xl border border-amber-400/50">
+              <div className="p-2.5 bg-white rounded-2xl shadow-xl border-2 border-amber-400/60">
                 {qrDataUrl ? (
                   <img src={qrDataUrl} alt="Referral QR Code" className="w-36 h-36 sm:w-40 sm:h-40 object-contain rounded-xl" />
                 ) : (
-                  <div className="w-36 h-36 sm:w-40 sm:h-40 bg-stone-100 flex items-center justify-center text-stone-400 text-xs font-mono">
-                    Generating QR...
+                  <div className="w-36 h-36 sm:w-40 sm:h-40 bg-stone-100 flex flex-col items-center justify-center text-stone-700 text-xs font-mono p-2">
+                    <QrCode className="w-12 h-12 text-stone-700 animate-pulse" />
+                    <span className="text-[10px] mt-1 font-bold">Generating pass...</span>
                   </div>
                 )}
               </div>
 
               <div className="mt-2.5 text-center">
                 <span className="text-[9px] font-mono text-amber-300 uppercase tracking-wider block">Scan to Auto-Fill Signup Code</span>
-                <span className="text-xs font-mono font-black text-white bg-amber-500/20 px-2.5 py-0.5 rounded border border-amber-400/30 inline-block mt-0.5">
-                  {referralCode}
+                <span className="text-xs font-mono font-black text-white bg-amber-500/20 px-2.5 py-0.5 rounded border border-amber-400/40 inline-block mt-0.5">
+                  {effectiveReferralCode}
                 </span>
               </div>
             </div>

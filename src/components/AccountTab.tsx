@@ -906,8 +906,26 @@ export default function AccountTab({
   };
 
   // Local auth states
-  const [authMode, setAuthMode] = useState<'phone' | 'email' | 'register'>('phone');
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [authMode, setAuthMode] = useState<'phone' | 'email' | 'register'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('mode') === 'signup' || params.get('ref') || params.get('referral') || localStorage.getItem('taashbhatti_pending_referral_code')) {
+          return 'register';
+        }
+      }
+    } catch {}
+    return 'phone';
+  });
+  const [isRegistering, setIsRegistering] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('mode') === 'signup' || Boolean(params.get('ref')) || Boolean(localStorage.getItem('taashbhatti_pending_referral_code'));
+      }
+    } catch {}
+    return false;
+  });
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [showAuthPassword, setShowAuthPassword] = useState(false);
@@ -926,8 +944,10 @@ export default function AccountTab({
   useEffect(() => {
     try {
       const code = localStorage.getItem('taashbhatti_pending_referral_code');
-      if (code && !authReferralCode) {
-        setAuthReferralCode(code);
+      if (code && code.trim().length >= 4) {
+        setAuthReferralCode(code.trim().toUpperCase());
+        setAuthMode('register');
+        setIsRegistering(true);
       }
     } catch {}
   }, []);
@@ -1420,6 +1440,28 @@ export default function AccountTab({
         </div>
 
         <div className="bg-white border border-brand-green/10 rounded-[32px] p-6 shadow-xl space-y-5">
+          {/* ROYAL REFERRAL INVITATION BANNER */}
+          {authReferralCode && (
+            <div className="bg-gradient-to-r from-emerald-500/15 via-emerald-500/10 to-transparent border border-emerald-500/30 rounded-2xl p-3.5 flex items-center gap-3 animate-fade-in shadow-xs">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                <Gift className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[9px] font-mono font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                    Royal Invitation Active
+                  </span>
+                  <span className="text-xs font-mono font-black text-emerald-900 bg-emerald-500/15 px-2 py-0.5 rounded">
+                    {authReferralCode}
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-800 font-semibold mt-1">
+                  🎉 ₹150 OFF your inaugural feast will be applied automatically on signup!
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* TABS */}
           <div className="grid grid-cols-3 gap-1 p-1 bg-brand-green/5 rounded-2xl border border-brand-green/5">
             <button

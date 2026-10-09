@@ -15,6 +15,58 @@ export type CardArtStyle =
 
 export type CardHouse = 'spades' | 'hearts' | 'diamonds' | 'clubs';
 
+export type CardRankType = 'ace' | 'king' | 'queen' | 'jack' | 'joker';
+
+export const CARD_RANKS: {
+  id: CardRankType;
+  symbol: string;
+  name: string;
+  tag: string;
+  description: string;
+  defaultTitle: string;
+}[] = [
+  {
+    id: 'ace',
+    symbol: 'A',
+    name: 'Ace (Ikka)',
+    tag: 'The Sovereign Ace',
+    description: 'Supreme rank of the Bhatti deck. The singular sovereign flame.',
+    defaultTitle: 'Sovereign of Bhatti'
+  },
+  {
+    id: 'king',
+    symbol: 'K',
+    name: 'King (Badshah)',
+    tag: 'Ruler of the Hearth',
+    description: 'Master of the clay tandoor and commander of royal banquets.',
+    defaultTitle: 'Badshah of the Hearth'
+  },
+  {
+    id: 'queen',
+    symbol: 'Q',
+    name: 'Queen (Begum)',
+    tag: 'Empress of Flavor',
+    description: 'The keeper of secret saffron masalas and royal dawat hospitality.',
+    defaultTitle: 'Begum of Royal Dawat'
+  },
+  {
+    id: 'jack',
+    symbol: 'J',
+    name: 'Jack (Ghulam / Wazir)',
+    tag: 'Valiant Flame Knight',
+    description: 'Fearless guardian of authentic coal heat and iron skewers.',
+    defaultTitle: 'Wazir of the Charcoal Guild'
+  },
+  {
+    id: 'joker',
+    symbol: '★',
+    name: 'Joker (Bhatti Wildcard)',
+    tag: 'The Untamed Wildcard',
+    description: 'Playful jester of spices that transforms any royal feast.',
+    defaultTitle: 'Court Jester & Spice Trickster'
+  }
+];
+
 export type CardVisualEffect = 
   | 'holographic'     // Dynamic rainbow angle shift
   | 'ember_particles' // Rising flame spark particles
@@ -26,6 +78,7 @@ export type CardVisualEffect =
 export interface CustomCardConfig {
   artStyle: CardArtStyle;
   house: CardHouse;
+  rank: CardRankType; // 'ace' | 'king' | 'queen' | 'jack' | 'joker'
   visualEffect: CardVisualEffect;
   patronTitle: string; // e.g. "Nawab of Bhatti", "Grill Knight", "Feast Baron"
   customQuote?: string; // e.g. "Slow cooked over embers, shared with kings."
@@ -329,6 +382,7 @@ export const DEFAULT_MILESTONE_STEPS: ReferralMilestoneStep[] = [
 export const DEFAULT_CUSTOM_CARD_CONFIG: CustomCardConfig = {
   artStyle: 'royal_gold',
   house: 'spades',
+  rank: 'ace',
   visualEffect: 'holographic',
   patronTitle: 'Nawab of Bhatti',
   customQuote: 'Slow cooked over embers, shared with kings.',

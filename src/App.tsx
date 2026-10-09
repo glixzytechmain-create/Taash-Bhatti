@@ -17,7 +17,7 @@ import AccountTab from './components/AccountTab';
 import MyDeckTab from './components/MyDeckTab';
 import BuddyDeckView from './components/BuddyDeckView';
 import CartDrawer from './components/CartDrawer';
-import { Gift, ArrowRight } from 'lucide-react';
+import { Gift, ArrowRight, AlertCircle, LogOut } from 'lucide-react';
 import { Meal, Gym, GymChain, Order, User, OrderItem, Kitchen, MealReview, BuddyDeckRequest, GroupOrderRoom } from './types';
 import { GYMS_DATA, MEALS_DATA } from './data';
 import { 
@@ -229,6 +229,24 @@ export default function App() {
     return null;
   });
 
+  // Track referral link parameter for logout interceptor
+  const [detectedUrlReferralCode, setDetectedUrlReferralCode] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('ref') || params.get('referral') || params.get('referralCode');
+        if (code && code.trim().length >= 4) {
+          return code.trim().toUpperCase();
+        }
+      }
+    } catch {}
+    return null;
+  });
+
+  const [referralLogoutPrompt, setReferralLogoutPrompt] = useState<{
+    code: string;
+  } | null>(null);
+
   const [activeTab, setActiveTab] = useState<TabType | 'buddydeck'>(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -237,6 +255,11 @@ export default function App() {
         
         // Capture referral code from URL parameter (?ref=TB1234 or ?referral=...)
         const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
+        const hasExistingCachedUser = Boolean(
+          localStorage.getItem('taashbhatti_cached_fb_user') || 
+          localStorage.getItem('taashbhatti_auth_session')
+        );
+
         if (refCode) {
           const cleanRef = refCode.trim().toUpperCase();
           try {
@@ -249,8 +272,8 @@ export default function App() {
           return 'buddydeck';
         }
 
-        // Direct to account/signup if requested in referral pass QR scan
-        if (params.get('mode') === 'signup' || params.get('tab') === 'account') {
+        // Direct to account/signup if requested in referral pass QR scan (for non-logged in users)
+        if ((params.get('mode') === 'signup' || params.get('tab') === 'account' || refCode) && !hasExistingCachedUser) {
           return 'account';
         }
       }
@@ -2568,6 +2591,62 @@ export default function App() {
     }
   };
 
+  // 🎁 Referral Link Landing Interceptor
+  // - If an existing account is signed in: show a prompt modal alerting them that they are about to log out, with Cancel & Proceed.
+  // - If visitor is not logged in (guest / first-time): immediately take them to the registration signup page with code auto-entered.
+  useEffect(() => {
+    if (authChecking) return;
+    if (!detectedUrlReferralCode) return;
+
+    const isUserSignedIn = Boolean(
+      fbUser || 
+      (user?.email && user.email.length > 0 && !user.email.includes('guest@') && user.id) || 
+      (user?.phone && user.phone.length > 0 && user.id) ||
+      localStorage.getItem('taashbhatti_cached_fb_user')
+    );
+
+    if (isUserSignedIn) {
+      setReferralLogoutPrompt({ code: detectedUrlReferralCode });
+    } else {
+      try {
+        localStorage.setItem('taashbhatti_pending_referral_code', detectedUrlReferralCode);
+        sessionStorage.setItem('taashbhatti_pending_referral_code', detectedUrlReferralCode);
+      } catch {}
+      setActiveTab('account');
+      if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      setDetectedUrlReferralCode(null);
+    }
+  }, [authChecking, fbUser, user?.id, user?.email, user?.phone, detectedUrlReferralCode]);
+
+  const handleProceedReferralLogout = async () => {
+    const code = referralLogoutPrompt?.code;
+    setReferralLogoutPrompt(null);
+    setDetectedUrlReferralCode(null);
+    if (code) {
+      try {
+        localStorage.setItem('taashbhatti_pending_referral_code', code);
+        sessionStorage.setItem('taashbhatti_pending_referral_code', code);
+      } catch {}
+    }
+    await handleSignOut();
+    setActiveTab('account');
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    showToast(`🎁 Referral code ${code} applied. Register your new account for ₹150 OFF!`);
+  };
+
+  const handleCancelReferralLogout = () => {
+    setReferralLogoutPrompt(null);
+    setDetectedUrlReferralCode(null);
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    showToast("Referral invitation dismissed. You are still signed in.");
+  };
+
   // Add Item to Cart
   const handleAddToCart = (meal: Meal) => {
     setCart((prev) => {
@@ -3949,6 +4028,61 @@ export default function App() {
             handleApplyRewardToCart(couponCode);
           }}
         />
+      )}
+
+      {/* 🎁 REFERRAL LINK LOGOUT INTERCEPTOR MODAL */}
+      {referralLogoutPrompt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-md bg-stone-950 border border-amber-500/40 rounded-3xl p-6 shadow-2xl text-stone-100 space-y-5">
+            {/* Top Royal Warning Crest */}
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/30">
+                  Royal Invitation Pass
+                </span>
+                <h3 className="text-base font-black text-white mt-1">Existing Account Detected</h3>
+              </div>
+            </div>
+
+            {/* Message Body */}
+            <div className="bg-stone-900/90 rounded-2xl p-4 border border-stone-800 space-y-2 text-xs leading-relaxed text-stone-300">
+              <p>
+                You are currently signed in as <strong className="text-white">{user?.name || user?.email || user?.phone || 'an existing patron'}</strong>.
+              </p>
+              <p>
+                You clicked an invitation link with referral code: <span className="font-mono font-black text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-400/30">{referralLogoutPrompt.code}</span>.
+              </p>
+              <div className="pt-2 border-t border-stone-800/80 text-[11px] text-amber-400/90 font-medium">
+                ⚠️ Referral bonus discounts are valid only for <strong>new athlete signups</strong>. Existing accounts cannot apply referral codes.
+              </div>
+              <p className="text-[11px] text-stone-400 pt-1">
+                You are about to log out of your current account to register a brand new account with referral code <strong className="text-amber-300">{referralLogoutPrompt.code}</strong>.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleCancelReferralLogout}
+                className="py-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-white border border-stone-700 text-xs font-bold transition-all cursor-pointer text-center"
+              >
+                Cancel (Stay Signed In)
+              </button>
+              <button
+                type="button"
+                onClick={handleProceedReferralLogout}
+                className="py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-black tracking-wide transition-all cursor-pointer shadow-lg shadow-amber-500/25 text-center flex items-center justify-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5 text-stone-950" />
+                <span>Proceed & Log Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* INTERACTIVE SPOTLIGHT APP TOUR (BUTTON-BY-BUTTON LIVE DEMO) */}

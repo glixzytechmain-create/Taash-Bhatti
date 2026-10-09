@@ -47,6 +47,7 @@ import {
 import { 
   subscribeToLoyaltyConfig, 
   ensureUserReferralCode, 
+  getOrGenerateReferralCodeSync,
   calculateUserLoyaltyState, 
   evaluatePokerHands, 
   claimPokerBounty,
@@ -72,7 +73,7 @@ export default function LoyaltyRewardsHub({
 }: LoyaltyRewardsHubProps) {
   const [config, setConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const [activeTab, setActiveTab] = useState<'referrals' | 'streak' | 'poker' | 'arcade'>('referrals');
-  const [referralCode, setReferralCode] = useState<string>(user.referralCode || '');
+  const [referralCode, setReferralCode] = useState<string>(() => getOrGenerateReferralCodeSync(user, user?.id));
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [claimingCombo, setClaimingCombo] = useState<string | null>(null);
@@ -93,14 +94,14 @@ export default function LoyaltyRewardsHub({
     return () => unsub();
   }, []);
 
-  // Ensure user has a referral code
+  // Ensure user has a permanent referral code (guaranteed synchronous fallback)
   useEffect(() => {
-    if (user.id) {
-      ensureUserReferralCode(user, user.id).then((code) => {
-        setReferralCode(code);
-      });
-    }
-  }, [user.id]);
+    const code = getOrGenerateReferralCodeSync(user, user?.id);
+    setReferralCode(code);
+    ensureUserReferralCode(user, user?.id).then((savedCode) => {
+      if (savedCode) setReferralCode(savedCode);
+    });
+  }, [user?.id, user?.referralCode]);
 
   // Sync custom card config if user object changes
   useEffect(() => {
@@ -143,19 +144,26 @@ export default function LoyaltyRewardsHub({
     return evaluatePokerHands(loyaltyState.userCards, config);
   }, [loyaltyState.userCards, config]);
 
-  const referralShareUrl = `${window.location.origin}/?ref=${referralCode}`;
+  const activeReferralCode = useMemo(() => {
+    if (referralCode && referralCode.trim().length >= 4) {
+      return referralCode.trim().toUpperCase();
+    }
+    return getOrGenerateReferralCodeSync(user, user?.id);
+  }, [referralCode, user]);
+
+  const referralShareUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/?ref=${activeReferralCode}&mode=signup`
+    : `https://taashbhatti.com/?ref=${activeReferralCode}&mode=signup`;
 
   const handleCopyCode = async () => {
-    if (!referralCode) return;
     try {
-      await navigator.clipboard.writeText(referralCode);
+      await navigator.clipboard.writeText(activeReferralCode);
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2500);
     } catch {}
   };
 
   const handleCopyLink = async () => {
-    if (!referralCode) return;
     try {
       await navigator.clipboard.writeText(referralShareUrl);
       setCopiedLink(true);
@@ -164,21 +172,20 @@ export default function LoyaltyRewardsHub({
   };
 
   const handleWhatsAppShare = () => {
-    if (!referralCode) return;
     const discountText = config.refereeReward.type === 'discount_flat' 
       ? `₹${config.refereeReward.amount} OFF` 
-      : 'an exclusive discount';
-    const text = `🔥 Hey! I'm treating you to ${discountText} on your first royal feast at Taash Bhatti!\n\nUse my invite code: *${referralCode}* at checkout.\n\nOrder authentic clay-oven tandoor platters scalding hot here: ${referralShareUrl}`;
+      : '₹150 OFF';
+    const text = `🔥 Hey! I'm treating you to ${discountText} on your first authentic clay-oven feast at Taash Bhatti!\n\nUse my invite code: *${activeReferralCode}* at signup & checkout.\n\nSign up and claim your feast here: ${referralShareUrl}`;
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
 
   const handleNativeShare = async () => {
-    if (navigator.share && referralCode) {
+    if (navigator.share) {
       try {
         await navigator.share({
           title: 'Taash Bhatti Royal Invitation',
-          text: `Use my invite code ${referralCode} for ₹${config.refereeReward.amount} OFF on your first feast!`,
+          text: `Use my invite code ${activeReferralCode} for ₹${config.refereeReward.amount} OFF on your first feast!`,
           url: referralShareUrl
         });
       } catch {}
@@ -355,7 +362,7 @@ export default function LoyaltyRewardsHub({
               {/* Card Component (5:7 ratio with 3D Flip) */}
               <CustomReferralCardView
                 user={user}
-                referralCode={referralCode}
+                referralCode={activeReferralCode}
                 config={customCardConfig}
                 onOpenStudio={() => setShowStudio(true)}
                 className="my-auto"
@@ -1097,7 +1104,7 @@ export default function LoyaltyRewardsHub({
       {/* CUSTOM 5:7 REFERRAL CARD ATELIER STUDIO MODAL */}
       <CustomReferralCardStudio
         user={user}
-        referralCode={referralCode}
+        referralCode={activeReferralCode}
         initialConfig={customCardConfig}
         isOpen={showStudio}
         onClose={() => setShowStudio(false)}

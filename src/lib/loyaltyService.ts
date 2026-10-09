@@ -138,60 +138,73 @@ export function generateUserReferralCode(user?: { name?: string; email?: string 
 }
 
 /**
- * Ensures a user has a permanent referral code assigned and saved.
- * Resolves ID reliably across sessions, utilizes instant local caching,
- * and uses setDoc with merge to prevent document missing errors.
+ * Synchronously retrieves or immediately creates a guaranteed referral code.
+ * Ensures the UI never stalls on an empty string or 'GENERATING...'.
  */
-export async function ensureUserReferralCode(user?: User | null, userId?: string): Promise<string> {
+export function getOrGenerateReferralCodeSync(user?: User | null, userId?: string): string {
   // 1. Direct profile field check
-  if (user?.referralCode && user.referralCode.trim().length > 3) {
+  if (user?.referralCode && user.referralCode.trim().length >= 4) {
+    const clean = user.referralCode.trim().toUpperCase();
     if (typeof localStorage !== 'undefined') {
-      try { localStorage.setItem('taashbhatti_user_referral_code', user.referralCode); } catch (e) {}
+      try { localStorage.setItem('taashbhatti_user_referral_code', clean); } catch (e) {}
     }
-    return user.referralCode;
+    return clean;
   }
 
   // 2. Local storage cache check
   if (typeof localStorage !== 'undefined') {
     const cachedCode = localStorage.getItem('taashbhatti_user_referral_code');
-    if (cachedCode && cachedCode.trim().length > 3) {
-      if (user) user.referralCode = cachedCode;
-      return cachedCode;
+    if (cachedCode && cachedCode.trim().length >= 4) {
+      const clean = cachedCode.trim().toUpperCase();
+      if (user) user.referralCode = clean;
+      return clean;
+    }
+    const cachedProfile = localStorage.getItem('taashbhatti_cached_user_profile');
+    if (cachedProfile) {
+      try {
+        const parsed = JSON.parse(cachedProfile);
+        if (parsed.referralCode && parsed.referralCode.trim().length >= 4) {
+          const clean = parsed.referralCode.trim().toUpperCase();
+          if (user) user.referralCode = clean;
+          return clean;
+        }
+      } catch {}
     }
   }
 
-  // 3. Generate permanent code
+  // 3. Generate instant guaranteed code
   const newCode = generateUserReferralCode(user);
   if (user) {
     user.referralCode = newCode;
   }
-
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.setItem('taashbhatti_user_referral_code', newCode);
-      ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
-        const cached = localStorage.getItem(key);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          parsed.referralCode = newCode;
-          localStorage.setItem(key, JSON.stringify(parsed));
-        }
-      });
-    } catch (e) {}
+    } catch {}
   }
+  return newCode;
+}
 
-  // 4. Persist to Firestore
+/**
+ * Ensures a user has a permanent referral code assigned and saved.
+ * Resolves ID reliably across sessions, utilizes instant local caching,
+ * and uses setDoc with merge to prevent document missing errors.
+ */
+export async function ensureUserReferralCode(user?: User | null, userId?: string): Promise<string> {
+  const code = getOrGenerateReferralCodeSync(user, userId);
+
+  // Background persist to Firestore if not already saved
   const targetUid = userId || user?.id || (user as any)?.uid || (typeof localStorage !== 'undefined' ? localStorage.getItem('taashbhatti_guest_user_id') : null);
   if (targetUid) {
     try {
       const userRef = doc(db, 'users', targetUid);
-      await setDoc(userRef, { referralCode: newCode }, { merge: true });
+      setDoc(userRef, { referralCode: code }, { merge: true }).catch(() => {});
     } catch (e) {
       console.warn('Could not persist referral code in Firestore:', e);
     }
   }
 
-  return newCode;
+  return code;
 }
 
 /**
@@ -199,7 +212,11 @@ export async function ensureUserReferralCode(user?: User | null, userId?: string
  */
 export function getUserCustomCard(user?: User | null): CustomCardConfig {
   if (user?.customCard && user.customCard.artStyle) {
-    return user.customCard;
+    return {
+      ...DEFAULT_CUSTOM_CARD_CONFIG,
+      ...user.customCard,
+      rank: user.customCard.rank || 'ace'
+    };
   }
 
   if (typeof localStorage !== 'undefined') {
@@ -207,7 +224,13 @@ export function getUserCustomCard(user?: User | null): CustomCardConfig {
       const cached = localStorage.getItem('taashbhatti_custom_card');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed.artStyle) return parsed;
+        if (parsed.artStyle) {
+          return {
+            ...DEFAULT_CUSTOM_CARD_CONFIG,
+            ...parsed,
+            rank: parsed.rank || 'ace'
+          };
+        }
       }
     } catch (e) {}
   }
