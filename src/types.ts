@@ -491,6 +491,11 @@ export interface Order {
   paymentCollectedAt?: string;
   paymentCollectedBy?: string;
   paymentCollectedByName?: string;
+  transactionId?: string;
+  bankReferenceNo?: string;
+  pgGateway?: string;
+  pgResponseCode?: string;
+  paidAt?: string;
   // Cancellation & Wallet Refund
   cancelledAt?: string;
   cancelledBy?: 'customer' | 'kitchen' | 'admin';

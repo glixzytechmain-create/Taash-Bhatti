@@ -723,9 +723,14 @@ export default function CartDrawer({
     return user.address || user.savedAddresses[0] || '';
   });
 
-  const [selectedPayment, setSelectedPayment] = useState<string>(
-    user.savedPayments[0]?.type || 'Cash on Delivery (COD)'
-  );
+  const [selectedPayment, setSelectedPayment] = useState<string>('Online Payment (UPI / Cards / Net Banking)');
+  const [isRedirectingToPg, setIsRedirectingToPg] = useState<boolean>(false);
+  const [pgNoticeModal, setPgNoticeModal] = useState<{
+    title: string;
+    message: string;
+    allowCodSwitch?: boolean;
+    pendingOrder?: Order;
+  } | null>(null);
 
   // State for adding a new address with interactive map search
   const [showAddAddressPanel, setShowAddAddressPanel] = useState(false);
@@ -1307,6 +1312,36 @@ export default function CartDrawer({
     await applyCouponByCode(couponCode);
   };
 
+  const handleConfirmSwitchToCod = async () => {
+    if (!pgNoticeModal?.pendingOrder) {
+      setPgNoticeModal(null);
+      return;
+    }
+    const orderToSwitch: Order = {
+      ...pgNoticeModal.pendingOrder,
+      isCOD: true,
+      paymentMethod: 'Cash on Delivery (COD)',
+      paymentStatus: 'unpaid',
+      pgGateway: undefined,
+      pendingEmberBonus: (pgNoticeModal.pendingOrder.pendingEmberBonus || 0) > 0 ? pgNoticeModal.pendingOrder.pendingEmberBonus : undefined,
+      gecBonusAwarded: false
+    };
+
+    try {
+      await onPlaceOrder(orderToSwitch);
+      setSelectedPayment('Cash on Delivery (COD)');
+      setPlacedOrderId(orderToSwitch.id);
+      if (orderToSwitch.takeawayPickupOtp) {
+        setPlacedTakeawayOtp(orderToSwitch.takeawayPickupOtp);
+      }
+      setPgNoticeModal(null);
+      setCheckoutCompleted(true);
+    } catch (e) {
+      console.error('Error switching order to COD:', e);
+      setPgNoticeModal(null);
+    }
+  };
+
   // Place order trigger
   const handleCheckout = async () => {
     if (cartItems.length === 0) return;
@@ -1490,8 +1525,8 @@ export default function CartDrawer({
       riderTip: effectiveRiderTip > 0 ? effectiveRiderTip : undefined,
       gecAddedAmount: gecShortfallAmount > 0 ? gecShortfallAmount : undefined,
       gecCoinsEarned: gecShortfallAmount > 0 ? gecShortfallAmount : undefined,
-      pendingEmberBonus: (isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) && gecShortfallAmount > 0) ? gecShortfallAmount : undefined,
-      gecBonusAwarded: !isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) && gecShortfallAmount > 0,
+      pendingEmberBonus: gecShortfallAmount > 0 ? gecShortfallAmount : undefined,
+      gecBonusAwarded: (!isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) && finalTotal <= 0 && gecShortfallAmount > 0),
       createdAt: new Date().toISOString(),
       subtotal,
       discount: totalDiscount,
@@ -1506,7 +1541,8 @@ export default function CartDrawer({
       address: finalAddress,
       isCOD: isCashOnDeliveryOrder({ paymentMethod: selectedPayment }),
       paymentMethod: selectedPayment,
-      paymentStatus: isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) ? 'unpaid' : 'paid',
+      paymentStatus: isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) ? 'unpaid' : (finalTotal <= 0 ? 'paid' : 'pending'),
+      pgGateway: isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) ? undefined : (finalTotal > 0 ? 'billdesk' : undefined),
       trackingSteps: isTakeaway
         ? [
             { title: 'Takeaway Order Sent', description: 'Transmitted to TAASH BHATTI Cloud Kitchen Counter.', done: true },
@@ -1647,8 +1683,8 @@ export default function CartDrawer({
     // Credit Gold Ember Coins if customer banked free delivery shortfall
     const isCodOrder = isCashOnDeliveryOrder({ paymentMethod: selectedPayment });
     if (gecShortfallAmount > 0) {
-      if (!isCodOrder) {
-        // PREPAID ORDER: Credit immediately into Bhatti Wallet
+      if (!isCodOrder && finalTotal <= 0) {
+        // 100% WALLET COVERED ORDER: Credit immediately into Bhatti Wallet
         const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
         try {
           await creditGoldenEmbersForShortfall({
@@ -1668,10 +1704,81 @@ export default function CartDrawer({
           });
         }
       } else {
-        // CASH ON DELIVERY (COD): Do NOT credit wallet at checkout!
-        // Defer crediting until the delivery partner successfully hands over the order with OTP.
+        // CASH ON DELIVERY (COD) OR ONLINE PAYMENT GATEWAY:
+        // Defer crediting until the delivery partner OTP handover OR BillDesk PG callback confirms payment!
         newOrder.pendingEmberBonus = gecShortfallAmount;
         newOrder.gecBonusAwarded = false;
+      }
+    }
+
+    const isOnlinePayment = !isCodOrder && finalTotal > 0;
+
+    if (isOnlinePayment) {
+      setIsRedirectingToPg(true);
+      try {
+        await onPlaceOrder(newOrder);
+
+        const initiateRes = await fetch('/api/payment/billdesk/initiate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: newOrder.id,
+            amount: finalTotal,
+            customerName: finalCustomerName,
+            customerPhone: finalCustomerPhone,
+            customerEmail: user.email || '',
+            returnUrl: `${window.location.origin}/api/payment/billdesk/callback`
+          })
+        });
+
+        const initiateData = await initiateRes.json();
+
+        if (initiateData.success && initiateData.pgUrl && initiateData.pgPayload?.msg) {
+          onClearCart();
+
+          // Build and submit hidden form to official BillDesk hosted gateway
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = initiateData.pgUrl;
+          form.style.display = 'none';
+
+          const msgInput = document.createElement('input');
+          msgInput.type = 'hidden';
+          msgInput.name = 'msg';
+          msgInput.value = initiateData.pgPayload.msg;
+          form.appendChild(msgInput);
+
+          if (initiateData.pgPayload.hidApiKey) {
+            const keyInput = document.createElement('input');
+            keyInput.type = 'hidden';
+            keyInput.name = 'hidApiKey';
+            keyInput.value = initiateData.pgPayload.hidApiKey;
+            form.appendChild(keyInput);
+          }
+
+          document.body.appendChild(form);
+          form.submit();
+          return;
+        } else {
+          setIsRedirectingToPg(false);
+          if (initiateData.configured === false) {
+            setPgNoticeModal({
+              title: 'Utkarsh Bank & BillDesk Onboarding',
+              message: 'BillDesk production gateway credentials (BILLDESK_MERCHANT_ID, BILLDESK_CHECKSUM_KEY) have not been entered into .env yet. Would you like to switch to Cash on Delivery (COD) to place this order now?',
+              allowCodSwitch: true,
+              pendingOrder: newOrder
+            });
+            return;
+          } else {
+            alert(`⚠️ Payment Gateway Error: ${initiateData.error || 'Unable to connect to BillDesk. Please try again or choose Cash on Delivery.'}`);
+            return;
+          }
+        }
+      } catch (err: any) {
+        setIsRedirectingToPg(false);
+        console.error('Error initiating BillDesk payment:', err);
+        alert('⚠️ Network error connecting to BillDesk Gateway. Please check your connection or select Cash on Delivery.');
+        return;
       }
     }
 
@@ -3606,26 +3713,137 @@ export default function CartDrawer({
               )}
 
               {/* PAYMENT OPTION SELECTOR */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-black uppercase text-brand-charcoal/50 block tracking-wide">
-                  3. Select Payment
-                </span>
-                <div className="p-3 bg-white border border-brand-green/10 rounded-2xl flex items-center gap-3">
-                  <CreditCard className="w-5 h-5 text-brand-orange shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <select
-                      value={selectedPayment}
-                      onChange={(e) => setSelectedPayment(e.target.value)}
-                      className="w-full text-xs font-semibold focus:outline-none bg-transparent"
-                    >
-                      <option value="Cash on Delivery (COD)">💵 Cash on Delivery (COD)</option>
-                      {user.savedPayments.map((p) => (
-                        <option key={p.id} value={`${p.type} - ${p.details}`}>
-                          💳 {p.type} ({p.details})
-                        </option>
-                      ))}
-                    </select>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-brand-charcoal/60 tracking-wider flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5 text-brand-orange" />
+                    <span>3. Payment Method</span>
+                  </span>
+                  <span className="text-[9px] font-extrabold text-emerald-800 uppercase tracking-widest bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                    <span>256-Bit Encrypted</span>
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {/* Option 1: Online Payment (Utkarsh Bank & BillDesk V2) */}
+                  <div
+                    onClick={() => setSelectedPayment('Online Payment (UPI / Cards / Net Banking)')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative ${
+                      selectedPayment.toLowerCase().includes('online') || selectedPayment.toLowerCase().includes('upi')
+                        ? 'bg-gradient-to-br from-emerald-50/90 to-amber-50/40 border-brand-green/40 shadow-sm ring-1 ring-brand-green/30'
+                        : 'bg-white border-brand-green/10 hover:border-brand-green/30 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className={`w-4 h-4 rounded-full mt-0.5 border flex items-center justify-center shrink-0 ${
+                          selectedPayment.toLowerCase().includes('online') || selectedPayment.toLowerCase().includes('upi')
+                            ? 'border-brand-green bg-brand-green text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}>
+                          {(selectedPayment.toLowerCase().includes('online') || selectedPayment.toLowerCase().includes('upi')) && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black text-brand-charcoal leading-none">
+                              UPI, Cards & Net Banking
+                            </span>
+                            <span className="text-[8px] font-black uppercase tracking-wider bg-brand-orange/15 text-brand-orange px-1.5 py-0.5 rounded-full">
+                              RECOMMENDED
+                            </span>
+                          </div>
+
+                          <p className="text-[10px] text-brand-charcoal/60 font-semibold leading-tight">
+                            Instant confirmation • Zero transaction surcharge
+                          </p>
+
+                          {/* Bank & PG Trust Badge */}
+                          <div className="pt-1 flex items-center gap-1 text-[9px] font-bold">
+                            <span className="text-emerald-800 font-extrabold flex items-center gap-1">
+                              <span>⚡ Utkarsh Small Finance Bank</span>
+                              <span>•</span>
+                              <span className="text-slate-700">BillDesk V2</span>
+                            </span>
+                          </div>
+
+                          {/* Payment Method Badges */}
+                          <div className="flex items-center gap-1 pt-1 flex-wrap">
+                            {['GPay', 'PhonePe', 'Paytm', 'RuPay', 'Visa', 'Mastercard', 'NetBanking'].map((method) => (
+                              <span key={method} className="px-1.5 py-0.5 bg-white border border-slate-200/80 rounded text-[8px] font-black text-slate-700 tracking-tight">
+                                {method}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Option 2: Cash on Delivery (COD) */}
+                  <div
+                    onClick={() => setSelectedPayment('Cash on Delivery (COD)')}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative ${
+                      isCashOnDeliveryOrder({ paymentMethod: selectedPayment })
+                        ? 'bg-gradient-to-br from-amber-50/80 to-slate-50 border-amber-500/40 shadow-sm ring-1 ring-amber-500/30'
+                        : 'bg-white border-brand-green/10 hover:border-brand-green/30 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className={`w-4 h-4 rounded-full mt-0.5 border flex items-center justify-center shrink-0 ${
+                          isCashOnDeliveryOrder({ paymentMethod: selectedPayment })
+                            ? 'border-amber-600 bg-amber-600 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}>
+                          {isCashOnDeliveryOrder({ paymentMethod: selectedPayment }) && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black text-brand-charcoal leading-none">
+                              💵 Cash on Delivery (COD)
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-brand-charcoal/60 font-semibold leading-tight">
+                            Pay in cash or UPI QR scan at doorstep or counter upon delivery
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Saved User Cards / Accounts (if any) */}
+                  {user.savedPayments && user.savedPayments.length > 0 && (
+                    <div className="pt-1 space-y-1.5">
+                      {user.savedPayments.map((p) => {
+                        const val = `${p.type} - ${p.details}`;
+                        const isSelected = selectedPayment === val;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => setSelectedPayment(val)}
+                            className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between text-xs font-bold ${
+                              isSelected
+                                ? 'bg-emerald-50 border-emerald-500 text-brand-charcoal ring-1 ring-emerald-400'
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <span>💳</span>
+                              <span>{p.type} ({p.details})</span>
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </>
@@ -3781,6 +3999,7 @@ export default function CartDrawer({
               id="cart-checkout-btn"
               onClick={handleCheckout}
               disabled={
+                isRedirectingToPg ||
                 !featureFlags.acceptingOrders ||
                 (allKitchens.length > 0 && (
                   (fulfillmentType === 'delivery' && !deliveryKitchenInfo.inRange) ||
@@ -3790,7 +4009,12 @@ export default function CartDrawer({
               }
               className="w-full mt-2 bg-brand-green hover:bg-brand-green/95 disabled:bg-gray-800 disabled:text-gray-500 disabled:border-gray-700 disabled:cursor-not-allowed text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              {!featureFlags.acceptingOrders ? (
+              {isRedirectingToPg ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-brand-orange" />
+                  <span>CONNECTING TO UTKARSH BANK & BILLDESK...</span>
+                </>
+              ) : !featureFlags.acceptingOrders ? (
                 <span>ORDERS CURRENTLY PAUSED</span>
               ) : fulfillmentType === 'dine_in' && !dineInSession?.isFromQR && dineInTableStatus.allOccupied ? (
                 <span>TABLES CURRENTLY FULL AT THIS BHATTI</span>
@@ -3939,6 +4163,43 @@ export default function CartDrawer({
                     </span>
                   );
                 })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* BILLDESK ONBOARDING / CREDENTIAL NOTICE MODAL */}
+        {pgNoticeModal && (
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-brand-green/20 space-y-4 animate-in zoom-in-95 duration-200">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-xl mx-auto shadow-sm">
+                🏛️
+              </div>
+              <div className="text-center space-y-1.5">
+                <span className="text-[9px] font-black uppercase tracking-widest text-brand-orange bg-brand-orange/10 px-2.5 py-0.5 rounded-full">
+                  UTKARSH BANK & BILLDESK V2
+                </span>
+                <h4 className="text-base font-black text-brand-charcoal">{pgNoticeModal.title}</h4>
+                <p className="text-xs text-brand-charcoal/70 leading-relaxed font-semibold">
+                  {pgNoticeModal.message}
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                {pgNoticeModal.allowCodSwitch && (
+                  <button
+                    onClick={handleConfirmSwitchToCod}
+                    className="w-full py-3 bg-brand-green hover:bg-brand-green/90 text-white font-black text-xs rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+                  >
+                    <span>💵 Continue with Cash on Delivery (COD)</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setPgNoticeModal(null)}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer transition-all"
+                >
+                  Return to Cart
+                </button>
               </div>
             </div>
           </div>

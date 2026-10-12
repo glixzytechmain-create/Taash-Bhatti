@@ -247,10 +247,17 @@ export default function OrderInvoiceModal({
                     </span>
                   </>
                 ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>Payment Verified: {order.paymentMethod || 'Prepaid / Online UPI'}</span>
-                  </>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Payment Verified: {order.paymentMethod || 'Prepaid / Online UPI'}</span>
+                    </div>
+                    {order.transactionId && (
+                      <span className="text-[9px] font-mono text-slate-500 block pl-5">
+                        Txn ID: {order.transactionId} {order.bankReferenceNo ? `• Bank Ref: ${order.bankReferenceNo}` : ''}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <p className="text-[10px] text-slate-600 leading-relaxed">

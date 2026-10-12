@@ -1370,6 +1370,37 @@ export default function App() {
     showToast(`🎫 Reward coupon '${couponCode}' loaded to cart!`);
   };
 
+  // Handle BillDesk Payment Gateway Return Status (?orderSuccess=... or ?orderFailure=...)
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const successOrderId = params.get('orderSuccess');
+      const failureOrderId = params.get('orderFailure');
+      const txnId = params.get('txnId');
+      const reason = params.get('reason');
+
+      if (successOrderId) {
+        showToast(`🎉 Payment Confirmed via Utkarsh Bank & BillDesk! Order #${successOrderId} is now processing.`);
+        setActiveTab('account');
+        const url = new URL(window.location.href);
+        url.searchParams.delete('orderSuccess');
+        url.searchParams.delete('paymentStatus');
+        url.searchParams.delete('txnId');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+      } else if (failureOrderId) {
+        showToast(`⚠️ Payment not completed: ${reason || 'Transaction cancelled or declined'}. You can retry or choose Cash on Delivery.`);
+        setActiveTab('account');
+        const url = new URL(window.location.href);
+        url.searchParams.delete('orderFailure');
+        url.searchParams.delete('reason');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+      }
+    } catch (e) {
+      console.warn('Error processing payment return query params:', e);
+    }
+  }, []);
+
   // Sync state with Firebase Auth and Firestore real-time snapshots
   useEffect(() => {
     let unsubscribeUser: (() => void) | null = null;

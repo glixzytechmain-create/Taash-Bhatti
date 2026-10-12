@@ -10,12 +10,14 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { buildBillDeskPaymentRequest, verifyAndParseBillDeskResponse, isBillDeskConfigured, getBillDeskConfig } from './src/lib/billdeskService';
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Hardened Security Headers Middleware
 app.use((req, res, next) => {
@@ -27,8 +29,8 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   // Referrer policy
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  // Restrict sensitive device capabilities
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), payment=()');
+  // Restrict sensitive device capabilities (camera, microphone)
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
   next();
 });
 
@@ -699,6 +701,200 @@ app.post('/api/gemini/suggest', async (req, res) => {
       error: 'Failed to process AI recommendations.',
       details: error instanceof Error ? error.message : String(error)
     });
+  }
+});
+// ============================================================================
+// BILLDESK PG V2 (UTKARSH SMALL FINANCE BANK) PRODUCTION PAYMENT GATEWAY ROUTES
+// ============================================================================
+
+// 1. Get Payment Gateway Public Status & Partner Info
+app.get('/api/payment/billdesk/config', (_req, res) => {
+  const cfg = getBillDeskConfig();
+  res.json({
+    configured: isBillDeskConfigured(),
+    merchantId: cfg.merchantId ? `${cfg.merchantId.substring(0, 3)}***` : '',
+    env: cfg.env,
+    bankPartner: 'Utkarsh Small Finance Bank',
+    pgVersion: 'V2',
+    currency: 'INR'
+  });
+});
+
+// 2. Initiate BillDesk Payment Order
+app.post('/api/payment/billdesk/initiate', async (req, res) => {
+  try {
+    const { orderId, amount, customerName, customerPhone, customerEmail, returnUrl } = req.body;
+
+    if (!orderId || !amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid payment parameters. Valid orderId and amount are required.'
+      });
+    }
+
+    if (!isBillDeskConfigured()) {
+      return res.status(503).json({
+        success: false,
+        configured: false,
+        error: 'BillDesk Merchant Credentials (BILLDESK_MERCHANT_ID, BILLDESK_SECURITY_ID, BILLDESK_CHECKSUM_KEY) are not configured in environment. Awaiting Utkarsh Bank onboarding credentials.'
+      });
+    }
+
+    // Determine return URL
+    const host = req.get('host') || 'taashbhatti.com';
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const defaultReturnUrl = `${protocol}://${host}/api/payment/billdesk/callback`;
+    const finalReturnUrl = returnUrl || process.env.BILLDESK_RETURN_URL || defaultReturnUrl;
+
+    const result = buildBillDeskPaymentRequest({
+      orderId,
+      amount: parseFloat(amount),
+      customerName: customerName || 'Patron',
+      customerPhone: customerPhone || '',
+      customerEmail: customerEmail || '',
+      returnUrl: finalReturnUrl
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json({
+      success: true,
+      pgUrl: result.pgUrl,
+      pgPayload: result.pgPayload,
+      orderId: result.orderId,
+      amount: result.amount
+    });
+  } catch (err: any) {
+    console.error('Error initiating BillDesk payment:', err);
+    res.status(500).json({ success: false, error: err.message || 'Payment initiation failed.' });
+  }
+});
+
+// 3. BillDesk Response Return URL Callback (Customer Browser Redirect POST from BillDesk)
+app.post('/api/payment/billdesk/callback', async (req, res) => {
+  try {
+    const rawMsg = req.body?.msg || req.query?.msg || '';
+    if (!rawMsg) {
+      console.warn('BillDesk callback received with no msg parameter');
+      return res.redirect('/?orderFailure=unknown&reason=' + encodeURIComponent('Empty response from payment gateway.'));
+    }
+
+    const parsed = verifyAndParseBillDeskResponse(String(rawMsg));
+    console.log(`[BillDesk Callback] Order: ${parsed.orderId}, Status: ${parsed.authStatus}, Success: ${parsed.isSuccess}, Txn: ${parsed.txnReferenceNo}`);
+
+    const targetOrderId = parsed.orderId;
+
+    if (targetOrderId && db) {
+      try {
+        const orderRef = doc(db, 'orders', targetOrderId);
+        const orderSnap = await getDoc(orderRef);
+        if (orderSnap.exists()) {
+          const orderData = orderSnap.data();
+          if (parsed.isSuccess) {
+            await updateDoc(orderRef, {
+              paymentStatus: 'paid',
+              paymentMethod: `BillDesk Online (${parsed.paymentMethod})`,
+              transactionId: parsed.txnReferenceNo,
+              bankReferenceNo: parsed.bankReferenceNo,
+              pgGateway: 'billdesk',
+              pgResponseCode: parsed.authStatus,
+              paidAt: new Date().toISOString(),
+              gecBonusAwarded: orderData.pendingEmberBonus ? true : orderData.gecBonusAwarded
+            });
+
+            // Credit pending Golden Ember shortfall bonus if applicable
+            if (orderData.userId && orderData.pendingEmberBonus && !orderData.gecBonusAwarded) {
+              try {
+                const userRef = doc(db, 'users', orderData.userId);
+                await updateDoc(userRef, {
+                  goldenEmberBalance: increment(orderData.pendingEmberBonus),
+                  walletBalance: increment(orderData.pendingEmberBonus)
+                });
+              } catch (uErr) {
+                console.warn('Could not credit pending ember bonus to user profile:', uErr);
+              }
+            }
+          } else {
+            await updateDoc(orderRef, {
+              paymentStatus: 'unpaid',
+              pgGateway: 'billdesk',
+              pgResponseCode: parsed.authStatus,
+              paymentFailureReason: parsed.errorDescription
+            });
+          }
+        }
+      } catch (dbErr) {
+        console.error('Error updating order status in Firestore after BillDesk callback:', dbErr);
+      }
+    }
+
+    if (parsed.isSuccess) {
+      return res.redirect(`/?orderSuccess=${encodeURIComponent(targetOrderId)}&paymentStatus=paid&txnId=${encodeURIComponent(parsed.txnReferenceNo)}`);
+    } else {
+      return res.redirect(`/?orderFailure=${encodeURIComponent(targetOrderId)}&reason=${encodeURIComponent(parsed.errorDescription || 'Payment declined by bank.')}`);
+    }
+  } catch (err: any) {
+    console.error('Fatal error in BillDesk callback:', err);
+    res.redirect('/?orderFailure=error&reason=' + encodeURIComponent('Payment verification error.'));
+  }
+});
+
+// 4. Asynchronous Server-to-Server Webhook Listener (BillDesk S2S Notifications)
+app.post('/api/payment/billdesk/webhook', async (req, res) => {
+  try {
+    const rawMsg = req.body?.msg || req.body?.data || '';
+    if (!rawMsg) {
+      return res.status(400).send('BAD_REQUEST');
+    }
+
+    const parsed = verifyAndParseBillDeskResponse(String(rawMsg));
+    if (!parsed.isValidChecksum) {
+      console.warn('Invalid checksum in BillDesk webhook payload');
+      return res.status(401).send('INVALID_CHECKSUM');
+    }
+
+    if (parsed.orderId && db) {
+      try {
+        const orderRef = doc(db, 'orders', parsed.orderId);
+        const orderSnap = await getDoc(orderRef);
+        if (orderSnap.exists()) {
+          const current = orderSnap.data();
+          if (parsed.isSuccess && current.paymentStatus !== 'paid') {
+            await updateDoc(orderRef, {
+              paymentStatus: 'paid',
+              paymentMethod: `BillDesk Online (${parsed.paymentMethod})`,
+              transactionId: parsed.txnReferenceNo,
+              bankReferenceNo: parsed.bankReferenceNo,
+              pgGateway: 'billdesk',
+              pgResponseCode: parsed.authStatus,
+              paidAt: new Date().toISOString(),
+              gecBonusAwarded: current.pendingEmberBonus ? true : current.gecBonusAwarded
+            });
+
+            if (current.userId && current.pendingEmberBonus && !current.gecBonusAwarded) {
+              try {
+                const userRef = doc(db, 'users', current.userId);
+                await updateDoc(userRef, {
+                  goldenEmberBalance: increment(current.pendingEmberBonus),
+                  walletBalance: increment(current.pendingEmberBonus)
+                });
+              } catch (uErr) {
+                console.warn('Could not credit pending ember bonus in webhook:', uErr);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error handling BillDesk S2S webhook in Firestore:', err);
+      }
+    }
+
+    res.status(200).send('SUCCESS');
+  } catch (err) {
+    console.error('BillDesk webhook processing error:', err);
+    res.status(500).send('INTERNAL_SERVER_ERROR');
   }
 });
 
