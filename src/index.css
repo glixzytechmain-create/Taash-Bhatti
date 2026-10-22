@@ -217,48 +217,163 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 /* Instamart-Style Curved Dish Modal: Ambient Brand Palette Animations */
-@keyframes ambientDrift1 {
+@keyframes bhattiAurora1 {
   0%, 100% {
-    transform: translate(0px, 0px) scale(1);
+    transform: translate(-10%, -10%) scale(1) rotate(0deg);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(15%, 10%) scale(1.25) rotate(45deg);
+    opacity: 0.85;
+  }
+}
+
+@keyframes bhattiAurora2 {
+  0%, 100% {
+    transform: translate(10%, 15%) scale(1.1) rotate(0deg);
     opacity: 0.45;
   }
   50% {
-    transform: translate(25px, -20px) scale(1.18);
-    opacity: 0.65;
+    transform: translate(-15%, -10%) scale(0.9) rotate(-35deg);
+    opacity: 0.75;
   }
 }
 
-@keyframes ambientDrift2 {
+@keyframes bhattiAurora3 {
   0%, 100% {
-    transform: translate(0px, 0px) scale(1.1);
-    opacity: 0.35;
+    transform: translate(0px, 0px) scale(0.95);
+    opacity: 0.4;
   }
   50% {
-    transform: translate(-30px, 25px) scale(0.92);
-    opacity: 0.55;
+    transform: translate(-25px, -20px) scale(1.22);
+    opacity: 0.7;
   }
 }
 
-@keyframes curvedCenterHalo {
+@keyframes bhattiSpotlight {
   0%, 100% {
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 22px rgba(255, 87, 34, 0.6), 0 8px 24px rgba(0, 0, 0, 0.7);
+    opacity: 0.45;
+    transform: scaleX(1);
   }
   50% {
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 1), 0 0 32px rgba(212, 175, 55, 0.8), 0 10px 30px rgba(0, 0, 0, 0.85);
+    opacity: 0.8;
+    transform: scaleX(1.18);
   }
 }
 
-.animate-ambient-drift-1 {
-  animation: ambientDrift1 12s ease-in-out infinite;
+@keyframes bhattiEmberFloat1 {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(-280px) translateX(24px) scale(1.2);
+    opacity: 0;
+  }
 }
 
-.animate-ambient-drift-2 {
-  animation: ambientDrift2 15s ease-in-out infinite;
+@keyframes bhattiEmberFloat2 {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.5);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateY(-340px) translateX(-28px) scale(1.4);
+    opacity: 0;
+  }
 }
 
-.animate-curved-center-halo {
-  animation: curvedCenterHalo 2.4s ease-in-out infinite;
+@keyframes bhattiEmberFloat3 {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.7);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-260px) translateX(16px) scale(0.5);
+    opacity: 0;
+  }
 }
+
+@keyframes viewCircleGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 1),
+                0 0 20px rgba(255, 87, 34, 0.7),
+                0 0 40px rgba(212, 175, 55, 0.4),
+                0 12px 30px rgba(0, 0, 0, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 1),
+                0 0 32px rgba(255, 87, 34, 0.95),
+                0 0 55px rgba(212, 175, 55, 0.65),
+                0 16px 36px rgba(0, 0, 0, 0.9);
+  }
+}
+
+@keyframes dishCardSwitch {
+  0% {
+    opacity: 0.6;
+    transform: scale(0.975) translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-bhatti-aurora-1 {
+  animation: bhattiAurora1 12s ease-in-out infinite;
+}
+
+.animate-bhatti-aurora-2 {
+  animation: bhattiAurora2 14s ease-in-out infinite;
+}
+
+.animate-bhatti-aurora-3 {
+  animation: bhattiAurora3 10s ease-in-out infinite;
+}
+
+.animate-bhatti-spotlight {
+  animation: bhattiSpotlight 3s ease-in-out infinite;
+}
+
+.animate-bhatti-ember-1 {
+  animation: bhattiEmberFloat1 3.2s infinite ease-out;
+}
+
+.animate-bhatti-ember-2 {
+  animation: bhattiEmberFloat2 3.8s infinite ease-out 0.9s;
+}
+
+.animate-bhatti-ember-3 {
+  animation: bhattiEmberFloat3 2.9s infinite ease-out 1.7s;
+}
+
+.animate-view-circle-glow {
+  animation: viewCircleGlow 2.4s ease-in-out infinite;
+}
+
+.animate-dish-card-switch {
+  animation: dishCardSwitch 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 
 
 
