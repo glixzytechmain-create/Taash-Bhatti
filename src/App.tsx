@@ -71,6 +71,7 @@ import FloatingDeliveredRateBubble from './components/FloatingDeliveredRateBubbl
 import DeliveredOrderRatingModal from './components/DeliveredOrderRatingModal';
 import MealReviewsSection from './components/MealReviewsSection';
 import DishMediaGalleryViewer from './components/DishMediaGalleryViewer';
+import CurvedDishDetailModal from './components/CurvedDishDetailModal';
 import DeliverableOrderTracker from './components/DeliverableOrderTracker';
 import GroupOrderRoomView from './components/GroupOrderRoomView';
 import GroupOrderFloatingBubble from './components/GroupOrderFloatingBubble';
@@ -3632,104 +3633,22 @@ export default function App() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }} />
 
-      {/* QUICK VIEW GLOBAL BRIDGE PORTAL */}
+      {/* INSTAMART-STYLE FLOATING DISH CARD & CURVED SCROLLER WITH AMBIENT BACKGROUND */}
       {activeQuickViewMeal && (
-        <div className="fixed inset-0 z-50 bg-brand-charcoal/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-md rounded-t-[32px] sm:rounded-3xl overflow-hidden shadow-2xl border-t border-brand-green/10 flex flex-col max-h-[90vh]">
-            {/* Interactive Multi-Media Lineup Header (Videos + Photos) */}
-            <DishMediaGalleryViewer
-              meal={activeQuickViewMeal}
-              onClose={() => setActiveQuickViewMeal(null)}
-              showCloseButton={true}
-              bottomLeftBadge={
-                activeQuickViewMeal.rating && activeQuickViewMeal.rating > 0 ? (
-                  <div className="bg-brand-charcoal/90 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-white/10">
-                    ★ {activeQuickViewMeal.rating.toFixed(1)} Rating
-                  </div>
-                ) : null
-              }
-            />
-
-            <div className="p-6 overflow-y-auto space-y-4">
-              <div>
-                <div className="flex gap-2 mb-1.5">
-                  <span className={`w-2.5 h-2.5 rounded-full ${activeQuickViewMeal.isVeg ? 'bg-emerald-500' : 'bg-red-500'} inline-block my-auto`} />
-                  <span className="text-[10px] font-black uppercase text-brand-charcoal/50 tracking-wider">
-                    {activeQuickViewMeal.isVeg ? 'Pure Vegetarian' : 'Non-Vegetarian'}
-                  </span>
-                </div>
-                <h3 className="text-xl font-extrabold text-brand-charcoal leading-tight">
-                  {activeQuickViewMeal.name}
-                </h3>
-                <p className="text-xs text-brand-charcoal/70 mt-2 leading-relaxed">
-                  {activeQuickViewMeal.description}
-                </p>
-              </div>
-
-              {/* Meal Specs block */}
-              <div className="bg-brand-cream border border-brand-orange/20 rounded-3xl p-4">
-                <h4 className="text-[10px] font-black uppercase text-brand-orange tracking-wider mb-2.5">
-                  ⭐ DISH SPECIFICATIONS
-                </h4>
-                
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
-                    <span className="text-[9px] text-brand-charcoal/50 font-bold block">PREP TIME</span>
-                    <span className="text-sm font-black text-brand-charcoal">{activeQuickViewMeal.prepTimeMinutes || 20} min</span>
-                  </div>
-                  <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
-                    <span className="text-[9px] text-brand-charcoal/50 font-bold block">SPICINESS</span>
-                    <span className="text-sm font-black text-brand-orange capitalize">{activeQuickViewMeal.spicyLevel}</span>
-                  </div>
-                  <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
-                    <span className="text-[9px] text-brand-charcoal/50 font-bold block">RATING</span>
-                    <span className="text-sm font-black text-brand-green">
-                      {activeQuickViewMeal.rating && activeQuickViewMeal.rating > 0
-                        ? `★ ${activeQuickViewMeal.rating.toFixed(1)}`
-                        : 'New Dish'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Dynamic Checklists */}
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
-                  <span className="text-brand-charcoal/60 font-bold">Category</span>
-                  <span className="font-extrabold text-brand-green uppercase">{activeQuickViewMeal.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
-                  <span className="text-brand-charcoal/60 font-bold">Serving Time</span>
-                  <span className="font-extrabold text-brand-orange uppercase">{(activeQuickViewMeal.timings || []).join(' / ')}</span>
-                </div>
-              </div>
-
-              {/* Dynamic Customer Reviews & Ratings */}
-              <MealReviewsSection
-                meal={activeQuickViewMeal}
-                currentUser={user}
-                onUpdateMealRating={handleMealRatingUpdated}
-              />
-            </div>
-
-            <div className="p-4 bg-brand-cream border-t border-brand-green/10 shrink-0 flex items-center justify-between">
-              <div>
-                <span className="text-[9px] text-brand-charcoal/40 block leading-none font-bold">TOTAL PRICE</span>
-                <span className="text-xl font-black text-brand-charcoal">₹{activeQuickViewMeal.price}</span>
-              </div>
-
-              <CartQuantityButton
-                quantity={cart.find((i) => i.meal.id === activeQuickViewMeal.id)?.quantity || 0}
-                onAdd={() => handleAddToCart(activeQuickViewMeal)}
-                onIncrement={() => handleUpdateQuantity(activeQuickViewMeal.id, 1)}
-                onDecrement={() => handleUpdateQuantity(activeQuickViewMeal.id, -1)}
-                disabled={activeQuickViewMeal.isAvailable === false}
-                disabledLabel="Sold Out"
-                addLabel="Add To Order"
-              />
-            </div>
-          </div>
-        </div>
+        <CurvedDishDetailModal
+          meal={activeQuickViewMeal}
+          allMeals={meals}
+          onSelectMeal={(m) => setActiveQuickViewMeal(m)}
+          onClose={() => setActiveQuickViewMeal(null)}
+          quantity={cart.find((i) => i.meal.id === activeQuickViewMeal.id)?.quantity || 0}
+          onAddToCart={handleAddToCart}
+          onIncrement={() => handleUpdateQuantity(activeQuickViewMeal.id, 1)}
+          onDecrement={() => handleUpdateQuantity(activeQuickViewMeal.id, -1)}
+          likedMeals={likedMeals}
+          onToggleLike={handleToggleLike}
+          currentUser={user}
+          onUpdateMealRating={handleMealRatingUpdated}
+        />
       )}
 
       {/* TAASH BHATTI 2-SECOND OPENING ANIMATION SPLASH */}

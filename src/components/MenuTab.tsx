@@ -32,6 +32,7 @@ import GoesWellWithExtension from './GoesWellWithExtension';
 import CartQuantityButton from './CartQuantityButton';
 import DishMediaGalleryViewer from './DishMediaGalleryViewer';
 import DishShowcaseMedia from './DishShowcaseMedia';
+import CurvedDishDetailModal from './CurvedDishDetailModal';
 
 interface FlyingCardAnimation {
   id: string;
@@ -793,155 +794,20 @@ export default function MenuTab({
         </div>
       )}
 
-      {/* 5. QUICK VIEW DIALOG / MODAL */}
+      {/* 5. INSTAMART-STYLE FLOATING DISH CARD & CURVED SCROLLER WITH AMBIENT BACKGROUND */}
       {selectedQuickView && (
-        <div className="fixed inset-0 z-50 bg-brand-charcoal/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-md rounded-t-[32px] sm:rounded-3xl overflow-hidden shadow-2xl border-t border-brand-green/10 flex flex-col max-h-[90vh]">
-            
-            {/* Interactive Multi-Media Lineup Header (Videos + Photos) */}
-            <DishMediaGalleryViewer
-              meal={selectedQuickView}
-              onClose={() => setSelectedQuickView(null)}
-              showCloseButton={true}
-              bottomLeftBadge={
-                selectedQuickView.rating && selectedQuickView.rating > 0 && selectedQuickView.reviewsCount && selectedQuickView.reviewsCount > 0 ? (
-                  <div className="bg-brand-charcoal/90 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-white/10">
-                    <Star className="w-3.5 h-3.5 text-brand-orange fill-brand-orange" />
-                    {selectedQuickView.rating.toFixed(1)} ({selectedQuickView.reviewsCount} {selectedQuickView.reviewsCount === 1 ? 'review' : 'reviews'})
-                  </div>
-                ) : null
-              }
-              bottomRightAction={
-                <button
-                  type="button"
-                  onClick={(e) => handleDealToDeck(e, selectedQuickView)}
-                  className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase flex items-center gap-1.5 shadow-md transition-all cursor-pointer backdrop-blur-md active:scale-95 ${
-                    likedMeals.includes(selectedQuickView.id)
-                      ? 'bg-amber-500 text-white border-amber-300'
-                      : 'bg-white/90 text-brand-charcoal border-white/60 hover:bg-white'
-                  }`}
-                >
-                  <span>🃏</span>
-                  <span>{likedMeals.includes(selectedQuickView.id) ? 'In My Deck' : 'Add to Deck'}</span>
-                </button>
-              }
-            />
-
-            {/* Scrollable details container */}
-            <div className="p-6 overflow-y-auto space-y-4">
-              <div>
-                <div className="flex gap-2 mb-1.5">
-                  <span className={`w-2.5 h-2.5 rounded-full ${selectedQuickView.isVegan ? 'bg-green-500' : selectedQuickView.isVeg ? 'bg-emerald-500' : 'bg-red-500'} inline-block my-auto`} />
-                  <span className="text-[10px] font-black uppercase text-brand-charcoal/50 tracking-wider">
-                    {selectedQuickView.isVegan ? 'Vegan Delight' : selectedQuickView.isVeg ? 'Pure Vegetarian' : 'Non-Vegetarian'}
-                  </span>
-                </div>
-                <h3 className="text-xl font-extrabold text-brand-charcoal leading-tight">
-                  {selectedQuickView.name}
-                </h3>
-                <p className="text-xs text-brand-charcoal/70 mt-2 leading-relaxed">
-                  {selectedQuickView.description}
-                </p>
-              </div>
-
-              {/* Ingredients List (Grams approximate) */}
-              {selectedQuickView.ingredients && selectedQuickView.ingredients.length > 0 && (
-                <div className="bg-brand-cream/45 border border-brand-green/10 rounded-2xl p-3.5">
-                  <h4 className="text-[10px] font-black uppercase text-brand-green tracking-wider mb-2 flex items-center gap-1">
-                    <ChefHat className="w-4 h-4 text-brand-green" /> KEY INGREDIENTS (APPROX. WEIGHT)
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedQuickView.ingredients.map((ing, idx) => (
-                      <span key={idx} className="bg-white border border-brand-green/10 px-2.5 py-1 rounded-xl text-[10px] font-bold text-brand-charcoal flex items-center gap-1">
-                        {ing.name}: <span className="text-brand-orange font-extrabold">{ing.grams}g</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Comprehensive Macro Breakdown */}
-              <div className="bg-brand-cream border border-brand-orange/20 rounded-3xl p-4">
-                <h4 className="text-[10px] font-black uppercase text-brand-orange tracking-wider mb-2.5 flex items-center gap-1">
-                  <Flame className="w-4 h-4" /> CALORIC & MACRONUTRIENT METRICS
-                </h4>
-                
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
-                    <span className="text-[9px] text-brand-charcoal/50 font-bold block">CALORIES</span>
-                    <span className="text-sm font-black text-brand-charcoal">{selectedQuickView.calories || 350}</span>
-                    <span className="text-[8px] text-brand-charcoal/40 block">kcal</span>
-                  </div>
-                  <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
-                    <span className="text-[9px] text-brand-charcoal/50 font-bold block">PROTEIN</span>
-                    <span className="text-sm font-black text-brand-green">{selectedQuickView.protein || 25}g</span>
-                    <span className="text-[8px] text-brand-charcoal/40 block">{((selectedQuickView.protein || 25)*4)} kcal</span>
-                  </div>
-                  <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
-                    <span className="text-[9px] text-brand-charcoal/50 font-bold block">CARBS</span>
-                    <span className="text-sm font-black text-brand-orange">{selectedQuickView.carbs || 30}g</span>
-                    <span className="text-[8px] text-brand-charcoal/40 block">{((selectedQuickView.carbs || 30)*4)} kcal</span>
-                  </div>
-                  <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
-                    <span className="text-[9px] text-brand-charcoal/50 font-bold block">FATS</span>
-                    <span className="text-sm font-black text-brand-charcoal">{selectedQuickView.fats || 12}g</span>
-                    <span className="text-[8px] text-brand-charcoal/40 block">{((selectedQuickView.fats || 12)*9)} kcal</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Nutritional Details Checklist */}
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
-                  <span className="text-brand-charcoal/60 font-bold">Goal Categories</span>
-                  <span className="font-extrabold text-brand-green uppercase">{(selectedQuickView.goals || []).join(', ').replace('_', ' ')}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
-                  <span className="text-brand-charcoal/60 font-bold">Optimal Timing</span>
-                  <span className="font-extrabold text-brand-orange uppercase">{(selectedQuickView.timings || []).join(' / ')}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
-                  <span className="text-brand-charcoal/60 font-bold">Spiciness Level</span>
-                  <span className="font-extrabold text-brand-charcoal uppercase">{selectedQuickView.spicyLevel}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
-                  <span className="text-brand-charcoal/60 font-bold">Allergens</span>
-                  <span className="font-extrabold text-rose-600 uppercase">{selectedQuickView.isVeg ? 'Dairy, Gluten' : 'Gluten, Shellfish (Optional)'}</span>
-                </div>
-              </div>
-
-              {/* Chef Cooking Note */}
-              <div className="p-3 bg-brand-green/5 border border-brand-green/10 rounded-2xl flex gap-2">
-                <Info className="w-4 h-4 text-brand-green shrink-0 mt-0.5" />
-                <p className="text-[10px] text-brand-charcoal/70 leading-relaxed">
-                  <b>Chef's Instruction:</b> Sautéed using certified cold-pressed extra virgin olive oil. High protein retention method locked. No artificial preservatives or monosodium glutamate.
-                </p>
-              </div>
-
-              {/* Dynamic Customer Reviews & Ratings */}
-              <MealReviewsSection meal={selectedQuickView} />
-            </div>
-
-            {/* Sticky dialog footer with Action */}
-            <div className="p-4 bg-brand-cream border-t border-brand-green/10 shrink-0 flex items-center justify-between">
-              <div>
-                <span className="text-[9px] text-brand-charcoal/40 block leading-none font-bold">TOTAL PRICE</span>
-                <span className="text-xl font-black text-brand-charcoal">₹{selectedQuickView.price}</span>
-              </div>
-
-              <CartQuantityButton
-                quantity={getMealCartQuantity(selectedQuickView.id)}
-                onAdd={() => onAddToCart(selectedQuickView)}
-                onIncrement={() => (onUpdateQuantity ? onUpdateQuantity(selectedQuickView.id, 1) : onAddToCart(selectedQuickView))}
-                onDecrement={() => onUpdateQuantity && onUpdateQuantity(selectedQuickView.id, -1)}
-                disabled={selectedQuickView.isAvailable === false}
-                disabledLabel="Item Sold Out"
-                addLabel="Add To Order"
-              />
-            </div>
-
-          </div>
-        </div>
+        <CurvedDishDetailModal
+          meal={selectedQuickView}
+          allMeals={filteredMeals.length > 0 ? filteredMeals : meals}
+          onSelectMeal={(m) => setSelectedQuickView(m)}
+          onClose={() => setSelectedQuickView(null)}
+          quantity={getMealCartQuantity(selectedQuickView.id)}
+          onAddToCart={onAddToCart}
+          onIncrement={() => (onUpdateQuantity ? onUpdateQuantity(selectedQuickView.id, 1) : onAddToCart(selectedQuickView))}
+          onDecrement={() => onUpdateQuantity && onUpdateQuantity(selectedQuickView.id, -1)}
+          likedMeals={likedMeals}
+          onToggleLike={(mId) => onToggleLike(mId)}
+        />
       )}
 
       {/* 6. FLYING PLAYING CARD PORTAL ANIMATION (Turns into card and moves to My Deck in Header) */}
