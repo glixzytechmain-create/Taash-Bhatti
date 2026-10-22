@@ -32,9 +32,9 @@ export interface CurvedDishDetailModalProps {
   onUpdateMealRating?: (mealId: string, rating: number, count: number) => void;
 }
 
-const ITEM_WIDTH = 68; // px
+const ITEM_WIDTH = 64; // px
 const ITEM_GAP = 16;   // px
-const ITEM_STRIDE = ITEM_WIDTH + ITEM_GAP; // 84px
+const ITEM_STRIDE = ITEM_WIDTH + ITEM_GAP; // 80px
 
 export default function CurvedDishDetailModal({
   meal,
@@ -54,7 +54,6 @@ export default function CurvedDishDetailModal({
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lastActiveIndexRef = useRef<number>(-1);
   const rafIdRef = useRef<number | null>(null);
-  const isScrollingInternalRef = useRef<boolean>(false);
 
   // Mouse drag support for desktop
   const isMouseDownRef = useRef(false);
@@ -101,7 +100,7 @@ export default function CurvedDishDetailModal({
     }
   };
 
-  // Dynamic Arch transform updater (runs on animation frame for 60/120fps hardware-accelerated fluid movement)
+  // Dynamic Arch transform updater: Center item is Y=0, scale=1.0 to fit View Circle lens
   const updateItemTransforms = useCallback((scrollPos: number) => {
     allMeals.forEach((_, idx) => {
       const el = itemRefs.current[idx];
@@ -109,9 +108,9 @@ export default function CurvedDishDetailModal({
       const deltaX = idx * ITEM_STRIDE - scrollPos;
       const normalizedDist = Math.abs(deltaX) / ITEM_STRIDE;
       
-      // Convex Parabolic Arch: Peak Y=0 at center view circle, neighbors dip downward
-      const translateY = Math.min(28, Math.pow(normalizedDist, 1.45) * 7.2);
-      const scale = Math.max(0.74, 1.05 - normalizedDist * 0.12);
+      // Convex Parabolic Arch: Peak Y=0 at center, neighbors cascade downwards
+      const translateY = Math.min(24, Math.pow(normalizedDist, 1.4) * 6.8);
+      const scale = Math.max(0.74, 1.0 - normalizedDist * 0.1);
       const opacity = Math.max(0.42, 1.0 - normalizedDist * 0.22);
 
       el.style.transform = `translate3d(0, ${translateY}px, 0) scale(${scale})`;
@@ -134,7 +133,6 @@ export default function CurvedDishDetailModal({
         lastActiveIndexRef.current = closestIdx;
         const targetMeal = allMeals[closestIdx];
         if (targetMeal && targetMeal.id !== meal.id) {
-          isScrollingInternalRef.current = true;
           onSelectMeal(targetMeal);
           triggerHaptic();
           playSnapTick();
@@ -148,7 +146,6 @@ export default function CurvedDishDetailModal({
     if (!scrollerRef.current) return;
     const targetIdx = Math.max(0, Math.min(allMeals.length - 1, idx));
     lastActiveIndexRef.current = targetIdx;
-    isScrollingInternalRef.current = true;
     scrollerRef.current.scrollTo({
       left: targetIdx * ITEM_STRIDE,
       behavior: 'smooth',
@@ -229,7 +226,7 @@ export default function CurvedDishDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center overflow-hidden animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex flex-col justify-between items-center p-2 sm:p-4 overflow-hidden select-none animate-in fade-in duration-200">
       
       {/* =========================================================================
           1. AMBIENT ANIMATED BRAND BACKGROUND (Charcoal, Fire Orange, Emerald, Gold)
@@ -273,13 +270,13 @@ export default function CurvedDishDetailModal({
       </div>
 
       {/* =========================================================================
-          2. FLOATING DISH CARD (Preserved 100% Rich Information & Functionality)
+          2. FLOATING DISH CARD (Full Vertical Space, Curved Vertices, 1cm Margin)
           ========================================================================= */}
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="relative z-20 w-[94%] sm:w-full max-w-md bg-white rounded-t-[32px] sm:rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.85),0_0_40px_rgba(255,87,34,0.3),0_0_60px_rgba(20,61,39,0.35)] border-t sm:border border-white/30 flex flex-col max-h-[60vh] sm:max-h-[66vh] mb-28 sm:mb-32 overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative z-20 w-full max-w-md flex-1 min-h-0 bg-white rounded-[28px] sm:rounded-[32px] shadow-[0_20px_60px_rgba(0,0,0,0.85),0_0_40px_rgba(255,87,34,0.25),0_0_60px_rgba(20,61,39,0.3)] border border-white/30 flex flex-col overflow-hidden mb-3.5 sm:mb-4"
       >
-        <div key={meal.id} className="animate-dish-card-switch flex flex-col flex-1 overflow-hidden">
+        <div key={meal.id} className="animate-dish-card-switch flex flex-col flex-1 min-h-0 overflow-hidden">
           
           {/* Interactive Multi-Media Lineup Header (Videos + Photos) */}
           <DishMediaGalleryViewer
@@ -316,7 +313,7 @@ export default function CurvedDishDetailModal({
           />
 
           {/* Scrollable details container */}
-          <div className="p-5 overflow-y-auto space-y-3.5">
+          <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3.5">
             <div>
               <div className="flex gap-2 mb-1.5">
                 <span className={`w-2.5 h-2.5 rounded-full ${meal.isVegan ? 'bg-green-500' : meal.isVeg ? 'bg-emerald-500' : 'bg-red-500'} inline-block my-auto`} />
@@ -327,27 +324,27 @@ export default function CurvedDishDetailModal({
               <h3 className="text-xl font-extrabold text-brand-charcoal leading-tight">
                 {meal.name}
               </h3>
-              <p className="text-xs text-brand-charcoal/70 mt-2 leading-relaxed">
+              <p className="text-xs text-brand-charcoal/70 mt-1.5 leading-relaxed">
                 {meal.description}
               </p>
             </div>
 
             {/* Dish Specifications Block */}
-            <div className="bg-brand-cream border border-brand-orange/20 rounded-3xl p-3.5">
+            <div className="bg-brand-cream border border-brand-orange/20 rounded-2xl p-3">
               <h4 className="text-[10px] font-black uppercase text-brand-orange tracking-wider mb-2 flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5" /> DISH SPECIFICATIONS
               </h4>
               
               <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
+                <div className="p-2 bg-white rounded-xl border border-brand-green/5">
                   <span className="text-[9px] text-brand-charcoal/50 font-bold block">PREP TIME</span>
                   <span className="text-sm font-black text-brand-charcoal">{meal.prepTimeMinutes || 20} min</span>
                 </div>
-                <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
+                <div className="p-2 bg-white rounded-xl border border-brand-green/5">
                   <span className="text-[9px] text-brand-charcoal/50 font-bold block">SPICINESS</span>
                   <span className="text-sm font-black text-brand-orange capitalize">{meal.spicyLevel || 'Mild'}</span>
                 </div>
-                <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
+                <div className="p-2 bg-white rounded-xl border border-brand-green/5">
                   <span className="text-[9px] text-brand-charcoal/50 font-bold block">RATING</span>
                   <span className="text-sm font-black text-brand-green">
                     {meal.rating && meal.rating > 0 ? `★ ${meal.rating.toFixed(1)}` : 'New Dish'}
@@ -357,28 +354,28 @@ export default function CurvedDishDetailModal({
             </div>
 
             {/* Caloric & Macronutrient Metrics */}
-            <div className="bg-brand-cream/60 border border-brand-green/10 rounded-3xl p-3.5">
+            <div className="bg-brand-cream/60 border border-brand-green/10 rounded-2xl p-3">
               <h4 className="text-[10px] font-black uppercase text-brand-green tracking-wider mb-2 flex items-center gap-1">
                 <Flame className="w-3.5 h-3.5 text-brand-orange" /> CALORIC & MACRONUTRIENT METRICS
               </h4>
               
               <div className="grid grid-cols-4 gap-2 text-center">
-                <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
+                <div className="p-2 bg-white rounded-xl border border-brand-green/5">
                   <span className="text-[9px] text-brand-charcoal/50 font-bold block">CALORIES</span>
                   <span className="text-sm font-black text-brand-charcoal">{meal.calories || 350}</span>
                   <span className="text-[8px] text-brand-charcoal/40 block">kcal</span>
                 </div>
-                <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
+                <div className="p-2 bg-white rounded-xl border border-brand-green/5">
                   <span className="text-[9px] text-brand-charcoal/50 font-bold block">PROTEIN</span>
                   <span className="text-sm font-black text-brand-green">{meal.protein || 24}g</span>
                   <span className="text-[8px] text-brand-charcoal/40 block">{((meal.protein || 24) * 4)} kcal</span>
                 </div>
-                <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
+                <div className="p-2 bg-white rounded-xl border border-brand-green/5">
                   <span className="text-[9px] text-brand-charcoal/50 font-bold block">CARBS</span>
                   <span className="text-sm font-black text-brand-orange">{meal.carbs || 30}g</span>
                   <span className="text-[8px] text-brand-charcoal/40 block">{((meal.carbs || 30) * 4)} kcal</span>
                 </div>
-                <div className="p-2 bg-white rounded-2xl border border-brand-green/5">
+                <div className="p-2 bg-white rounded-xl border border-brand-green/5">
                   <span className="text-[9px] text-brand-charcoal/50 font-bold block">FATS</span>
                   <span className="text-sm font-black text-brand-charcoal">{meal.fats || 12}g</span>
                   <span className="text-[8px] text-brand-charcoal/40 block">{((meal.fats || 12) * 9)} kcal</span>
@@ -388,7 +385,7 @@ export default function CurvedDishDetailModal({
 
             {/* Ingredients list if present */}
             {meal.ingredients && meal.ingredients.length > 0 && (
-              <div className="bg-brand-cream/40 border border-brand-green/10 rounded-2xl p-3">
+              <div className="bg-brand-cream/40 border border-brand-green/10 rounded-2xl p-2.5">
                 <h4 className="text-[10px] font-black uppercase text-brand-green tracking-wider mb-1.5 flex items-center gap-1">
                   <span>🌾 KEY INGREDIENTS</span>
                 </h4>
@@ -459,132 +456,130 @@ export default function CurvedDishDetailModal({
           ========================================================================= */}
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-2 sm:bottom-4 inset-x-0 z-50 flex flex-col items-center pointer-events-auto px-2 sm:px-4 select-none"
+        className="relative z-30 w-full max-w-xl h-24 sm:h-28 shrink-0 flex items-center justify-center select-none"
       >
-        <div className="relative w-full max-w-xl flex items-center justify-center">
-          
-          {/* Previous Arrow Button */}
-          {activeIndex > 0 && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                scrollToItem(activeIndex - 1);
-              }}
-              aria-label="Previous Dish"
-              className="absolute left-1 z-50 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4 text-amber-400" />
-            </button>
-          )}
-
-          {/* -------------------------------------------------------------
-              A. FIXED CENTER "VIEW CIRCLE" LENS & SPOTLIGHT
-              Stationed permanently at the center with high z-index.
-              ------------------------------------------------------------- */}
-          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-2 z-40 flex flex-col items-center">
-            {/* Ambient Spotlight Beam projecting upwards to the card */}
-            <div className="w-36 sm:w-48 h-28 bg-gradient-to-t from-[#FF5722]/40 via-[#D4AF37]/20 to-transparent blur-md -mb-12 animate-bhatti-spotlight pointer-events-none" />
-
-            {/* The Crisp White View Circle Lens Bezel */}
-            <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.9),0_0_50px_rgba(212,175,55,0.7),0_10px_30px_rgba(0,0,0,0.95)] animate-view-circle-glow flex items-center justify-center pointer-events-none">
-              {/* Inner Golden Reticle Ring */}
-              <div className="absolute inset-0.5 rounded-full border border-amber-300/80" />
-              {/* Glass Reflection Highlight */}
-              <div className="absolute top-1 inset-x-2 h-3.5 rounded-full bg-gradient-to-b from-white/60 to-transparent" />
-            </div>
-
-            {/* Dynamic Dish Title & Price Badge */}
-            <div className="mt-2.5 px-3 py-1 rounded-full bg-brand-charcoal/95 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-wider border border-amber-400/60 whitespace-nowrap shadow-2xl flex items-center gap-1.5 animate-dish-card-switch pointer-events-none">
-              <span className="truncate max-w-[140px] sm:max-w-[200px] text-brand-ivory">{meal.name}</span>
-              <span className="text-amber-400 font-extrabold">₹{meal.price}</span>
-            </div>
-          </div>
-
-          {/* -------------------------------------------------------------
-              B. HORIZONTAL CONVEYOR TRACK
-              Scrolling / dragging moves dishes through the View Circle.
-              ------------------------------------------------------------- */}
-          <div 
-            ref={scrollerRef}
-            onScroll={handleScroll}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onWheel={handleWheel}
-            className="relative z-20 w-full overflow-x-auto no-scrollbar flex items-center gap-4 py-3 select-none cursor-grab active:cursor-grabbing"
-            style={{
-              scrollSnapType: 'x mandatory',
-              WebkitOverflowScrolling: 'touch',
+        {/* Previous Arrow Button */}
+        {activeIndex > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              scrollToItem(activeIndex - 1);
             }}
+            aria-label="Previous Dish"
+            className="absolute left-1 sm:left-2 top-1/2 -translate-y-1/2 z-40 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
           >
-            {/* Left Spacer so item 0 aligns dead-center in the View Circle */}
-            <div 
-              className="shrink-0 pointer-events-none" 
-              style={{ width: 'calc(50% - 34px)' }} 
-              aria-hidden="true" 
-            />
+            <ChevronLeft className="w-4 h-4 text-amber-400" />
+          </button>
+        )}
 
-            {allMeals.map((item, idx) => (
-              <div
-                key={item.id}
-                ref={(el) => { itemRefs.current[idx] = el; }}
-                onClick={() => scrollToItem(idx)}
-                style={{
-                  width: `${ITEM_WIDTH}px`,
-                  flexShrink: 0,
-                  scrollSnapAlign: 'center',
-                  willChange: 'transform, opacity',
-                }}
-                className="flex flex-col items-center justify-center cursor-pointer select-none py-1"
-              >
-                <div className="relative w-15 h-15 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-white/60 shadow-lg group">
-                  {/* Dish circular photo */}
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    className="w-full h-full object-cover rounded-full pointer-events-none group-hover:scale-110 transition-transform duration-300"
-                    loading="lazy"
-                  />
+        {/* -------------------------------------------------------------
+            A. FIXED CENTER "VIEW CIRCLE" LENS & SPOTLIGHT
+            Positioned at EXACT vertical center (top-1/2 -translate-y-1/2)
+            so dish icons slide into it with 100% concentric precision.
+            ------------------------------------------------------------- */}
+        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center">
+          {/* Upward Ambient Spotlight Beam projecting towards the meal card */}
+          <div className="w-32 sm:w-44 h-24 bg-gradient-to-t from-[#FF5722]/40 via-[#D4AF37]/20 to-transparent blur-md -mb-10 animate-bhatti-spotlight pointer-events-none" />
 
-                  {/* Veg / Non-Veg Mini Status Dot */}
-                  <span 
-                    className={`absolute top-1 right-1 w-2.5 h-2.5 rounded-full border border-white shadow-xs ${
-                      item.isVegan ? 'bg-green-500' : item.isVeg ? 'bg-emerald-500' : 'bg-red-500'
-                    }`} 
-                  />
-
-                  {/* Dark gradient vignette */}
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
-                </div>
-              </div>
-            ))}
-
-            {/* Right Spacer so item N-1 aligns dead-center in the View Circle */}
-            <div 
-              className="shrink-0 pointer-events-none" 
-              style={{ width: 'calc(50% - 34px)' }} 
-              aria-hidden="true" 
-            />
+          {/* The Crisp White View Circle Lens Bezel */}
+          <div className="relative w-[70px] h-[70px] rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.95),0_0_45px_rgba(212,175,55,0.7),0_8px_24px_rgba(0,0,0,0.85)] animate-view-circle-glow flex items-center justify-center pointer-events-none">
+            {/* Inner Golden Reticle Ring */}
+            <div className="absolute inset-0.5 rounded-full border border-amber-300/80" />
+            {/* Glass Reflection Highlight */}
+            <div className="absolute top-1 inset-x-2 h-3.5 rounded-full bg-gradient-to-b from-white/60 to-transparent" />
           </div>
 
-          {/* Next Arrow Button */}
-          {activeIndex < allMeals.length - 1 && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                scrollToItem(activeIndex + 1);
-              }}
-              aria-label="Next Dish"
-              className="absolute right-1 z-50 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
-            >
-              <ChevronRight className="w-4 h-4 text-amber-400" />
-            </button>
-          )}
-
+          {/* Dynamic Dish Title & Price Badge */}
+          <div className="absolute -bottom-6.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-brand-charcoal/95 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-wider border border-amber-400/60 whitespace-nowrap shadow-2xl flex items-center gap-1 animate-dish-card-switch pointer-events-none">
+            <span className="truncate max-w-[130px] sm:max-w-[190px] text-brand-ivory">{meal.name}</span>
+            <span className="text-amber-400 font-extrabold">₹{meal.price}</span>
+          </div>
         </div>
+
+        {/* -------------------------------------------------------------
+            B. HORIZONTAL CONVEYOR TRACK
+            Scrolling / dragging moves dishes through the View Circle.
+            ------------------------------------------------------------- */}
+        <div 
+          ref={scrollerRef}
+          onScroll={handleScroll}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
+          className="relative z-20 w-full h-full overflow-x-auto no-scrollbar flex items-center gap-4 py-2 select-none cursor-grab active:cursor-grabbing"
+          style={{
+            scrollSnapType: 'x mandatory',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
+          {/* Left Spacer so item 0 aligns dead-center in the View Circle */}
+          <div 
+            className="shrink-0 pointer-events-none" 
+            style={{ width: 'calc(50% - 32px)' }} 
+            aria-hidden="true" 
+          />
+
+          {allMeals.map((item, idx) => (
+            <div
+              key={item.id}
+              ref={(el) => { itemRefs.current[idx] = el; }}
+              onClick={() => scrollToItem(idx)}
+              style={{
+                width: `${ITEM_WIDTH}px`,
+                height: `${ITEM_WIDTH}px`,
+                flexShrink: 0,
+                scrollSnapAlign: 'center',
+                willChange: 'transform, opacity',
+              }}
+              className="flex items-center justify-center cursor-pointer select-none"
+            >
+              <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-white/50 shadow-md group">
+                {/* Dish circular photo */}
+                <img
+                  src={item.image}
+                  alt={item.name}
+                  className="w-full h-full object-cover rounded-full pointer-events-none group-hover:scale-110 transition-transform duration-300"
+                  loading="lazy"
+                />
+
+                {/* Veg / Non-Veg Mini Status Dot */}
+                <span 
+                  className={`absolute top-1 right-1 w-2.5 h-2.5 rounded-full border border-white shadow-xs ${
+                    item.isVegan ? 'bg-green-500' : item.isVeg ? 'bg-emerald-500' : 'bg-red-500'
+                  }`} 
+                />
+
+                {/* Dark gradient vignette */}
+                <div className="absolute inset-0 rounded-full bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+              </div>
+            </div>
+          ))}
+
+          {/* Right Spacer so item N-1 aligns dead-center in the View Circle */}
+          <div 
+            className="shrink-0 pointer-events-none" 
+            style={{ width: 'calc(50% - 32px)' }} 
+            aria-hidden="true" 
+          />
+        </div>
+
+        {/* Next Arrow Button */}
+        {activeIndex < allMeals.length - 1 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              scrollToItem(activeIndex + 1);
+            }}
+            aria-label="Next Dish"
+            className="absolute right-1 sm:right-2 top-1/2 -translate-y-1/2 z-40 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4 text-amber-400" />
+          </button>
+        )}
       </div>
 
     </div>
