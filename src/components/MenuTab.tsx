@@ -667,7 +667,12 @@ export default function MenuTab({
                       ))}
                     </div>
 
-                    <h4 className="font-extrabold text-base text-brand-charcoal leading-snug">{meal.name}</h4>
+                    <h4 
+                      onClick={() => setSelectedQuickView(meal)} 
+                      className="font-extrabold text-base text-brand-charcoal leading-snug cursor-pointer hover:text-brand-orange transition-colors"
+                    >
+                      {meal.name}
+                    </h4>
                     <p className="text-xs text-brand-charcoal/60 mt-1 line-clamp-2">{meal.description}</p>
 
                     {/* View Details & Nutrition trigger and Goes Well With toggle */}

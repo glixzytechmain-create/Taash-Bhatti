@@ -54,6 +54,7 @@ export default function CurvedDishDetailModal({
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lastActiveIndexRef = useRef<number>(-1);
   const rafIdRef = useRef<number | null>(null);
+  const isScrollingInternalRef = useRef<boolean>(false);
 
   // Mouse drag support for desktop
   const isMouseDownRef = useRef(false);
@@ -133,6 +134,7 @@ export default function CurvedDishDetailModal({
         lastActiveIndexRef.current = closestIdx;
         const targetMeal = allMeals[closestIdx];
         if (targetMeal && targetMeal.id !== meal.id) {
+          isScrollingInternalRef.current = true;
           onSelectMeal(targetMeal);
           triggerHaptic();
           playSnapTick();
@@ -145,22 +147,29 @@ export default function CurvedDishDetailModal({
   const scrollToItem = (idx: number) => {
     if (!scrollerRef.current) return;
     const targetIdx = Math.max(0, Math.min(allMeals.length - 1, idx));
+    lastActiveIndexRef.current = targetIdx;
+    isScrollingInternalRef.current = true;
     scrollerRef.current.scrollTo({
       left: targetIdx * ITEM_STRIDE,
       behavior: 'smooth',
     });
   };
 
-  // Initial positioning when modal mounts
+  // Initial positioning when modal mounts ONLY!
   useEffect(() => {
     const initialIdx = allMeals.findIndex((m) => m.id === meal.id);
     const targetIdx = initialIdx >= 0 ? initialIdx : 0;
     lastActiveIndexRef.current = targetIdx;
 
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollLeft = targetIdx * ITEM_STRIDE;
-      updateItemTransforms(targetIdx * ITEM_STRIDE);
-    }
+    const applyInitial = () => {
+      if (scrollerRef.current) {
+        scrollerRef.current.scrollLeft = targetIdx * ITEM_STRIDE;
+        updateItemTransforms(targetIdx * ITEM_STRIDE);
+      }
+    };
+
+    applyInitial();
+    const frameId = requestAnimationFrame(applyInitial);
 
     const handleResize = () => {
       if (scrollerRef.current) {
@@ -169,10 +178,11 @@ export default function CurvedDishDetailModal({
     };
     window.addEventListener('resize', handleResize);
     return () => {
+      cancelAnimationFrame(frameId);
       window.removeEventListener('resize', handleResize);
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [allMeals, meal.id, updateItemTransforms]);
+  }, []); // Run once on mount: DO NOT re-run on meal.id change so user scrolling is never interrupted!
 
   // Keyboard navigation: Left/Right to browse, Esc to close
   useEffect(() => {
@@ -219,46 +229,46 @@ export default function CurvedDishDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center items-center overflow-hidden animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center overflow-hidden animate-in fade-in duration-200">
       
       {/* =========================================================================
           1. AMBIENT ANIMATED BRAND BACKGROUND (Charcoal, Fire Orange, Emerald, Gold)
           ========================================================================= */}
       <div 
         onClick={onClose}
-        className="absolute inset-0 bg-[#0B0F12]/92 backdrop-blur-xl transition-opacity cursor-pointer overflow-hidden"
+        className="absolute inset-0 bg-[#0B0F12]/94 backdrop-blur-xl transition-opacity cursor-pointer overflow-hidden z-10"
       >
         {/* Ambient Orb 1: Bhatti Fire Orange Hearth Glow */}
-        <div className="absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full bg-gradient-to-tr from-[#FF5722]/45 to-[#FF7A00]/30 blur-[100px] pointer-events-none animate-bhatti-aurora-1" />
+        <div className="absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full bg-gradient-to-tr from-[#FF5722]/50 to-[#FF7A00]/35 blur-[100px] pointer-events-none animate-bhatti-aurora-1" />
 
         {/* Ambient Orb 2: Bhatti Clay Forest Green Glow */}
-        <div className="absolute top-1/4 -right-28 w-[480px] h-[480px] rounded-full bg-gradient-to-bl from-[#143D27]/75 to-[#1B5E20]/50 blur-[95px] pointer-events-none animate-bhatti-aurora-2" />
+        <div className="absolute top-1/4 -right-28 w-[480px] h-[480px] rounded-full bg-gradient-to-bl from-[#143D27]/80 to-[#1B5E20]/55 blur-[95px] pointer-events-none animate-bhatti-aurora-2" />
 
         {/* Ambient Orb 3: Royal Golden Amber Center Radiance */}
-        <div className="absolute bottom-1/3 left-1/4 w-[420px] h-[420px] rounded-full bg-gradient-to-r from-[#D4AF37]/40 to-[#F59E0B]/25 blur-[90px] pointer-events-none animate-bhatti-aurora-3" />
+        <div className="absolute bottom-1/3 left-1/4 w-[420px] h-[420px] rounded-full bg-gradient-to-r from-[#D4AF37]/45 to-[#F59E0B]/30 blur-[90px] pointer-events-none animate-bhatti-aurora-3" />
 
         {/* Ambient Orb 4: Tandoor Ember Red Hearth Core */}
-        <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-[500px] h-[250px] rounded-full bg-[#C62828]/35 blur-[85px] pointer-events-none animate-pulse" />
+        <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-[500px] h-[250px] rounded-full bg-[#C62828]/40 blur-[85px] pointer-events-none animate-pulse" />
 
         {/* Rising Micro Embers Particles (480°C Clay Oven Live Ambiance) */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           {/* Left Flank Embers */}
-          <div className="absolute bottom-10 left-[4%] w-2 h-2 rounded-full bg-[#FF5722] shadow-[0_0_8px_#FF5722] animate-bhatti-ember-1" style={{ animationDelay: '0s' }} />
-          <div className="absolute bottom-6 left-[8%] w-1.5 h-1.5 rounded-full bg-[#FFD54F] shadow-[0_0_10px_#FFD54F] animate-bhatti-ember-2" style={{ animationDelay: '0.6s' }} />
-          <div className="absolute bottom-14 left-[14%] w-2.5 h-2.5 rounded-full bg-[#FF7043] shadow-[0_0_8px_#FF7043] animate-bhatti-ember-3" style={{ animationDelay: '1.2s' }} />
-          <div className="absolute bottom-8 left-[20%] w-1.5 h-1.5 rounded-full bg-[#D4AF37] shadow-[0_0_6px_#D4AF37] animate-bhatti-ember-1" style={{ animationDelay: '1.8s' }} />
-          <div className="absolute bottom-12 left-[28%] w-2 h-2 rounded-full bg-[#FF5722] shadow-[0_0_8px_#FF5722] animate-bhatti-ember-2" style={{ animationDelay: '2.4s' }} />
+          <div className="absolute bottom-10 left-[4%] w-2 h-2 rounded-full bg-[#FF5722] shadow-[0_0_10px_#FF5722] animate-bhatti-ember-1" style={{ animationDelay: '0s' }} />
+          <div className="absolute bottom-6 left-[8%] w-1.5 h-1.5 rounded-full bg-[#FFD54F] shadow-[0_0_12px_#FFD54F] animate-bhatti-ember-2" style={{ animationDelay: '0.6s' }} />
+          <div className="absolute bottom-14 left-[14%] w-2.5 h-2.5 rounded-full bg-[#FF7043] shadow-[0_0_10px_#FF7043] animate-bhatti-ember-3" style={{ animationDelay: '1.2s' }} />
+          <div className="absolute bottom-8 left-[20%] w-1.5 h-1.5 rounded-full bg-[#D4AF37] shadow-[0_0_8px_#D4AF37] animate-bhatti-ember-1" style={{ animationDelay: '1.8s' }} />
+          <div className="absolute bottom-12 left-[28%] w-2 h-2 rounded-full bg-[#FF5722] shadow-[0_0_10px_#FF5722] animate-bhatti-ember-2" style={{ animationDelay: '2.4s' }} />
 
           {/* Right Flank Embers */}
-          <div className="absolute bottom-12 right-[5%] w-2 h-2 rounded-full bg-[#FFD54F] shadow-[0_0_10px_#FFD54F] animate-bhatti-ember-1" style={{ animationDelay: '0.4s' }} />
-          <div className="absolute bottom-8 right-[10%] w-2.5 h-2.5 rounded-full bg-[#FF5722] shadow-[0_0_8px_#FF5722] animate-bhatti-ember-2" style={{ animationDelay: '1.0s' }} />
-          <div className="absolute bottom-16 right-[16%] w-1.5 h-1.5 rounded-full bg-[#FFAB00] shadow-[0_0_8px_#FFAB00] animate-bhatti-ember-3" style={{ animationDelay: '1.6s' }} />
-          <div className="absolute bottom-6 right-[22%] w-2 h-2 rounded-full bg-[#FF7043] shadow-[0_0_6px_#FF7043] animate-bhatti-ember-1" style={{ animationDelay: '2.2s' }} />
-          <div className="absolute bottom-10 right-[30%] w-1.5 h-1.5 rounded-full bg-[#D4AF37] shadow-[0_0_8px_#D4AF37] animate-bhatti-ember-2" style={{ animationDelay: '2.8s' }} />
+          <div className="absolute bottom-12 right-[5%] w-2 h-2 rounded-full bg-[#FFD54F] shadow-[0_0_12px_#FFD54F] animate-bhatti-ember-1" style={{ animationDelay: '0.4s' }} />
+          <div className="absolute bottom-8 right-[10%] w-2.5 h-2.5 rounded-full bg-[#FF5722] shadow-[0_0_10px_#FF5722] animate-bhatti-ember-2" style={{ animationDelay: '1.0s' }} />
+          <div className="absolute bottom-16 right-[16%] w-1.5 h-1.5 rounded-full bg-[#FFAB00] shadow-[0_0_10px_#FFAB00] animate-bhatti-ember-3" style={{ animationDelay: '1.6s' }} />
+          <div className="absolute bottom-6 right-[22%] w-2 h-2 rounded-full bg-[#FF7043] shadow-[0_0_8px_#FF7043] animate-bhatti-ember-1" style={{ animationDelay: '2.2s' }} />
+          <div className="absolute bottom-10 right-[30%] w-1.5 h-1.5 rounded-full bg-[#D4AF37] shadow-[0_0_10px_#D4AF37] animate-bhatti-ember-2" style={{ animationDelay: '2.8s' }} />
 
           {/* Bottom Center Ambers */}
-          <div className="absolute bottom-4 left-[44%] w-1.5 h-1.5 rounded-full bg-[#FFD54F] shadow-[0_0_8px_#FFD54F] animate-bhatti-ember-3" style={{ animationDelay: '0.8s' }} />
-          <div className="absolute bottom-5 left-[56%] w-2 h-2 rounded-full bg-[#FF5722] shadow-[0_0_8px_#FF5722] animate-bhatti-ember-1" style={{ animationDelay: '1.4s' }} />
+          <div className="absolute bottom-4 left-[44%] w-1.5 h-1.5 rounded-full bg-[#FFD54F] shadow-[0_0_10px_#FFD54F] animate-bhatti-ember-3" style={{ animationDelay: '0.8s' }} />
+          <div className="absolute bottom-5 left-[56%] w-2 h-2 rounded-full bg-[#FF5722] shadow-[0_0_10px_#FF5722] animate-bhatti-ember-1" style={{ animationDelay: '1.4s' }} />
         </div>
       </div>
 
@@ -267,7 +277,7 @@ export default function CurvedDishDetailModal({
           ========================================================================= */}
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="relative z-20 w-[94%] sm:w-full max-w-md bg-white rounded-t-[32px] sm:rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.7),0_0_40px_rgba(255,87,34,0.22),0_0_60px_rgba(20,61,39,0.28)] border-t sm:border border-white/25 flex flex-col max-h-[70vh] sm:max-h-[73vh] mb-24 sm:mb-28 overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative z-20 w-[94%] sm:w-full max-w-md bg-white rounded-t-[32px] sm:rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.85),0_0_40px_rgba(255,87,34,0.3),0_0_60px_rgba(20,61,39,0.35)] border-t sm:border border-white/30 flex flex-col max-h-[60vh] sm:max-h-[66vh] mb-28 sm:mb-32 overflow-hidden animate-in zoom-in-95 duration-200"
       >
         <div key={meal.id} className="animate-dish-card-switch flex flex-col flex-1 overflow-hidden">
           
@@ -306,7 +316,7 @@ export default function CurvedDishDetailModal({
           />
 
           {/* Scrollable details container */}
-          <div className="p-6 overflow-y-auto space-y-4">
+          <div className="p-5 overflow-y-auto space-y-3.5">
             <div>
               <div className="flex gap-2 mb-1.5">
                 <span className={`w-2.5 h-2.5 rounded-full ${meal.isVegan ? 'bg-green-500' : meal.isVeg ? 'bg-emerald-500' : 'bg-red-500'} inline-block my-auto`} />
@@ -323,8 +333,8 @@ export default function CurvedDishDetailModal({
             </div>
 
             {/* Dish Specifications Block */}
-            <div className="bg-brand-cream border border-brand-orange/20 rounded-3xl p-4">
-              <h4 className="text-[10px] font-black uppercase text-brand-orange tracking-wider mb-2.5 flex items-center gap-1">
+            <div className="bg-brand-cream border border-brand-orange/20 rounded-3xl p-3.5">
+              <h4 className="text-[10px] font-black uppercase text-brand-orange tracking-wider mb-2 flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5" /> DISH SPECIFICATIONS
               </h4>
               
@@ -347,8 +357,8 @@ export default function CurvedDishDetailModal({
             </div>
 
             {/* Caloric & Macronutrient Metrics */}
-            <div className="bg-brand-cream/60 border border-brand-green/10 rounded-3xl p-4">
-              <h4 className="text-[10px] font-black uppercase text-brand-green tracking-wider mb-2.5 flex items-center gap-1">
+            <div className="bg-brand-cream/60 border border-brand-green/10 rounded-3xl p-3.5">
+              <h4 className="text-[10px] font-black uppercase text-brand-green tracking-wider mb-2 flex items-center gap-1">
                 <Flame className="w-3.5 h-3.5 text-brand-orange" /> CALORIC & MACRONUTRIENT METRICS
               </h4>
               
@@ -378,8 +388,8 @@ export default function CurvedDishDetailModal({
 
             {/* Ingredients list if present */}
             {meal.ingredients && meal.ingredients.length > 0 && (
-              <div className="bg-brand-cream/40 border border-brand-green/10 rounded-2xl p-3.5">
-                <h4 className="text-[10px] font-black uppercase text-brand-green tracking-wider mb-2 flex items-center gap-1">
+              <div className="bg-brand-cream/40 border border-brand-green/10 rounded-2xl p-3">
+                <h4 className="text-[10px] font-black uppercase text-brand-green tracking-wider mb-1.5 flex items-center gap-1">
                   <span>🌾 KEY INGREDIENTS</span>
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
@@ -396,19 +406,19 @@ export default function CurvedDishDetailModal({
             )}
 
             {/* Checklist & Timings */}
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center justify-between py-1.5 border-b border-brand-green/5">
                 <span className="text-brand-charcoal/60 font-bold">Serving Time</span>
                 <span className="font-extrabold text-brand-orange uppercase">{(meal.timings || ['All Day']).join(' / ')}</span>
               </div>
-              <div className="flex items-center justify-between py-2 border-b border-brand-green/5">
+              <div className="flex items-center justify-between py-1.5 border-b border-brand-green/5">
                 <span className="text-brand-charcoal/60 font-bold">Category</span>
                 <span className="font-extrabold text-brand-green uppercase">{meal.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}</span>
               </div>
             </div>
 
             {/* Chef Cooking Instruction */}
-            <div className="p-3 bg-brand-green/5 border border-brand-green/10 rounded-2xl flex gap-2">
+            <div className="p-2.5 bg-brand-green/5 border border-brand-green/10 rounded-2xl flex gap-2">
               <Info className="w-4 h-4 text-brand-green shrink-0 mt-0.5" />
               <p className="text-[10px] text-brand-charcoal/70 leading-relaxed">
                 <b>Chef's Clay-Oven Standard:</b> Cooked inside our 480°C tandoor with certified cold-pressed oils. High protein & nutritional retention locked without artificial additives.
@@ -424,7 +434,7 @@ export default function CurvedDishDetailModal({
           </div>
 
           {/* Sticky dialog footer with Action */}
-          <div className="p-4 bg-brand-cream border-t border-brand-green/10 shrink-0 flex items-center justify-between">
+          <div className="p-3.5 bg-brand-cream border-t border-brand-green/10 shrink-0 flex items-center justify-between">
             <div>
               <span className="text-[9px] text-brand-charcoal/40 block leading-none font-bold">TOTAL PRICE</span>
               <span className="text-xl font-black text-brand-charcoal">₹{meal.price}</span>
@@ -449,7 +459,7 @@ export default function CurvedDishDetailModal({
           ========================================================================= */}
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="fixed bottom-2 sm:bottom-4 inset-x-0 z-30 flex flex-col items-center pointer-events-auto px-2 sm:px-4 select-none"
+        className="absolute bottom-2 sm:bottom-4 inset-x-0 z-50 flex flex-col items-center pointer-events-auto px-2 sm:px-4 select-none"
       >
         <div className="relative w-full max-w-xl flex items-center justify-center">
           
@@ -462,7 +472,7 @@ export default function CurvedDishDetailModal({
                 scrollToItem(activeIndex - 1);
               }}
               aria-label="Previous Dish"
-              className="absolute left-1 z-40 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
+              className="absolute left-1 z-50 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4 text-amber-400" />
             </button>
@@ -470,23 +480,22 @@ export default function CurvedDishDetailModal({
 
           {/* -------------------------------------------------------------
               A. FIXED CENTER "VIEW CIRCLE" LENS & SPOTLIGHT
-              Stationed permanently at the center. Whichever dish enters
-              this circle becomes the active selected dish shown above.
+              Stationed permanently at the center with high z-index.
               ------------------------------------------------------------- */}
-          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-1 z-35 flex flex-col items-center">
+          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-2 z-40 flex flex-col items-center">
             {/* Ambient Spotlight Beam projecting upwards to the card */}
-            <div className="w-32 sm:w-44 h-24 bg-gradient-to-t from-[#FF5722]/35 via-[#D4AF37]/15 to-transparent blur-md -mb-10 animate-bhatti-spotlight pointer-events-none" />
+            <div className="w-36 sm:w-48 h-28 bg-gradient-to-t from-[#FF5722]/40 via-[#D4AF37]/20 to-transparent blur-md -mb-12 animate-bhatti-spotlight pointer-events-none" />
 
             {/* The Crisp White View Circle Lens Bezel */}
-            <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.85),0_0_50px_rgba(212,175,55,0.6),0_10px_25px_rgba(0,0,0,0.9)] animate-view-circle-glow flex items-center justify-center pointer-events-none">
+            <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.9),0_0_50px_rgba(212,175,55,0.7),0_10px_30px_rgba(0,0,0,0.95)] animate-view-circle-glow flex items-center justify-center pointer-events-none">
               {/* Inner Golden Reticle Ring */}
-              <div className="absolute inset-0.5 rounded-full border border-amber-300/70" />
+              <div className="absolute inset-0.5 rounded-full border border-amber-300/80" />
               {/* Glass Reflection Highlight */}
-              <div className="absolute top-1 inset-x-2 h-3 rounded-full bg-gradient-to-b from-white/50 to-transparent" />
+              <div className="absolute top-1 inset-x-2 h-3.5 rounded-full bg-gradient-to-b from-white/60 to-transparent" />
             </div>
 
             {/* Dynamic Dish Title & Price Badge */}
-            <div className="mt-2 px-3 py-1 rounded-full bg-brand-charcoal/95 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-wider border border-amber-400/50 whitespace-nowrap shadow-2xl flex items-center gap-1.5 animate-dish-card-switch pointer-events-none">
+            <div className="mt-2.5 px-3 py-1 rounded-full bg-brand-charcoal/95 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-wider border border-amber-400/60 whitespace-nowrap shadow-2xl flex items-center gap-1.5 animate-dish-card-switch pointer-events-none">
               <span className="truncate max-w-[140px] sm:max-w-[200px] text-brand-ivory">{meal.name}</span>
               <span className="text-amber-400 font-extrabold">₹{meal.price}</span>
             </div>
@@ -504,7 +513,7 @@ export default function CurvedDishDetailModal({
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
             onWheel={handleWheel}
-            className="w-full overflow-x-auto no-scrollbar flex items-center gap-4 py-3 select-none cursor-grab active:cursor-grabbing"
+            className="relative z-20 w-full overflow-x-auto no-scrollbar flex items-center gap-4 py-3 select-none cursor-grab active:cursor-grabbing"
             style={{
               scrollSnapType: 'x mandatory',
               WebkitOverflowScrolling: 'touch',
@@ -528,9 +537,9 @@ export default function CurvedDishDetailModal({
                   scrollSnapAlign: 'center',
                   willChange: 'transform, opacity',
                 }}
-                className="flex flex-col items-center justify-center cursor-pointer select-none py-2"
+                className="flex flex-col items-center justify-center cursor-pointer select-none py-1"
               >
-                <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-white/50 shadow-lg group">
+                <div className="relative w-15 h-15 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-white/60 shadow-lg group">
                   {/* Dish circular photo */}
                   <img
                     src={item.image}
@@ -569,7 +578,7 @@ export default function CurvedDishDetailModal({
                 scrollToItem(activeIndex + 1);
               }}
               aria-label="Next Dish"
-              className="absolute right-1 z-40 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
+              className="absolute right-1 z-50 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-brand-charcoal/90 hover:bg-black text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer"
             >
               <ChevronRight className="w-4 h-4 text-amber-400" />
             </button>

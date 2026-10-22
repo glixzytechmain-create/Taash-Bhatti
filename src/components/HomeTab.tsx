@@ -734,10 +734,16 @@ export default function HomeTab({
               </div>
 
               <div>
-                <h3 className="font-extrabold text-sm text-brand-charcoal leading-snug line-clamp-1">
+                <h3 
+                  onClick={() => onQuickView(meal)}
+                  className="font-extrabold text-sm text-brand-charcoal leading-snug line-clamp-1 cursor-pointer hover:text-brand-orange transition-colors"
+                >
                   {meal.name}
                 </h3>
-                <p className="text-[11px] text-brand-charcoal/60 mt-1 line-clamp-2 leading-relaxed">
+                <p 
+                  onClick={() => onQuickView(meal)}
+                  className="text-[11px] text-brand-charcoal/60 mt-1 line-clamp-2 leading-relaxed cursor-pointer"
+                >
                   {meal.description}
                 </p>
 
