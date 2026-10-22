@@ -226,7 +226,7 @@ export default function CurvedDishDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col justify-between items-center p-2 sm:p-4 overflow-hidden select-none animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex flex-col justify-between items-center pt-[2.5cm] px-2 sm:px-4 pb-2 sm:pb-4 overflow-hidden select-none animate-in fade-in duration-200">
       
       {/* =========================================================================
           1. AMBIENT ANIMATED BRAND BACKGROUND (Charcoal, Fire Orange, Emerald, Gold)
@@ -482,19 +482,8 @@ export default function CurvedDishDetailModal({
           {/* Upward Ambient Spotlight Beam projecting towards the meal card */}
           <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-32 sm:w-44 h-24 bg-gradient-to-t from-[#FF5722]/40 via-[#D4AF37]/20 to-transparent blur-md pointer-events-none animate-bhatti-spotlight" />
 
-          {/* The Crisp White View Circle Lens Bezel */}
-          <div className="relative w-[72px] h-[72px] rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.95),0_0_45px_rgba(212,175,55,0.7),0_8px_24px_rgba(0,0,0,0.85)] animate-view-circle-glow flex items-center justify-center pointer-events-none">
-            {/* Inner Golden Reticle Ring */}
-            <div className="absolute inset-0.5 rounded-full border border-amber-300/80" />
-            {/* Glass Reflection Highlight */}
-            <div className="absolute top-1 inset-x-2 h-3.5 rounded-full bg-gradient-to-b from-white/60 to-transparent" />
-          </div>
-
-          {/* Dynamic Dish Title & Price Badge */}
-          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-brand-charcoal/95 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-wider border border-amber-400/60 whitespace-nowrap shadow-2xl flex items-center gap-1 animate-dish-card-switch pointer-events-none">
-            <span className="truncate max-w-[130px] sm:max-w-[190px] text-brand-ivory">{meal.name}</span>
-            <span className="text-amber-400 font-extrabold">₹{meal.price}</span>
-          </div>
+          {/* The Clean White View Circle Bezel */}
+          <div className="relative w-[72px] h-[72px] rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.95),0_0_45px_rgba(212,175,55,0.7),0_8px_24px_rgba(0,0,0,0.85)] animate-view-circle-glow pointer-events-none" />
         </div>
 
         {/* -------------------------------------------------------------
