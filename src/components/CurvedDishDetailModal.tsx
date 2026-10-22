@@ -475,15 +475,15 @@ export default function CurvedDishDetailModal({
 
         {/* -------------------------------------------------------------
             A. FIXED CENTER "VIEW CIRCLE" LENS & SPOTLIGHT
-            Positioned at EXACT vertical center (top-1/2 -translate-y-1/2)
-            so dish icons slide into it with 100% concentric precision.
+            Directly centered at (left-1/2, top-1/2) with no flex-col offset,
+            so it encases the center dish icon with 100% concentric precision!
             ------------------------------------------------------------- */}
-        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex items-center justify-center">
           {/* Upward Ambient Spotlight Beam projecting towards the meal card */}
-          <div className="w-32 sm:w-44 h-24 bg-gradient-to-t from-[#FF5722]/40 via-[#D4AF37]/20 to-transparent blur-md -mb-10 animate-bhatti-spotlight pointer-events-none" />
+          <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-32 sm:w-44 h-24 bg-gradient-to-t from-[#FF5722]/40 via-[#D4AF37]/20 to-transparent blur-md pointer-events-none animate-bhatti-spotlight" />
 
           {/* The Crisp White View Circle Lens Bezel */}
-          <div className="relative w-[70px] h-[70px] rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.95),0_0_45px_rgba(212,175,55,0.7),0_8px_24px_rgba(0,0,0,0.85)] animate-view-circle-glow flex items-center justify-center pointer-events-none">
+          <div className="relative w-[72px] h-[72px] rounded-full border-[3.5px] border-white shadow-[0_0_28px_rgba(255,87,34,0.95),0_0_45px_rgba(212,175,55,0.7),0_8px_24px_rgba(0,0,0,0.85)] animate-view-circle-glow flex items-center justify-center pointer-events-none">
             {/* Inner Golden Reticle Ring */}
             <div className="absolute inset-0.5 rounded-full border border-amber-300/80" />
             {/* Glass Reflection Highlight */}
@@ -491,7 +491,7 @@ export default function CurvedDishDetailModal({
           </div>
 
           {/* Dynamic Dish Title & Price Badge */}
-          <div className="absolute -bottom-6.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-brand-charcoal/95 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-wider border border-amber-400/60 whitespace-nowrap shadow-2xl flex items-center gap-1 animate-dish-card-switch pointer-events-none">
+          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-brand-charcoal/95 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-wider border border-amber-400/60 whitespace-nowrap shadow-2xl flex items-center gap-1 animate-dish-card-switch pointer-events-none">
             <span className="truncate max-w-[130px] sm:max-w-[190px] text-brand-ivory">{meal.name}</span>
             <span className="text-amber-400 font-extrabold">₹{meal.price}</span>
           </div>
