@@ -469,6 +469,10 @@ export interface Order {
   gecBonusAwarded?: boolean; // Whether the pending Ember bonus has been credited to wallet
   liveEta?: string; // Unified Google Maps ETA duration string synced across tracker & notifications
   liveDistance?: string; // Unified Google Maps distance string
+  roadDistanceKm?: number; // Google Maps turn-by-turn road driving distance
+  actualTrackedKm?: number; // Real-time GPS odometry distance
+  tripDurationMinutes?: number; // Total active transit duration
+  tripEfficiencyPercent?: number; // Planned vs Actual ratio
   deliveredAt?: string;
   customerName?: string;
   customerPhone?: string;
@@ -646,6 +650,67 @@ export interface DeliveryPartner {
   currentLat?: number;
   currentLng?: number;
   banned?: boolean;
+  totalDistanceKm?: number;
+  todayDistanceKm?: number;
+  weekDistanceKm?: number;
+  monthDistanceKm?: number;
+  fuelAllowanceEarnedToday?: number;
+  lifetimeFuelAllowance?: number;
+}
+
+export interface RiderTripLog {
+  id: string; // trip_ORD-xxxx
+  orderId: string;
+  partnerId: string;
+  partnerName: string;
+  partnerPhone?: string;
+  vehicleType: string;
+  vehicleNumber?: string;
+  kitchenId: string;
+  kitchenName: string;
+  kitchenLat?: number;
+  kitchenLng?: number;
+  customerAddress: string;
+  customerLat?: number;
+  customerLng?: number;
+  // Distances
+  plannedRoadDistanceKm: number; // Google Maps road route turn-by-turn
+  actualGpsDistanceKm: number; // Filtered real-time GPS odometry
+  billableDistanceKm: number; // Final commercial / ledger distance
+  routeEfficiencyPercent: number; // Planned vs Actual ratio (e.g. 96%)
+  // Timestamps & Duration
+  startedAt: string; // ISO
+  deliveredAt: string; // ISO
+  durationMinutes: number;
+  avgSpeedKmh?: number;
+  // Financials & Allowances
+  fuelAllowance: number; // Distance * vehicle rate (e.g. ₹3.50/km)
+  tipEarned?: number;
+  orderTotal?: number;
+  paymentMode?: string;
+  status: 'completed' | 'cancelled';
+}
+
+export interface RiderDistanceAnalytics {
+  todayKm: number;
+  todayTrips: number;
+  todayActiveMinutes: number;
+  todayFuelAllowance: number;
+
+  weekKm: number;
+  weekTrips: number;
+  weekFuelAllowance: number;
+
+  monthKm: number;
+  monthTrips: number;
+  monthFuelAllowance: number;
+
+  lifetimeKm: number;
+  lifetimeTrips: number;
+  lifetimeFuelAllowance: number;
+
+  avgTripDistanceKm: number;
+  avgRouteEfficiencyPercent: number;
 }
 
 export interface CashDepositRequest {

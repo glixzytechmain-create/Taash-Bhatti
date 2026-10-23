@@ -7957,7 +7957,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                 </div>
 
                 {/* Logistics Stats Summary */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                   <div className="bg-brand-charcoal/60 border border-brand-green/10 p-4 rounded-2xl">
                     <span className="text-[9px] font-black uppercase tracking-wider text-gray-400 block">Active Fleet Size</span>
                     <div className="text-xl font-mono font-black text-brand-green mt-1">
@@ -7978,6 +7978,20 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                       {deliveryPartners.filter(p => p.rating && p.rating > 0).length > 0
                         ? `⭐ ${(deliveryPartners.reduce((acc, p) => acc + (p.rating || 0), 0) / deliveryPartners.filter(p => p.rating && p.rating > 0).length).toFixed(1)} / 5.0`
                         : 'No ratings yet'}
+                    </div>
+                  </div>
+
+                  <div className="bg-brand-charcoal/60 border border-blue-500/20 p-4 rounded-2xl">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-blue-400 block">Fleet Distance (Today)</span>
+                    <div className="text-xl font-mono font-black text-blue-300 mt-1">
+                      {deliveryPartners.reduce((acc, p) => acc + (p.todayDistanceKm || 0), 0).toFixed(1)} km
+                    </div>
+                  </div>
+
+                  <div className="bg-brand-charcoal/60 border border-amber-500/20 p-4 rounded-2xl">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-400 block">Lifetime Fleet Odometer</span>
+                    <div className="text-xl font-mono font-black text-amber-300 mt-1">
+                      {deliveryPartners.reduce((acc, p) => acc + (p.totalDistanceKm || 0), 0).toFixed(1)} km
                     </div>
                   </div>
                 </div>
@@ -8033,6 +8047,12 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                             <div className="flex justify-between">
                               <span className="text-gray-500 font-bold">VEHICLE & REG:</span>
                               <span className="text-gray-200 font-bold uppercase">{partner.vehicleType.replace('_', ' ')} • {partner.vehicleNumber}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500 font-bold">MILEAGE & ODOMETER:</span>
+                              <span className="text-blue-300 font-bold font-mono">
+                                Today: {partner.todayDistanceKm || 0} km • Total: {partner.totalDistanceKm || 0} km
+                              </span>
                             </div>
                             <div className="flex justify-between items-center pt-1 border-t border-white/5">
                               <span className="text-gray-500 font-bold">FIREBASE AUTH:</span>

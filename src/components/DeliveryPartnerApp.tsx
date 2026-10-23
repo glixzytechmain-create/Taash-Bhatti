@@ -58,9 +58,12 @@ import {
   Star,
   Award,
   ThumbsUp,
-  Coins
+  Coins,
+  Route,
+  Gauge,
+  TrendingUp
 } from 'lucide-react';
-import { DeliveryPartner, Order, Kitchen, ChatMessage, SupportTicket, CashDepositRequest } from '../types';
+import { DeliveryPartner, Order, Kitchen, ChatMessage, SupportTicket, CashDepositRequest, RiderTripLog, RiderDistanceAnalytics } from '../types';
 import { INITIAL_DELIVERY_PARTNERS } from '../data';
 import { doc, updateDoc, collection, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
@@ -68,6 +71,16 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'fire
 import InAppDeliveryMap from './InAppDeliveryMap';
 import { getOfflineQueue, enqueueOfflineDelivery, flushOfflineSyncQueue } from '../lib/riderOfflineSync';
 import { creditGoldenEmbersForShortfall, awardStandardEmberCoinsOnOrderCompletion } from '../lib/walletService';
+import { 
+  fetchGoogleRoadDistance, 
+  initActiveOdometer, 
+  updateActiveOdometer, 
+  getActiveOdometer, 
+  finalizeAndRecordTrip, 
+  fetchRiderTripLogs, 
+  calculateRiderAnalytics, 
+  getVehicleFuelRate 
+} from '../lib/riderTripService';
 
 interface DeliveryPartnerAppProps {
   onExitGateway: () => void;
@@ -185,8 +198,17 @@ export default function DeliveryPartnerApp({
   const [showMailboxModal, setShowMailboxModal] = useState<boolean>(false);
   const [mailboxInputMsg, setMailboxInputMsg] = useState<string>('');
 
-  // Active Tab state: 'deliveries' vs 'account' vs 'ratings' vs 'complaints'
-  const [dpActiveTab, setDpActiveTab] = useState<'deliveries' | 'account' | 'ratings' | 'complaints'>('deliveries');
+  // Active Tab state: 'deliveries' vs 'account' vs 'ratings' vs 'complaints' vs 'trips'
+  const [dpActiveTab, setDpActiveTab] = useState<'deliveries' | 'account' | 'ratings' | 'complaints' | 'trips'>('deliveries');
+
+  // Real-time Odometry & Trip Logs State
+  const [riderTripLogs, setRiderTripLogs] = useState<RiderTripLog[]>([]);
+  const [isLoadingTripLogs, setIsLoadingTripLogs] = useState<boolean>(false);
+  const [tripTimeFilter, setTripTimeFilter] = useState<'today' | 'week' | 'month' | 'all'>('today');
+  const [liveRoadDistanceKm, setLiveRoadDistanceKm] = useState<number | null>(null);
+  const [liveTrackedKm, setLiveTrackedKm] = useState<number>(0);
+  const [liveGpsAccuracy, setLiveGpsAccuracy] = useState<number | null>(null);
+  const [liveSpeedKmh, setLiveSpeedKmh] = useState<number>(0);
 
   // Payment Collection States for Unpaid / COD Orders
   const [selectedPaymentMode, setSelectedPaymentMode] = useState<'cash' | 'upi'>('cash');
@@ -258,6 +280,48 @@ export default function DeliveryPartnerApp({
       setTimeout(() => setNoticeMessage(null), 3000);
     }
   };
+
+  // Real-time Trip Logs Loader
+  useEffect(() => {
+    if (!currentPartner?.id) return;
+    let isMounted = true;
+    setIsLoadingTripLogs(true);
+    fetchRiderTripLogs(currentPartner.id).then((logs) => {
+      if (isMounted) {
+        setRiderTripLogs(logs);
+        setIsLoadingTripLogs(false);
+      }
+    });
+    return () => { isMounted = false; };
+  }, [currentPartner?.id, dpActiveTab]);
+
+  // Turn-by-Turn Road Distance & Live Odometer Initializer for Active Order
+  useEffect(() => {
+    if (!activeUnlockedOrder) {
+      setLiveRoadDistanceKm(null);
+      setLiveTrackedKm(0);
+      return;
+    }
+
+    const kOrigin = allKitchens.find(k => k.id === activeUnlockedOrder.acceptedByKitchenId || k.id === activeUnlockedOrder.kitchenId) || {
+      lat: activeUnlockedOrder.acceptedKitchenLat || 26.1209,
+      lng: activeUnlockedOrder.acceptedKitchenLng || 85.3647
+    };
+    const cDest = {
+      lat: activeUnlockedOrder.customerLat || activeUnlockedOrder.deliveryLat || 26.1345,
+      lng: activeUnlockedOrder.customerLng || activeUnlockedOrder.deliveryLng || 85.3854
+    };
+
+    // Calculate Google Maps driving road distance
+    fetchGoogleRoadDistance(kOrigin, cDest).then((res) => {
+      setLiveRoadDistanceKm(res.distanceKm);
+    });
+
+    // Check existing odometer state or initialize
+    const odo = getActiveOdometer(activeUnlockedOrder.id) || initActiveOdometer(activeUnlockedOrder.id, currentPartner?.id || 'rider', kOrigin);
+    setLiveTrackedKm(Number((odo.accumulatedMeters / 1000).toFixed(2)));
+    setLiveSpeedKmh(odo.currentSpeedKmh || 0);
+  }, [activeUnlockedOrder?.id, activeUnlockedOrder?.acceptedByKitchenId, allKitchens, currentPartner?.id]);
 
   // Automated Proximity Dispatch: Detect new dispatches pinged to this rider
   const incomingProximityOrder = useMemo(() => {
@@ -609,6 +673,19 @@ export default function DeliveryPartnerApp({
           if (pos.coords.latitude && pos.coords.longitude) {
             setRiderRealCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
             updateGps(pos.coords.latitude, pos.coords.longitude);
+
+            // Accumulate real-time jitter-filtered odometer
+            const odoRes = updateActiveOdometer(activeUnlockedOrder.id, {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              speed: pos.coords.speed !== null && pos.coords.speed !== undefined ? pos.coords.speed : undefined,
+            });
+            setLiveTrackedKm(odoRes.distanceKm);
+            setLiveSpeedKmh(odoRes.odometer.currentSpeedKmh);
+            if (pos.coords.accuracy) {
+              setLiveGpsAccuracy(Math.round(pos.coords.accuracy));
+            }
           }
         },
         (err) => {
@@ -638,6 +715,17 @@ export default function DeliveryPartnerApp({
         const lat = originKitchen.lat + (destLat - originKitchen.lat) * fraction;
         const lng = originKitchen.lng + (destLng - originKitchen.lng) * fraction;
         setRiderRealCoords({ lat, lng });
+
+        // Update odometer during simulation
+        const simRes = updateActiveOdometer(activeUnlockedOrder.id, {
+          lat,
+          lng,
+          accuracy: 5,
+          speed: 5.5,
+        });
+        setLiveTrackedKm(simRes.distanceKm);
+        setLiveSpeedKmh(simRes.odometer.currentSpeedKmh);
+
         const orderRef = doc(db, 'orders', activeUnlockedOrder.id);
         updateDoc(orderRef, {
           riderLat: lat,
@@ -1590,6 +1678,30 @@ export default function DeliveryPartnerApp({
         setCurrentPartner(prev => prev ? { ...prev, deliveriesCompleted: newCount, currentOrderId: null } : null);
       } catch (e) {}
 
+      // Finalize and record full trip log with road distance and GPS odometry metrics
+      try {
+        const destLat = activeUnlockedOrder.customerLat || activeUnlockedOrder.deliveryLat || 26.1345;
+        const destLng = activeUnlockedOrder.customerLng || activeUnlockedOrder.deliveryLng || 85.3854;
+        const originKitchen = allKitchens.find((k) => k.id === activeUnlockedOrder.acceptedByKitchenId || k.id === activeUnlockedOrder.kitchenId) || {
+          lat: 26.1209,
+          lng: 85.3647
+        };
+
+        const recordedTrip = await finalizeAndRecordTrip({
+          order: activeUnlockedOrder,
+          partner: currentPartner,
+          kitchenCoords: originKitchen,
+          customerCoords: { lat: destLat, lng: destLng },
+          customRoadDistanceKm: liveRoadDistanceKm || undefined,
+          customActualDistanceKm: liveTrackedKm || undefined,
+        });
+
+        setRiderTripLogs(prev => [recordedTrip, ...prev]);
+        setLiveTrackedKm(0);
+      } catch (tripErr) {
+        console.warn("Could not record trip log on delivery:", tripErr);
+      }
+
       const updatedOrder: Order = {
         ...activeUnlockedOrder,
         status: 'delivered',
@@ -1791,6 +1903,23 @@ export default function DeliveryPartnerApp({
             {(currentPartner.cashInHand ?? 0) > 0 && (
               <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-brand-charcoal">
                 ₹{currentPartner.cashInHand}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setDpActiveTab('trips')}
+            className={`py-3 px-4 text-xs font-black uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer shrink-0 ${
+              dpActiveTab === 'trips'
+                ? 'border-blue-400 text-blue-400 bg-blue-500/10'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <Route className="w-4 h-4" />
+            <span>Trips & Mileage</span>
+            {(currentPartner.todayDistanceKm ?? 0) > 0 && (
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-500 text-brand-charcoal">
+                {currentPartner.todayDistanceKm} km
               </span>
             )}
           </button>
@@ -2626,6 +2755,55 @@ export default function DeliveryPartnerApp({
                       </span>
                     </div>
                   )}
+
+                  {/* Swiggy/Zomato-Style Live Odometry & Road Distance Tracker HUD */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-[#0B1017] via-[#0E1520] to-[#0A0E14] border-2 border-emerald-500/40 space-y-3 shadow-2xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 font-mono flex items-center gap-1.5">
+                          <Gauge className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Active Shift Odometry & Road Tracker</span>
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono text-gray-300 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
+                        GPS Accuracy: ±{liveGpsAccuracy || 8}m
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/20 text-center">
+                        <span className="text-[8px] font-black uppercase text-gray-400 block tracking-wider">Live Odometer</span>
+                        <div className="text-xl font-black text-emerald-400 font-mono mt-0.5">
+                          {liveTrackedKm > 0 ? liveTrackedKm.toFixed(2) : '0.00'} <span className="text-[10px] text-gray-400 font-sans">km</span>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-blue-500/20 text-center">
+                        <span className="text-[8px] font-black uppercase text-gray-400 block tracking-wider">Maps Route</span>
+                        <div className="text-xl font-black text-blue-400 font-mono mt-0.5">
+                          {liveRoadDistanceKm ? liveRoadDistanceKm.toFixed(2) : '--'} <span className="text-[10px] text-gray-400 font-sans">km</span>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-amber-500/20 text-center">
+                        <span className="text-[8px] font-black uppercase text-gray-400 block tracking-wider">Fuel Allowance</span>
+                        <div className="text-xl font-black text-amber-400 font-mono mt-0.5">
+                          ₹{((Math.max(liveTrackedKm, liveRoadDistanceKm || 0)) * getVehicleFuelRate(currentPartner?.vehicleType)).toFixed(1)}
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-purple-500/20 text-center">
+                        <span className="text-[8px] font-black uppercase text-gray-400 block tracking-wider">Live Speed</span>
+                        <div className="text-xl font-black text-purple-300 font-mono mt-0.5">
+                          {liveSpeedKmh} <span className="text-[10px] text-gray-400 font-sans">km/h</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
                   <button
                     onClick={handleArrivedAtCustomer}
@@ -3794,6 +3972,265 @@ export default function DeliveryPartnerApp({
               );
             })()}
           </div>
+        ) : dpActiveTab === 'trips' ? (
+          /* ======================================================== */
+          /* RIDER TRIPS, ODOMETER & MILEAGE ANALYTICS HUB           */
+          /* ======================================================== */
+          (() => {
+            const analytics = calculateRiderAnalytics(riderTripLogs, currentPartner);
+
+            // Filter trips based on selected time filter
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
+            const weekAgo = new Date();
+            weekAgo.setDate(now.getDate() - 7);
+            const monthAgo = new Date();
+            monthAgo.setDate(now.getDate() - 30);
+
+            const filteredTrips = riderTripLogs.filter((t) => {
+              if (tripTimeFilter === 'today') {
+                return t.deliveredAt.split('T')[0] === todayStr;
+              }
+              const tDate = new Date(t.deliveredAt);
+              if (tripTimeFilter === 'week') {
+                return tDate >= weekAgo;
+              }
+              if (tripTimeFilter === 'month') {
+                return tDate >= monthAgo;
+              }
+              return true; // 'all'
+            });
+
+            return (
+              <div className="space-y-6 animate-fade-in">
+                {/* Header Banner */}
+                <div className="bg-gradient-to-r from-blue-950/40 via-[#121B28] to-[#10161E] border border-blue-500/30 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40 uppercase flex items-center gap-1">
+                        <Route className="w-3 h-3" />
+                        <span>Swiggy-Grade Odometry & Trip Engine</span>
+                      </span>
+                      <span className="text-xs text-gray-400 font-mono">
+                        Rate: ₹{getVehicleFuelRate(currentPartner.vehicleType)}/km • {currentPartner.vehicleType?.toUpperCase() || 'EV'}
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-extrabold text-white">
+                      Trips & Shift Mileage Analytics
+                    </h2>
+                    <p className="text-xs text-gray-300 leading-relaxed max-w-2xl">
+                      Real-time turn-by-turn road driving distance powered by Google Maps integrated with high-precision anti-jitter GPS odometry. Track your daily, weekly, monthly, and lifetime ride distances and fuel allowances with full transparency.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="p-4 rounded-2xl bg-black/40 border border-blue-500/30 text-center min-w-[130px]">
+                      <span className="text-[10px] font-black uppercase text-gray-400 block">All-Time Odometer</span>
+                      <div className="text-2xl font-black text-blue-400 flex items-center justify-center gap-1 mt-0.5 font-mono">
+                        <Gauge className="w-5 h-5 text-blue-400" />
+                        <span>{analytics.lifetimeKm}</span>
+                        <span className="text-xs text-gray-400 font-sans">km</span>
+                      </div>
+                      <span className="text-[9px] text-gray-500 block font-mono">Lifetime fleet distance</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4 Hero KPI Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Card 1: Today's Mileage */}
+                  <div className="bg-[#121820] border-2 border-emerald-500/40 rounded-3xl p-5 space-y-2 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                        TODAY'S DISTANCE
+                      </span>
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                        <Gauge className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="text-3xl font-black text-white font-mono">
+                      {analytics.todayKm} <span className="text-sm font-sans text-emerald-400">km</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1 border-t border-white/5">
+                      <span>{analytics.todayTrips} deliveries completed</span>
+                      <span className="text-amber-400 font-bold font-mono">+₹{analytics.todayFuelAllowance} fuel</span>
+                    </div>
+                  </div>
+
+                  {/* Card 2: This Week's Mileage */}
+                  <div className="bg-[#121820] border border-blue-500/30 rounded-3xl p-5 space-y-2 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-400">
+                        THIS WEEK'S DISTANCE
+                      </span>
+                      <div className="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                        <TrendingUp className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="text-3xl font-black text-white font-mono">
+                      {analytics.weekKm} <span className="text-sm font-sans text-blue-400">km</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1 border-t border-white/5">
+                      <span>{analytics.weekTrips} deliveries in 7 days</span>
+                      <span className="text-amber-400 font-bold font-mono">+₹{analytics.weekFuelAllowance} fuel</span>
+                    </div>
+                  </div>
+
+                  {/* Card 3: This Month's Mileage */}
+                  <div className="bg-[#121820] border border-purple-500/30 rounded-3xl p-5 space-y-2 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-purple-400">
+                        THIS MONTH'S DISTANCE
+                      </span>
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                        <Route className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="text-3xl font-black text-white font-mono">
+                      {analytics.monthKm} <span className="text-sm font-sans text-purple-400">km</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1 border-t border-white/5">
+                      <span>{analytics.monthTrips} deliveries in 30 days</span>
+                      <span className="text-amber-400 font-bold font-mono">+₹{analytics.monthFuelAllowance} fuel</span>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Lifetime Fleet Total */}
+                  <div className="bg-[#121820] border border-amber-500/30 rounded-3xl p-5 space-y-2 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">
+                        LIFETIME FUEL EARNED
+                      </span>
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                        <Award className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="text-3xl font-black text-amber-400 font-mono">
+                      ₹{analytics.lifetimeFuelAllowance}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1 border-t border-white/5">
+                      <span>{analytics.lifetimeTrips} total trips</span>
+                      <span className="text-emerald-400 font-bold font-mono">{analytics.avgRouteEfficiencyPercent}% Optimal</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trip Logs Ledger & Filter Controls */}
+                <div className="bg-[#121820] border border-white/10 rounded-3xl p-6 space-y-5 shadow-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+                    <div>
+                      <h3 className="text-base font-black text-white flex items-center gap-2">
+                        <Route className="w-5 h-5 text-blue-400" />
+                        <span>Individual Trip & Route Audit Ledger</span>
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Audit trail showing Google Maps road baseline vs real-time GPS odometry for each delivery.
+                      </p>
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center gap-1.5 bg-black/40 p-1 rounded-2xl border border-white/10 self-start sm:self-auto">
+                      {(['today', 'week', 'month', 'all'] as const).map((filter) => (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => setTripTimeFilter(filter)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                            tripTimeFilter === filter
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          {filter === 'today' ? 'Today' : filter === 'week' ? 'This Week' : filter === 'month' ? 'This Month' : 'All Time'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Trip List */}
+                  {isLoadingTripLogs ? (
+                    <div className="py-12 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                      <span>Loading delivery trip logs...</span>
+                    </div>
+                  ) : filteredTrips.length === 0 ? (
+                    <div className="p-10 text-center bg-black/20 rounded-2xl border border-white/5 space-y-3">
+                      <Route className="w-12 h-12 text-gray-600 mx-auto" />
+                      <h4 className="text-sm font-bold text-gray-300">No Trip Records in Selected Period</h4>
+                      <p className="text-xs text-gray-500 max-w-md mx-auto">
+                        When you accept orders and complete deliveries with customer OTP, the Google Maps road distance, real-time GPS odometry, route efficiency, and fuel reimbursement will automatically be recorded here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredTrips.map((trip) => (
+                        <div
+                          key={trip.id}
+                          className="bg-[#0B0F15] border border-white/5 hover:border-blue-500/30 rounded-2xl p-4 transition-all space-y-3"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-white font-mono">
+                                #{trip.orderId}
+                              </span>
+                              <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 uppercase">
+                                Verified Delivered
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-mono">
+                                {new Date(trip.deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(trip.deliveredAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-xs font-mono">
+                              <span className="text-gray-400 text-[10px]">Settled:</span>
+                              <span className="font-black text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-800/40">
+                                {trip.billableDistanceKm} km
+                              </span>
+                              <span className="font-black text-amber-400 bg-amber-950/60 px-2.5 py-0.5 rounded-lg border border-amber-800/40">
+                                +₹{trip.fuelAllowance} fuel
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                            <div className="flex items-start gap-2 text-gray-300">
+                              <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                              <span className="truncate"><strong>From:</strong> {trip.kitchenName}</span>
+                            </div>
+                            <div className="flex items-start gap-2 text-gray-300">
+                              <MapPin className="w-3.5 h-3.5 text-brand-orange shrink-0 mt-0.5" />
+                              <span className="truncate"><strong>To:</strong> {trip.customerAddress}</span>
+                            </div>
+                          </div>
+
+                          {/* Metric Chips */}
+                          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5 text-[10px] font-mono">
+                            <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                              🗺️ Maps Road: {trip.plannedRoadDistanceKm} km
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                              📍 GPS Rode: {trip.actualGpsDistanceKm} km
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                              ⏱️ Transit: {trip.durationMinutes} mins ({trip.avgSpeedKmh || 18} km/h)
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold">
+                              ⚡ Route Efficiency: {trip.routeEfficiencyPercent}%
+                            </span>
+                            {(trip.tipEarned ?? 0) > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
+                                🪙 Tip: +₹{trip.tipEarned}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()
         ) : (
           /* RIDER COMPLAINTS & HELPDESK WORKSPACE */
           <div className="space-y-6">

@@ -2242,8 +2242,8 @@ export default function KitchenManagerApp({
         {kdsSubSection === 'rider_desk' && (
           <div className="space-y-4">
             
-            {/* Cash Handover Overview Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Cash Handover & Mileage Overview Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-[#121820] border border-white/10 rounded-2xl p-4">
                 <span className="text-[9px] font-black uppercase tracking-wider text-gray-400 block">
                   Pending Cashier Approvals
@@ -2264,14 +2264,24 @@ export default function KitchenManagerApp({
                 <span className="text-[9px] text-gray-500">Circulating physical cash across riders</span>
               </div>
 
-              <div className="bg-[#121820] border border-white/10 rounded-2xl p-4">
+              <div className="bg-[#121820] border border-blue-500/30 rounded-2xl p-4">
                 <span className="text-[9px] font-black uppercase tracking-wider text-blue-400 block">
-                  Active Fleet In Sector
+                  Shift Distance Delivered (Today)
                 </span>
                 <span className="text-2xl font-black text-blue-300 font-mono mt-1 block">
-                  {kitchenAssignedRiders.filter(r => r.status === 'active').length}
+                  {kitchenAssignedRiders.reduce((sum, r) => sum + (r.todayDistanceKm || 0), 0).toFixed(1)} <span className="text-xs font-sans text-gray-400">km</span>
                 </span>
-                <span className="text-[9px] text-gray-500">Registered delivery partners</span>
+                <span className="text-[9px] text-gray-500">Real-time odometry across kitchen fleet</span>
+              </div>
+
+              <div className="bg-[#121820] border border-purple-500/30 rounded-2xl p-4">
+                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 block">
+                  Shift Fuel Allowance
+                </span>
+                <span className="text-2xl font-black text-purple-300 font-mono mt-1 block">
+                  ₹{kitchenAssignedRiders.reduce((sum, r) => sum + (r.fuelAllowanceEarnedToday || ((r.todayDistanceKm || 0) * 3.5)), 0).toFixed(1)}
+                </span>
+                <span className="text-[9px] text-gray-500">Auto-tallied by vehicle distance rates</span>
               </div>
             </div>
 
@@ -2356,10 +2366,13 @@ export default function KitchenManagerApp({
                       </span>
                     </div>
                     <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px]">
-                      <span className="text-gray-400 font-mono">Completed: {rider.deliveriesCompleted || 0}</span>
+                      <div className="space-y-0.5 font-mono">
+                        <span className="text-gray-400 block">Deliveries: <strong className="text-white">{rider.deliveriesCompleted || 0}</strong></span>
+                        <span className="text-blue-400 block">Today: <strong>{rider.todayDistanceKm || 0} km</strong> • All-Time: <strong>{rider.totalDistanceKm || 0} km</strong></span>
+                      </div>
                       <a
                         href={`tel:${rider.phone}`}
-                        className="px-2 py-1 bg-brand-green/20 hover:bg-brand-green/30 text-brand-green rounded-lg border border-brand-green/30 font-bold flex items-center gap-1"
+                        className="px-2.5 py-1.5 bg-brand-green/20 hover:bg-brand-green/30 text-brand-green rounded-lg border border-brand-green/30 font-bold flex items-center gap-1 shrink-0"
                       >
                         <Phone className="w-3 h-3" /> Call
                       </a>
@@ -2859,6 +2872,11 @@ export default function KitchenManagerApp({
                             ? '🛵 Rider En-Route to Customer'
                             : '📡 Awaiting Rider GPS Ping'}
                       </span>
+                      {(activeRadarOrder.roadDistanceKm || activeRadarOrder.actualTrackedKm) && (
+                        <span className="text-[10px] text-blue-300 block font-mono">
+                          🗺️ Maps Road: {activeRadarOrder.roadDistanceKm ? `${activeRadarOrder.roadDistanceKm} km` : '--'} • 📍 GPS Rode: {activeRadarOrder.actualTrackedKm ? `${activeRadarOrder.actualTrackedKm} km` : '0.00 km'}
+                        </span>
+                      )}
                       <span className="text-[9px] text-gray-500 block font-mono">
                         Vehicle: {activeRadarPartner?.vehicleNumber || activeRadarOrder.deliveryVehicleNumber || 'FZ-EV-01'}
                       </span>
