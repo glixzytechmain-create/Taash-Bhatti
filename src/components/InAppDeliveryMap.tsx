@@ -1833,7 +1833,9 @@ export default function InAppDeliveryMap({
           <button
             type="button"
             onClick={handleRecenter}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-[#1A73E8] hover:bg-blue-600 text-white font-extrabold text-xs py-2.5 px-5 rounded-full shadow-2xl flex items-center gap-2 border-2 border-white cursor-pointer active:scale-95 transition-all animate-bounce"
+            className={`absolute z-20 bg-[#1A73E8] hover:bg-blue-600 text-white font-extrabold text-xs py-2.5 px-5 rounded-full shadow-2xl flex items-center gap-2 border-2 border-white cursor-pointer active:scale-95 transition-all animate-bounce left-1/2 -translate-x-1/2 ${
+              isKitchenAccepted ? 'bottom-20 sm:bottom-16' : 'bottom-4'
+            }`}
           >
             <Navigation className="w-4 h-4 fill-current" />
             <span>Recenter Map</span>
@@ -2046,38 +2048,7 @@ export default function InAppDeliveryMap({
               )}
             </div>
           </div>
-        ) : (
-          <div className="absolute bottom-3 left-3 right-3 bg-[#0D1218]/95 backdrop-blur-md rounded-2xl p-3.5 border border-amber-500/40 text-xs z-10 shadow-2xl flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-400 shrink-0 font-bold">
-                <Radio className="w-5 h-5 animate-pulse text-amber-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-amber-400 font-black uppercase text-[10px] tracking-wider">Transmitting Order to Nearby Kitchens</span>
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                </div>
-                <p className="text-[10px] text-gray-300 font-mono truncate">
-                  {isTakeaway
-                    ? `📍 User Starting Pin: ${geocodedCustomerAddress || cleanCustomerAddress}`
-                    : `📍 Verified Delivery Pin: ${geocodedCustomerAddress || cleanCustomerAddress}`}
-                </p>
-                <p className="text-[9px] text-amber-300/80 font-mono mt-0.5">
-                  Kitchen location & route line will render as soon as a kitchen accepts.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleRecenter}
-              className="bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold px-3 py-1.5 rounded-xl shadow-md flex items-center gap-1 border border-blue-400 transition-all cursor-pointer text-xs shrink-0"
-              title="Recenter on Address"
-            >
-              <Navigation className="w-3 h-3 fill-white" />
-              <span>Recenter</span>
-            </button>
-          </div>
-        )}
+        ) : null}
 
         {/* Fullscreen Bottom Info Footer */}
         {isFullscreen && (
@@ -2221,7 +2192,7 @@ export default function InAppDeliveryMap({
       )}
 
       {/* CUSTOMER BOTTOM TRACKING CARD */}
-      {!isRiderView && !isAdminView && (
+      {!isRiderView && !isAdminView && (isTakeaway || isRiderAssigned || currentStatus.includes('delivered')) && (
         <div className="mt-3 bg-[#131A22] border border-amber-500/30 p-4 rounded-2xl space-y-3 text-xs">
           {isTakeaway ? (
             <div className="flex items-center justify-between">
@@ -2312,58 +2283,39 @@ export default function InAppDeliveryMap({
                 </div>
               )}
             </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
-                  ⏳
-                </div>
-                <div>
-                  <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider block">
-                    Rider Assignment In Progress
-                  </span>
-                  <p className="text-gray-300 font-medium text-xs">
-                    {isKitchenAccepted
-                      ? `Kitchen (${kitchenName}) is preparing your order. A delivery captain will be dispatched shortly.`
-                      : 'Transmitting order to nearby kitchens. Delivery partner will be assigned upon kitchen acceptance.'}
-                  </p>
-                </div>
-              </div>
-              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-xl font-bold shrink-0">
-                Awaiting Rider
-              </span>
+          ) : null}
+
+          {(isTakeaway || isRiderAssigned) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+              {isTakeaway ? (
+                <>
+                  <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
+                    <span className="text-orange-400 font-bold">📍 User Starting Point:</span>
+                    <span className="font-extrabold text-white truncate">{geocodedCustomerAddress || cleanCustomerAddress}</span>
+                  </div>
+                  <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
+                    <span className="text-emerald-400 font-bold">🏪 Pickup Destination:</span>
+                    <span className="font-extrabold text-white truncate">
+                      {isKitchenAccepted
+                        ? `${kitchenName}${kitchenAddress ? ` (${kitchenAddress})` : ''}`
+                        : 'Awaiting Kitchen Acceptance...'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
+                    <span className="text-amber-400 font-bold">🏪 Kitchen:</span>
+                    <span className="font-extrabold text-white truncate">{isKitchenAccepted ? kitchenName : 'Awaiting Acceptance...'}</span>
+                  </div>
+                  <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
+                    <span className="text-emerald-400 font-bold">📍 Destination:</span>
+                    <span className="font-extrabold text-white truncate">{geocodedCustomerAddress || cleanCustomerAddress}</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-            {isTakeaway ? (
-              <>
-                <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
-                  <span className="text-orange-400 font-bold">📍 User Starting Point:</span>
-                  <span className="font-extrabold text-white truncate">{geocodedCustomerAddress || cleanCustomerAddress}</span>
-                </div>
-                <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
-                  <span className="text-emerald-400 font-bold">🏪 Pickup Destination:</span>
-                  <span className="font-extrabold text-white truncate">
-                    {isKitchenAccepted
-                      ? `${kitchenName}${kitchenAddress ? ` (${kitchenAddress})` : ''}`
-                      : 'Awaiting Kitchen Acceptance...'}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
-                  <span className="text-amber-400 font-bold">🏪 Kitchen:</span>
-                  <span className="font-extrabold text-white truncate">{isKitchenAccepted ? kitchenName : 'Awaiting Acceptance...'}</span>
-                </div>
-                <div className="p-2.5 bg-black/40 rounded-xl border border-white/10 flex items-center gap-2">
-                  <span className="text-emerald-400 font-bold">📍 Destination:</span>
-                  <span className="font-extrabold text-white truncate">{geocodedCustomerAddress || cleanCustomerAddress}</span>
-                </div>
-              </>
-            )}
-          </div>
 
           {/* RATING BUTTON IF DELIVERED */}
           {currentStatus.includes('delivered') && (
