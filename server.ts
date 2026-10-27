@@ -773,6 +773,16 @@ app.post('/api/payment/billdesk/initiate', async (req, res) => {
 });
 
 // 3. BillDesk Response Return URL Callback (Customer Browser Redirect POST from BillDesk)
+app.get('/api/payment/billdesk/callback', (_req, res) => {
+  res.status(200).json({
+    status: 'ACTIVE',
+    service: 'BillDesk Return Callback Handler',
+    endpoint: '/api/payment/billdesk/callback',
+    expectedMethod: 'POST',
+    message: 'Browser callback handler is online and ready to receive customer redirection from BillDesk.'
+  });
+});
+
 app.post('/api/payment/billdesk/callback', async (req, res) => {
   try {
     const rawMsg = req.body?.msg || req.query?.msg || '';
@@ -842,6 +852,16 @@ app.post('/api/payment/billdesk/callback', async (req, res) => {
 });
 
 // 4. Asynchronous Server-to-Server Webhook Listener (BillDesk S2S Notifications)
+app.get('/api/payment/billdesk/webhook', (_req, res) => {
+  res.status(200).json({
+    status: 'ACTIVE',
+    service: 'BillDesk S2S Webhook Listener',
+    endpoint: '/api/payment/billdesk/webhook',
+    expectedMethod: 'POST',
+    message: 'Webhook listener is online and ready to receive encrypted S2S transaction events from BillDesk.'
+  });
+});
+
 app.post('/api/payment/billdesk/webhook', async (req, res) => {
   try {
     const rawMsg = req.body?.msg || req.body?.data || '';
