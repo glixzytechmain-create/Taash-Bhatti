@@ -1733,27 +1733,23 @@ export default function CartDrawer({
 
         const initiateData = await initiateRes.json();
 
-        if (initiateData.success && initiateData.pgUrl && initiateData.pgPayload?.msg) {
+        if (initiateData.success && initiateData.pgUrl && initiateData.pgPayload) {
           onClearCart();
 
-          // Build and submit hidden form to official BillDesk hosted gateway
+          // Build and submit hidden form to official BillDesk hosted gateway (supports both Neo and legacy payload)
           const form = document.createElement('form');
           form.method = 'POST';
           form.action = initiateData.pgUrl;
           form.style.display = 'none';
 
-          const msgInput = document.createElement('input');
-          msgInput.type = 'hidden';
-          msgInput.name = 'msg';
-          msgInput.value = initiateData.pgPayload.msg;
-          form.appendChild(msgInput);
-
-          if (initiateData.pgPayload.hidApiKey) {
-            const keyInput = document.createElement('input');
-            keyInput.type = 'hidden';
-            keyInput.name = 'hidApiKey';
-            keyInput.value = initiateData.pgPayload.hidApiKey;
-            form.appendChild(keyInput);
+          for (const [key, val] of Object.entries(initiateData.pgPayload)) {
+            if (val !== undefined && val !== null) {
+              const input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = key;
+              input.value = String(val);
+              form.appendChild(input);
+            }
           }
 
           document.body.appendChild(form);

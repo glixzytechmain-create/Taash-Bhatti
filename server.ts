@@ -10,8 +10,13 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 import { buildBillDeskPaymentRequest, verifyAndParseBillDeskResponse, isBillDeskConfigured, getBillDeskConfig } from './src/lib/billdeskService';
+import {
+  createBillDeskNeoOrder,
+  verifyAndDecryptJose,
+  isBillDeskNeoConfigured,
+  getBillDeskNeoConfig
+} from './src/lib/billdeskNeoService';
 
 dotenv.config();
 
@@ -709,18 +714,24 @@ app.post('/api/gemini/suggest', async (req, res) => {
 
 // 1. Get Payment Gateway Public Status & Partner Info
 app.get('/api/payment/billdesk/config', (_req, res) => {
-  const cfg = getBillDeskConfig();
+  const isNeo = isBillDeskNeoConfigured();
+  const neoCfg = getBillDeskNeoConfig();
+  const legacyCfg = getBillDeskConfig();
+
   res.json({
-    configured: isBillDeskConfigured(),
-    merchantId: cfg.merchantId ? `${cfg.merchantId.substring(0, 3)}***` : '',
-    env: cfg.env,
+    configured: isNeo || isBillDeskConfigured(),
+    pgMode: isNeo ? 'neo' : 'classic',
+    merchantId: isNeo
+      ? (neoCfg.mercid ? `${neoCfg.mercid.substring(0, 3)}***` : '')
+      : (legacyCfg.merchantId ? `${legacyCfg.merchantId.substring(0, 3)}***` : ''),
+    env: isNeo ? neoCfg.env : legacyCfg.env,
     bankPartner: 'Utkarsh Small Finance Bank',
-    pgVersion: 'V2',
+    pgVersion: isNeo ? 'Neo (v1.2 REST JOSE)' : 'V2',
     currency: 'INR'
   });
 });
 
-// 2. Initiate BillDesk Payment Order
+// 2. Initiate BillDesk Payment Order (Supports BillDesk Neo Full Redirect & Classic fallback)
 app.post('/api/payment/billdesk/initiate', async (req, res) => {
   try {
     const { orderId, amount, customerName, customerPhone, customerEmail, returnUrl } = req.body;
@@ -732,39 +743,68 @@ app.post('/api/payment/billdesk/initiate', async (req, res) => {
       });
     }
 
-    if (!isBillDeskConfigured()) {
-      return res.status(503).json({
-        success: false,
-        configured: false,
-        error: 'BillDesk Merchant Credentials (BILLDESK_MERCHANT_ID, BILLDESK_SECURITY_ID, BILLDESK_CHECKSUM_KEY) are not configured in environment. Awaiting Utkarsh Bank onboarding credentials.'
-      });
-    }
-
-    // Determine return URL
     const host = req.get('host') || 'taashbhatti.com';
     const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
     const defaultReturnUrl = `${protocol}://${host}/api/payment/billdesk/callback`;
     const finalReturnUrl = returnUrl || process.env.BILLDESK_RETURN_URL || defaultReturnUrl;
 
-    const result = buildBillDeskPaymentRequest({
-      orderId,
-      amount: parseFloat(amount),
-      customerName: customerName || 'Patron',
-      customerPhone: customerPhone || '',
-      customerEmail: customerEmail || '',
-      returnUrl: finalReturnUrl
-    });
+    // Check if modern BillDesk Neo is configured
+    if (isBillDeskNeoConfigured()) {
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || '103.21.244.0';
+      const neoResult = await createBillDeskNeoOrder({
+        orderId,
+        amount: parseFloat(amount),
+        customerName: customerName || 'Patron',
+        customerPhone: customerPhone || '',
+        customerEmail: customerEmail || '',
+        customerIp: clientIp,
+        returnUrl: finalReturnUrl
+      });
 
-    if (!result.success) {
-      return res.status(400).json(result);
+      if (!neoResult.success) {
+        return res.status(400).json(neoResult);
+      }
+
+      return res.json({
+        success: true,
+        pgMode: 'neo',
+        pgUrl: neoResult.redirectUrl,
+        pgPayload: neoResult.redirectParams,
+        orderId: neoResult.orderId,
+        bdorderid: neoResult.bdorderid,
+        amount: parseFloat(amount).toFixed(2)
+      });
     }
 
-    res.json({
-      success: true,
-      pgUrl: result.pgUrl,
-      pgPayload: result.pgPayload,
-      orderId: result.orderId,
-      amount: result.amount
+    // Classic fallback
+    if (isBillDeskConfigured()) {
+      const result = buildBillDeskPaymentRequest({
+        orderId,
+        amount: parseFloat(amount),
+        customerName: customerName || 'Patron',
+        customerPhone: customerPhone || '',
+        customerEmail: customerEmail || '',
+        returnUrl: finalReturnUrl
+      });
+
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+
+      return res.json({
+        success: true,
+        pgMode: 'classic',
+        pgUrl: result.pgUrl,
+        pgPayload: result.pgPayload,
+        orderId: result.orderId,
+        amount: result.amount
+      });
+    }
+
+    return res.status(503).json({
+      success: false,
+      configured: false,
+      error: 'BillDesk Merchant Credentials are not configured in environment. Awaiting Utkarsh Bank onboarding credentials.'
     });
   } catch (err: any) {
     console.error('Error initiating BillDesk payment:', err);
@@ -785,16 +825,55 @@ app.get('/api/payment/billdesk/callback', (_req, res) => {
 
 app.post('/api/payment/billdesk/callback', async (req, res) => {
   try {
+    const rawTxnResponse = req.body?.transaction_response || req.query?.transaction_response || '';
     const rawMsg = req.body?.msg || req.query?.msg || '';
-    if (!rawMsg) {
-      console.warn('BillDesk callback received with no msg parameter');
-      return res.redirect('/?orderFailure=unknown&reason=' + encodeURIComponent('Empty response from payment gateway.'));
+
+    // Handle user cancellation on BillDesk Hosted Page
+    if (req.body?.terminal_state === '111' || req.query?.terminal_state === '111') {
+      const cancelledOrderId = req.body?.orderid || req.query?.orderid || 'unknown';
+      return res.redirect(`/?orderFailure=${encodeURIComponent(cancelledOrderId)}&reason=${encodeURIComponent('Payment cancelled by customer on gateway.')}`);
     }
 
-    const parsed = verifyAndParseBillDeskResponse(String(rawMsg));
-    console.log(`[BillDesk Callback] Order: ${parsed.orderId}, Status: ${parsed.authStatus}, Success: ${parsed.isSuccess}, Txn: ${parsed.txnReferenceNo}`);
+    let targetOrderId = '';
+    let isSuccess = false;
+    let txnReferenceNo = '';
+    let bankReferenceNo = '';
+    let paymentMethod = 'Online';
+    let authStatus = '';
+    let errorDescription = '';
 
-    const targetOrderId = parsed.orderId;
+    // Case 1: BillDesk Neo Encrypted JWS/JWE Response
+    if (rawTxnResponse && isBillDeskNeoConfigured()) {
+      try {
+        const decrypted = await verifyAndDecryptJose(String(rawTxnResponse));
+        targetOrderId = decrypted.orderid || req.body?.orderid || '';
+        authStatus = decrypted.auth_status || '';
+        isSuccess = (authStatus === '0300');
+        txnReferenceNo = decrypted.transactionid || '';
+        bankReferenceNo = decrypted.bank_ref_no || decrypted.bankid || '';
+        paymentMethod = decrypted.payment_method_type || 'BillDesk Neo';
+        errorDescription = decrypted.transaction_error_desc || '';
+        console.log(`[BillDesk Neo Callback] Order: ${targetOrderId}, Status: ${authStatus}, Success: ${isSuccess}, Txn: ${txnReferenceNo}`);
+      } catch (decErr) {
+        console.error('Failed to decrypt BillDesk Neo transaction response:', decErr);
+      }
+    } else if (rawMsg) {
+      // Case 2: Classic Pipe-separated Response
+      const parsed = verifyAndParseBillDeskResponse(String(rawMsg));
+      targetOrderId = parsed.orderId;
+      isSuccess = parsed.isSuccess;
+      authStatus = parsed.authStatus;
+      txnReferenceNo = parsed.txnReferenceNo;
+      bankReferenceNo = parsed.bankReferenceNo;
+      paymentMethod = parsed.paymentMethod;
+      errorDescription = parsed.errorDescription || '';
+      console.log(`[BillDesk Classic Callback] Order: ${parsed.orderId}, Status: ${parsed.authStatus}, Success: ${parsed.isSuccess}, Txn: ${parsed.txnReferenceNo}`);
+    }
+
+    if (!targetOrderId) {
+      console.warn('BillDesk callback received with no resolvable order ID');
+      return res.redirect('/?orderFailure=unknown&reason=' + encodeURIComponent('Empty or invalid response from payment gateway.'));
+    }
 
     if (targetOrderId && db) {
       try {
@@ -802,14 +881,14 @@ app.post('/api/payment/billdesk/callback', async (req, res) => {
         const orderSnap = await getDoc(orderRef);
         if (orderSnap.exists()) {
           const orderData = orderSnap.data();
-          if (parsed.isSuccess) {
+          if (isSuccess) {
             await updateDoc(orderRef, {
               paymentStatus: 'paid',
-              paymentMethod: `BillDesk Online (${parsed.paymentMethod})`,
-              transactionId: parsed.txnReferenceNo,
-              bankReferenceNo: parsed.bankReferenceNo,
+              paymentMethod: `BillDesk Online (${paymentMethod})`,
+              transactionId: txnReferenceNo,
+              bankReferenceNo: bankReferenceNo,
               pgGateway: 'billdesk',
-              pgResponseCode: parsed.authStatus,
+              pgResponseCode: authStatus,
               paidAt: new Date().toISOString(),
               gecBonusAwarded: orderData.pendingEmberBonus ? true : orderData.gecBonusAwarded
             });
@@ -830,8 +909,8 @@ app.post('/api/payment/billdesk/callback', async (req, res) => {
             await updateDoc(orderRef, {
               paymentStatus: 'unpaid',
               pgGateway: 'billdesk',
-              pgResponseCode: parsed.authStatus,
-              paymentFailureReason: parsed.errorDescription
+              pgResponseCode: authStatus,
+              paymentFailureReason: errorDescription
             });
           }
         }
@@ -840,10 +919,10 @@ app.post('/api/payment/billdesk/callback', async (req, res) => {
       }
     }
 
-    if (parsed.isSuccess) {
-      return res.redirect(`/?orderSuccess=${encodeURIComponent(targetOrderId)}&paymentStatus=paid&txnId=${encodeURIComponent(parsed.txnReferenceNo)}`);
+    if (isSuccess) {
+      return res.redirect(`/?orderSuccess=${encodeURIComponent(targetOrderId)}&paymentStatus=paid&txnId=${encodeURIComponent(txnReferenceNo)}`);
     } else {
-      return res.redirect(`/?orderFailure=${encodeURIComponent(targetOrderId)}&reason=${encodeURIComponent(parsed.errorDescription || 'Payment declined by bank.')}`);
+      return res.redirect(`/?orderFailure=${encodeURIComponent(targetOrderId)}&reason=${encodeURIComponent(errorDescription || 'Payment declined by bank.')}`);
     }
   } catch (err: any) {
     console.error('Fatal error in BillDesk callback:', err);
@@ -864,31 +943,60 @@ app.get('/api/payment/billdesk/webhook', (_req, res) => {
 
 app.post('/api/payment/billdesk/webhook', async (req, res) => {
   try {
-    const rawMsg = req.body?.msg || req.body?.data || '';
-    if (!rawMsg) {
+    const rawTxnResponse = req.body?.transaction_response || req.body?.data || '';
+    const rawMsg = req.body?.msg || '';
+
+    let targetOrderId = '';
+    let isSuccess = false;
+    let txnReferenceNo = '';
+    let bankReferenceNo = '';
+    let paymentMethod = 'Online';
+    let authStatus = '';
+
+    if (rawTxnResponse && isBillDeskNeoConfigured()) {
+      try {
+        const decrypted = await verifyAndDecryptJose(String(rawTxnResponse));
+        targetOrderId = decrypted.orderid || '';
+        authStatus = decrypted.auth_status || '';
+        isSuccess = (authStatus === '0300');
+        txnReferenceNo = decrypted.transactionid || '';
+        bankReferenceNo = decrypted.bank_ref_no || decrypted.bankid || '';
+        paymentMethod = decrypted.payment_method_type || 'BillDesk Neo';
+      } catch (decErr) {
+        console.error('Failed to decrypt BillDesk Neo webhook payload:', decErr);
+      }
+    } else if (rawMsg) {
+      const parsed = verifyAndParseBillDeskResponse(String(rawMsg));
+      if (!parsed.isValidChecksum) {
+        console.warn('Invalid checksum in BillDesk webhook payload');
+        return res.status(401).send('INVALID_CHECKSUM');
+      }
+      targetOrderId = parsed.orderId;
+      isSuccess = parsed.isSuccess;
+      authStatus = parsed.authStatus;
+      txnReferenceNo = parsed.txnReferenceNo;
+      bankReferenceNo = parsed.bankReferenceNo;
+      paymentMethod = parsed.paymentMethod;
+    }
+
+    if (!targetOrderId) {
       return res.status(400).send('BAD_REQUEST');
     }
 
-    const parsed = verifyAndParseBillDeskResponse(String(rawMsg));
-    if (!parsed.isValidChecksum) {
-      console.warn('Invalid checksum in BillDesk webhook payload');
-      return res.status(401).send('INVALID_CHECKSUM');
-    }
-
-    if (parsed.orderId && db) {
+    if (targetOrderId && db) {
       try {
-        const orderRef = doc(db, 'orders', parsed.orderId);
+        const orderRef = doc(db, 'orders', targetOrderId);
         const orderSnap = await getDoc(orderRef);
         if (orderSnap.exists()) {
           const current = orderSnap.data();
-          if (parsed.isSuccess && current.paymentStatus !== 'paid') {
+          if (isSuccess && current.paymentStatus !== 'paid') {
             await updateDoc(orderRef, {
               paymentStatus: 'paid',
-              paymentMethod: `BillDesk Online (${parsed.paymentMethod})`,
-              transactionId: parsed.txnReferenceNo,
-              bankReferenceNo: parsed.bankReferenceNo,
+              paymentMethod: `BillDesk Online (${paymentMethod})`,
+              transactionId: txnReferenceNo,
+              bankReferenceNo: bankReferenceNo,
               pgGateway: 'billdesk',
-              pgResponseCode: parsed.authStatus,
+              pgResponseCode: authStatus,
               paidAt: new Date().toISOString(),
               gecBonusAwarded: current.pendingEmberBonus ? true : current.gecBonusAwarded
             });
@@ -913,7 +1021,7 @@ app.post('/api/payment/billdesk/webhook', async (req, res) => {
 
     res.status(200).send('SUCCESS');
   } catch (err) {
-    console.error('BillDesk webhook processing error:', err);
+    console.error('Fatal error in BillDesk webhook handler:', err);
     res.status(500).send('INTERNAL_SERVER_ERROR');
   }
 });
