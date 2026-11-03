@@ -216,12 +216,13 @@ export default function MenuTab({
 
   // Culinary Menu Categories
   const categoriesList = [
-    { id: 'all', label: 'All Specialties' },
-    { id: 'tandoori', label: '🔥 Tandoori & Kebabs', keyword: 'tandoor' },
-    { id: 'curry', label: '🍲 Clay-Oven Curries', keyword: 'curry' },
-    { id: 'breads_rice', label: '🥖 Breads & Biryani', keyword: 'biryani' },
-    { id: 'bowls_salads', label: '🥗 Fresh Bowls', keyword: 'bowl' },
-    { id: 'beverages', label: '🥤 Shakes & Drinks', keyword: 'shake' },
+    { id: 'all', label: '✨ All Specialties', keywords: [] },
+    { id: 'taash', label: '👑 Signature Taash', keywords: ['taash'] },
+    { id: 'ahuna_handi', label: '🍲 Ahuna Handi', keywords: ['handi', 'ahuna', 'curry'] },
+    { id: 'rolls', label: '🌯 Taash Rolls', keywords: ['roll', 'kathi', 'wrap'] },
+    { id: 'biryani', label: '🍚 Bhatti Biryani', keywords: ['biryani', 'pulao'] },
+    { id: 'bhunja_sides', label: '🥨 Bhunja & Breads', keywords: ['bhunja', 'chura', 'paratha', 'naan', 'roti'] },
+    { id: 'coolers', label: '🥤 Desi Coolers', keywords: ['cooler', 'refresher', 'chaas', 'sattu', 'shake', 'drink'] },
   ];
 
   // Memoized filtered and sorted meals
@@ -237,14 +238,14 @@ export default function MenuTab({
       // Category match
       const matchesCategory = activeGoal === 'all' || (() => {
         const target = categoriesList.find(c => c.id === activeGoal);
-        if (!target || !target.keyword) return true;
-        const kw = target.keyword.toLowerCase();
-        return (
-          (meal.name || '').toLowerCase().includes(kw) ||
-          (meal.description || '').toLowerCase().includes(kw) ||
-          ((meal as any).category || '').toLowerCase().includes(kw) ||
-          (meal.goals || []).some(g => String(g).toLowerCase().includes(kw))
-        );
+        if (!target || !target.keywords || target.keywords.length === 0) return true;
+        const textToSearch = [
+          meal.name || '',
+          meal.description || '',
+          (meal as any).category || '',
+          ...(meal.goals || [])
+        ].join(' ').toLowerCase();
+        return target.keywords.some(kw => textToSearch.includes(kw.toLowerCase()));
       })();
 
       // Diet match (Veg Mode master switch strictly enforces vegetarian & vegan dishes)

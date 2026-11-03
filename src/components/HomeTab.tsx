@@ -114,20 +114,20 @@ export default function HomeTab({
   const [currentBannerIndex, setCurrentBannerIndex] = useState<number>(0);
   const [isBannerPaused, setIsBannerPaused] = useState<boolean>(false);
 
-  // 4. Interactive Tandoor Oven Fire Simulator State
-  const [tandoorTemp, setTandoorTemp] = useState<number>(380); // 280, 380, 480
+  // 4. Interactive Bhatti Fire Simulator State
+  const [bhattiTemp, setBhattiTemp] = useState<number>(320); // 220, 320, 450
 
   // 5. Interactive Combo Builder State
   const [comboMain, setComboMain] = useState<Meal>(meals[0] || MEALS_DATA[0]);
   const [comboBread, setComboBread] = useState<{ id: string; name: string; price: number }>({
     id: 'br1',
-    name: 'Butter Garlic Tandoori Naan',
-    price: 65,
+    name: 'Crispy Ghee Tawa Laccha Paratha (2 Pcs)',
+    price: 79,
   });
   const [comboDip, setComboDip] = useState<{ id: string; name: string; price: number }>({
     id: 'dp1',
-    name: 'Smoked Mint & Burani Raita',
-    price: 45,
+    name: 'Chilled Spiced Sattu Refresher',
+    price: 89,
   });
 
   // 6. Interactive Spice Radar State
@@ -217,9 +217,13 @@ export default function HomeTab({
   // Filtered meals based on Craving selection
   const filteredMeals = meals.filter((m) => {
     if (m.isHidden) return false;
-    if (activeCraving === 'tandoori') return m.name.toLowerCase().includes('tikka') || m.name.toLowerCase().includes('bhatti') || m.name.toLowerCase().includes('tandoori');
+    const nameLow = (m.name || '').toLowerCase();
+    if (activeCraving === 'taash') return nameLow.includes('taash');
+    if (activeCraving === 'handi') return nameLow.includes('handi') || nameLow.includes('ahuna');
+    if (activeCraving === 'rolls') return nameLow.includes('roll');
+    if (activeCraving === 'biryani') return nameLow.includes('biryani');
     if (activeCraving === 'veg') return m.isVeg;
-    if (activeCraving === 'protein') return !m.isVeg || m.name.toLowerCase().includes('paneer');
+    if (activeCraving === 'protein') return !m.isVeg || nameLow.includes('paneer');
     if (activeCraving === 'spicy') return m.spicyLevel === 'spicy';
     return true;
   });
@@ -379,18 +383,18 @@ export default function HomeTab({
             <div className="space-y-3 max-w-xl">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 text-xs font-black tracking-wider uppercase shadow-2xs animate-pulse">
                 <Flame className="w-4 h-4 text-brand-orange fill-brand-orange" />
-                <span>Original Clay-Oven Gourmet Kitchen</span>
+                <span>The Home of Authentic Taash & Bhatti Flavors</span>
               </div>
 
               <h1 className="text-3xl sm:text-5xl font-black text-brand-charcoal tracking-tight leading-tight">
-                Authentic Tandoori.<br />
+                Cast-Iron Sizzle.<br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-orange via-amber-500 to-brand-green">
-                  Fresh, Smoked & Delivered Hot.
+                  The Legendary Taash Experience.
                 </span>
               </h1>
 
               <p className="text-xs sm:text-sm text-brand-charcoal/70 leading-relaxed font-medium">
-                Hand-pounded spices, 24-hour slow-cooked Dal Makhani, and charcoal-seared tikkas packed in insulated thermal boxes straight to your doorstep.
+                Tender boneless mutton and chicken seared in raw kachi ghani mustard oil on heavy cast-iron tawas over roaring bhatti fire. Served hot over crunchy spiced Bhunja, with slow-dum Ahuna clay handis & flaky paratha rolls.
               </p>
             </div>
 
@@ -613,10 +617,12 @@ export default function HomeTab({
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
           {[
             { id: 'all', label: '✨ All Specialties', icon: Sparkles },
-            { id: 'tandoori', label: '🔥 Smoked Tandoori', icon: Flame },
-            { id: 'veg', label: '🍃 Pure Vegetarian', icon: CheckCircle },
-            { id: 'protein', label: '💪 High Protein', icon: TrendingUp },
-            { id: 'spicy', label: '🌶️ Spicy Awadhi', icon: FlameKindling },
+            { id: 'taash', label: '👑 Signature Taash', icon: Flame },
+            { id: 'handi', label: '🍲 Ahuna Handi', icon: FlameKindling },
+            { id: 'rolls', label: '🌯 Taash Rolls', icon: Utensils },
+            { id: 'biryani', label: '🍚 Dum Biryani', icon: ChefHat },
+            { id: 'veg', label: '🍃 Pure Veg', icon: CheckCircle },
+            { id: 'spicy', label: '🌶️ Fiery Bhatti', icon: TrendingUp },
           ].map((c) => {
             const IconComponent = c.icon;
             const isSelected = activeCraving === c.id;
@@ -814,7 +820,7 @@ export default function HomeTab({
       </section>
 
       {/* ========================================== */}
-      {/* 4. NEW INTERACTIVE SECTION: TANDOOR OVEN FIRE SIMULATOR */}
+      {/* 4. NEW INTERACTIVE SECTION: BHATTI FLAME SIMULATOR */}
       {/* ========================================== */}
       <section className="max-w-6xl mx-auto px-4 py-6">
         <div className="bg-gradient-to-br from-[#131920] via-[#1B242E] to-[#0D1217] text-white rounded-3xl p-6 sm:p-8 border border-brand-orange/30 shadow-2xl relative overflow-hidden space-y-6">
@@ -827,21 +833,21 @@ export default function HomeTab({
                 Interactive Bhatti Flame Simulator
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
-                Select Clay Oven Cooking Temperature
+                Explore The Bhatti Cooking Temperatures
               </h2>
             </div>
 
             <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-2xl border border-white/10">
               {[
-                { temp: 280, label: '280°C Slow Dum', icon: Clock },
-                { temp: 380, label: '380°C Smoked Grill', icon: Flame },
-                { temp: 480, label: '480°C Woodfire Sear', icon: Zap },
+                { temp: 220, label: '220°C Ahuna Dum', icon: Clock },
+                { temp: 320, label: '320°C Cast-Iron Taash', icon: Flame },
+                { temp: 450, label: '450°C Bhatti Toss', icon: Zap },
               ].map((t) => (
                 <button
                   key={t.temp}
-                  onClick={() => setTandoorTemp(t.temp)}
+                  onClick={() => setBhattiTemp(t.temp)}
                   className={`px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1 ${
-                    tandoorTemp === t.temp
+                    bhattiTemp === t.temp
                       ? 'bg-brand-orange text-white shadow-lg scale-105'
                       : 'text-gray-300 hover:text-white'
                   }`}
@@ -855,76 +861,76 @@ export default function HomeTab({
 
           {/* Temperature Visual Showcase */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {tandoorTemp === 280 && (
+            {bhattiTemp === 220 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                 <div className="space-y-3">
                   <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-widest block">
-                    🔥 280°C - Slow Dum Handi Sealing
+                    🔥 220°C - Slow Clay-Pot Ahuna Dum
                   </span>
-                  <h3 className="text-lg font-black text-white">24-Hour Dum Cooked Dal Makhani & Handi Biryani</h3>
+                  <h3 className="text-lg font-black text-white">Champaran Ahuna Dum Mutton & Chicken Handi</h3>
                   <p className="text-xs text-gray-300 leading-relaxed font-medium">
-                    At 280°C, dough-sealed clay handis retain every drop of moisture and aroma. Whole black lentils break down slowly in white butter over hickory wood coals.
+                    At 220°C over burning wood coals, flour-sealed earthen clay pots slow-stew tender meat, shallots, and whole garlic heads in pure mustard oil for 3 hours until melting off the bone.
                   </p>
                   <div className="flex gap-2">
                     <button onClick={() => onSelectTab('menu')} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-brand-charcoal font-black text-xs rounded-xl transition-all cursor-pointer">
-                      Order Slow Dum Specialties ➜
+                      Order Ahuna Handi Specialties ➜
                     </button>
                   </div>
                 </div>
                 <div className="relative h-48 rounded-2xl overflow-hidden border border-white/10 shadow-lg">
-                  <img src="https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=600&auto=format&fit=crop&q=80" alt="Dum Cooked" className="w-full h-full object-cover" />
+                  <img src="https://images.unsplash.com/photo-1545247181-516773cae754?w=600&auto=format&fit=crop&q=80" alt="Ahuna Dum Cooked" className="w-full h-full object-cover" />
                   <div className="absolute top-3 right-3 bg-black/80 text-amber-400 font-mono text-[10px] px-2.5 py-1 rounded-lg font-bold border border-white/10">
-                    280°C Controlled Steam
+                    220°C Sealed Clay Pot
                   </div>
                 </div>
               </motion.div>
             )}
 
-            {tandoorTemp === 380 && (
+            {bhattiTemp === 320 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                 <div className="space-y-3">
                   <span className="text-xs font-mono font-bold text-brand-orange uppercase tracking-widest block">
-                    🔥 380°C - Smoked Charcoal Kebabs
+                    🔥 320°C - Cast-Iron Tawa Taash Roasting
                   </span>
-                  <h3 className="text-lg font-black text-white">Bhatti Paneer Tikka & Malai Chicken Kebabs</h3>
+                  <h3 className="text-lg font-black text-white">Signature Mutton & Chicken Taash on Spiced Bhunja</h3>
                   <p className="text-xs text-gray-300 leading-relaxed font-medium">
-                    Skewers suspended directly above white-hot coals. The dripping spiced yogurt marinade hits the coals, creating aromatic dhungar smoke that locks into tender protein.
+                    Thinly cut boneless meat hits blistering cast-iron with smoking kachi-ghani mustard oil and stone-pounded spices. Caramelized crispy edges, juicy core, served piping hot on crunchy Bhunja.
                   </p>
                   <div className="flex gap-2">
                     <button onClick={() => onSelectTab('menu')} className="px-4 py-2 bg-brand-orange hover:bg-brand-orange/90 text-white font-black text-xs rounded-xl transition-all cursor-pointer">
-                      Order Charcoal Kebabs ➜
+                      Order Signature Taash ➜
                     </button>
                   </div>
                 </div>
                 <div className="relative h-48 rounded-2xl overflow-hidden border border-white/10 shadow-lg">
-                  <img src="https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=600&auto=format&fit=crop&q=80" alt="Charcoal Kebabs" className="w-full h-full object-cover" />
+                  <img src="https://images.unsplash.com/photo-1544025162-d76694265947?w=600&auto=format&fit=crop&q=80" alt="Cast Iron Taash" className="w-full h-full object-cover" />
                   <div className="absolute top-3 right-3 bg-black/80 text-brand-orange font-mono text-[10px] px-2.5 py-1 rounded-lg font-bold border border-white/10">
-                    380°C Dhungar Smoke
+                    320°C Cast-Iron Sizzle
                   </div>
                 </div>
               </motion.div>
             )}
 
-            {tandoorTemp === 480 && (
+            {bhattiTemp === 450 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                 <div className="space-y-3">
                   <span className="text-xs font-mono font-bold text-red-400 uppercase tracking-widest block">
-                    🔥 480°C - Woodfire Sear & Blistered Breads
+                    🔥 450°C - High-Flame Bhatti Toss & Paratha Sizzle
                   </span>
-                  <h3 className="text-lg font-black text-white">Crisp Butter Garlic Naans & Flame-Seared Roti</h3>
+                  <h3 className="text-lg font-black text-white">Crispy Ghee Laccha Parathas & High-Heat Taash Toss</h3>
                   <p className="text-xs text-gray-300 leading-relaxed font-medium">
-                    Dough slapped directly onto blistering clay walls at 480°C puffs up in under 45 seconds, developing signature charred blisters brushed immediately with white butter.
+                    Flash-seared Taash tossed with green chilies, julienned ginger, and rolled into hot ghee-blistered tawa laccha parathas for an unbeatable crunch.
                   </p>
                   <div className="flex gap-2">
                     <button onClick={() => onSelectTab('menu')} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-black text-xs rounded-xl transition-all cursor-pointer">
-                      Order Fresh Naans ➜
+                      Order Taash Rolls & Parathas ➜
                     </button>
                   </div>
                 </div>
                 <div className="relative h-48 rounded-2xl overflow-hidden border border-white/10 shadow-lg">
-                  <img src="https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=600&auto=format&fit=crop&q=80" alt="Clay Oven Naan" className="w-full h-full object-cover" />
+                  <img src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&auto=format&fit=crop&q=80" alt="Bhatti Paratha" className="w-full h-full object-cover" />
                   <div className="absolute top-3 right-3 bg-black/80 text-red-400 font-mono text-[10px] px-2.5 py-1 rounded-lg font-bold border border-white/10">
-                    480°C Clay Sear
+                    450°C High Bhatti Sear
                   </div>
                 </div>
               </motion.div>
@@ -944,7 +950,7 @@ export default function HomeTab({
                 <Layers className="w-3.5 h-3.5 text-brand-green" /> Custom 3-Piece Platter
               </span>
               <h2 className="text-xl font-black text-brand-charcoal mt-1">
-                Build Your Clay-Oven Meal Box
+                Build Your Signature Bhatti Meal Box
               </h2>
             </div>
 
@@ -955,10 +961,10 @@ export default function HomeTab({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Step 1: Main Tandoori Dish */}
+            {/* Step 1: Main Bhatti Hero */}
             <div className="space-y-3 bg-brand-cream/30 p-4 rounded-2xl border border-brand-green/10">
               <span className="text-[10px] font-black uppercase tracking-wider text-brand-charcoal/60 block">
-                STEP 1: SELECT MAIN TANDOORI (1)
+                STEP 1: SELECT MAIN BHATTI HERO (1)
               </span>
               <div className="space-y-2">
                 {meals.slice(0, 3).map((m) => (
@@ -980,16 +986,16 @@ export default function HomeTab({
               </div>
             </div>
 
-            {/* Step 2: Bread or Rice */}
+            {/* Step 2: Bhunja or Paratha */}
             <div className="space-y-3 bg-brand-cream/30 p-4 rounded-2xl border border-brand-green/10">
               <span className="text-[10px] font-black uppercase tracking-wider text-brand-charcoal/60 block">
-                STEP 2: SELECT BREAD / RICE (1)
+                STEP 2: SELECT BHUNJA / BREAD (1)
               </span>
               <div className="space-y-2">
                 {[
-                  { id: 'br1', name: 'Butter Garlic Tandoori Naan', price: 65 },
-                  { id: 'br2', name: 'Kashmiri Saffron Dum Pulao', price: 120 },
-                  { id: 'br3', name: 'Clay-Oven Whole Wheat Roti (2 pcs)', price: 40 },
+                  { id: 'br1', name: 'Crispy Ghee Tawa Laccha Paratha (2 Pcs)', price: 79 },
+                  { id: 'br2', name: 'Signature Masala Bhunja & Chura Platter', price: 99 },
+                  { id: 'br3', name: 'Fragrant Basmati Dum Rice', price: 85 },
                 ].map((b) => (
                   <button
                     key={b.id}
@@ -1009,16 +1015,16 @@ export default function HomeTab({
               </div>
             </div>
 
-            {/* Step 3: Gourmet Dip */}
+            {/* Step 3: Desi Cooler or Dip */}
             <div className="space-y-3 bg-brand-cream/30 p-4 rounded-2xl border border-brand-green/10">
               <span className="text-[10px] font-black uppercase tracking-wider text-brand-charcoal/60 block">
-                STEP 3: SELECT DIP / CHUTNEY (1)
+                STEP 3: SELECT COOLER / RAITA (1)
               </span>
               <div className="space-y-2">
                 {[
-                  { id: 'dp1', name: 'Smoked Mint & Burani Raita', price: 45 },
-                  { id: 'dp2', name: 'Awadhi Spicy Tomato Chutney', price: 35 },
-                  { id: 'dp3', name: 'Garlic Yogurt Dip & Onions', price: 40 },
+                  { id: 'dp1', name: 'Chilled Spiced Sattu Refresher', price: 89 },
+                  { id: 'dp2', name: 'Dhungar Smoked Masala Chaas', price: 69 },
+                  { id: 'dp3', name: 'Smoked Burani Garlic Raita & Onions', price: 49 },
                 ].map((d) => (
                   <button
                     key={d.id}
@@ -1183,9 +1189,9 @@ export default function HomeTab({
             <div className="w-10 h-10 rounded-2xl bg-brand-green/10 text-brand-green flex items-center justify-center mx-auto">
               <Shield className="w-5 h-5 text-brand-green" />
             </div>
-            <h4 className="font-extrabold text-xs text-brand-charcoal">100% Farm Organic</h4>
+            <h4 className="font-extrabold text-xs text-brand-charcoal">100% Kachi Ghani</h4>
             <p className="text-[10px] text-brand-charcoal/60 leading-relaxed">
-              Fresh vegetables & milk-soaked cottage cheese prepared daily.
+              Pure cold-pressed mustard oil with zero adulteration for true pungent sizzle.
             </p>
           </div>
 
@@ -1193,9 +1199,9 @@ export default function HomeTab({
             <div className="w-10 h-10 rounded-2xl bg-brand-orange/10 text-brand-orange flex items-center justify-center mx-auto">
               <Clock className="w-5 h-5 text-brand-orange" />
             </div>
-            <h4 className="font-extrabold text-xs text-brand-charcoal">Thermal Hot Box</h4>
+            <h4 className="font-extrabold text-xs text-brand-charcoal">Thermal Sizzle Pack</h4>
             <p className="text-[10px] text-brand-charcoal/60 leading-relaxed">
-              Insulated foil containers retain sizzle & steam during transit.
+              Moisture-shield foil packaging keeps Taash hot and Bhunja crunchy.
             </p>
           </div>
 
@@ -1203,9 +1209,9 @@ export default function HomeTab({
             <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
               <Award className="w-5 h-5 text-amber-700" />
             </div>
-            <h4 className="font-extrabold text-xs text-brand-charcoal">Awadhi Clay Craft</h4>
+            <h4 className="font-extrabold text-xs text-brand-charcoal">Ahuna Clay Craft</h4>
             <p className="text-[10px] text-brand-charcoal/60 leading-relaxed">
-              Traditional slow dum-cooking for 24-hr black lentils.
+              Traditional dough-sealed earthen handis slow-cooked over burning wood coals.
             </p>
           </div>
 
@@ -1215,7 +1221,7 @@ export default function HomeTab({
             </div>
             <h4 className="font-extrabold text-xs text-brand-charcoal">Zero Reused Oil</h4>
             <p className="text-[10px] text-brand-charcoal/60 leading-relaxed">
-              Strict hygiene protocols with zero synthetic dyes or preservatives.
+              Hand-pounded spices, premium tender cuts, with zero artificial food dyes.
             </p>
           </div>
         </div>

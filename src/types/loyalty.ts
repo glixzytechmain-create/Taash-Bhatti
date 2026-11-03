@@ -298,7 +298,7 @@ export const DEFAULT_ROYAL_RANKS: RoyalRankTier[] = [
     perkSummary: '2.0x Double Ember cashback + Permanent Zero Delivery Fee on every feast.',
     freeDelivery: true,
     freeDishMealId: 'm1',
-    freeDishMealName: 'Saffron-Infused Tandoori Paneer Platter',
+    freeDishMealName: 'Original Champaran Mutton Taash Platter',
   },
 ];
 
@@ -325,7 +325,7 @@ export const DEFAULT_MILESTONE_STEPS: ReferralMilestoneStep[] = [
     rewardType: 'free_dish',
     amount: 349,
     mealId: 'm1',
-    mealName: 'Saffron-Infused Tandoori Paneer Platter',
+    mealName: 'Original Champaran Mutton Taash Platter',
     label: 'Free Gourmet Dish (Next Order)',
     description: 'Complimentary signature platter reward on your next order.'
   },
@@ -385,7 +385,7 @@ export const DEFAULT_MILESTONE_STEPS: ReferralMilestoneStep[] = [
     rewardType: 'wallet_golden',
     amount: 500,
     mealId: 'm1',
-    mealName: 'Saffron-Infused Tandoori Paneer Platter',
+    mealName: 'Original Champaran Mutton Taash Platter',
     label: '₹500 Grand Royal Bounty',
     description: 'The ultimate 10-Feast Sovereign Bounty credited to your wallet.'
   }
@@ -422,7 +422,7 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfig = {
     rewardType: 'wallet_golden',
     rewardAmount: 1000,
     mealId: 'm1',
-    mealName: 'Saffron-Infused Tandoori Paneer Platter',
+    mealName: 'Original Champaran Mutton Taash Platter',
     title: 'Table of 4 Royal Feast Bounty',
   },
   streakWindowDays: 14,
@@ -444,8 +444,8 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfig = {
       enabled: true,
       rewardType: 'wallet_golden',
       amount: 350,
-      mealId: 'm3',
-      mealName: 'Saffron Oats & Almond Delight Shake',
+      mealId: 'm12',
+      mealName: 'Chilled Spiced Sattu Refresher',
       label: '₹350 Golden Wallet Cash (5-Card Flush)',
     },
     royalFlush: {
@@ -453,7 +453,7 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfig = {
       rewardType: 'wallet_golden',
       amount: 1000,
       mealId: 'm1',
-      mealName: 'Saffron-Infused Tandoori Paneer Platter',
+      mealName: 'Original Champaran Mutton Taash Platter',
       label: '₹1,000 Royal Feast Cash (Royal Flush)',
     },
   },

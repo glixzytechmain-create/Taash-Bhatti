@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, updateDoc, increment } from 'firebase/firestore';
 import { buildBillDeskPaymentRequest, verifyAndParseBillDeskResponse, isBillDeskConfigured, getBillDeskConfig } from './src/lib/billdeskService';
 import {
   createBillDeskNeoOrder,
