@@ -58,7 +58,8 @@ import {
   Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, TableServiceRequest, DEFAULT_SERVICE_BELLS } from '../types';
+import { KitchenManager, Order, Kitchen, DeliveryPartner, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, Meal, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, TableServiceRequest, DEFAULT_SERVICE_BELLS, MenuSection } from '../types';
+import { DEFAULT_MENU_SECTIONS } from '../data';
 import { doc, updateDoc, collection, onSnapshot, setDoc, query, where, addDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import InAppDeliveryMap from './InAppDeliveryMap';
@@ -356,6 +357,22 @@ export default function KitchenManagerApp({
     return () => unsub();
   }, []);
 
+  // Real-time Menu Sections Listener
+  const [menuSections, setMenuSections] = useState<MenuSection[]>(DEFAULT_MENU_SECTIONS);
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'menu_sections'), (snap) => {
+      if (!snap.empty) {
+        const fetched: MenuSection[] = [];
+        snap.forEach((d) => fetched.push({ id: d.id, ...d.data() } as MenuSection));
+        fetched.sort((a, b) => (a.order || 99) - (b.order || 99));
+        setMenuSections(fetched);
+      }
+    }, (err) => {
+      console.warn("Firestore menu_sections listener error in KM:", err);
+    });
+    return () => unsub();
+  }, []);
+
   // Real-time EOD Shift Settlement reports for this kitchen
   const [eodReports, setEodReports] = useState<KitchenEODReport[]>([]);
   useEffect(() => {
@@ -447,8 +464,14 @@ export default function KitchenManagerApp({
     setIsEODReadOnly(false);
   };
 
-  // Workspace Sub-Section: 'prep_lanes' vs 'rider_desk' vs 'inventory' vs 'radar' vs 'eod_settlement' vs 'tables'
-  const [kdsSubSection, setKdsSubSection] = useState<'prep_lanes' | 'rider_desk' | 'inventory' | 'radar' | 'eod_settlement' | 'tables'>('prep_lanes');
+  // Workspace Sub-Section: 'prep_lanes' vs 'rider_desk' vs 'inventory' vs 'radar' vs 'eod_settlement' vs 'tables' vs 'menu_stock'
+  const [kdsSubSection, setKdsSubSection] = useState<'prep_lanes' | 'rider_desk' | 'inventory' | 'radar' | 'eod_settlement' | 'tables' | 'menu_stock'>('prep_lanes');
+
+  // Menu Stock & Catering Management State
+  const [menuStockSearch, setMenuStockSearch] = useState<string>('');
+  const [menuStockSectionFilter, setMenuStockSectionFilter] = useState<string>('all');
+  const [menuStockStatusFilter, setMenuStockStatusFilter] = useState<'all' | 'in_stock' | 'branch_sold_out' | 'global_sold_out' | 'catering'>('all');
+  const [isUpdatingDishStock, setIsUpdatingDishStock] = useState<string | null>(null);
 
   // Dine-In Table Management State
   const [showAddTableModal, setShowAddTableModal] = useState<boolean>(false);
@@ -555,6 +578,78 @@ export default function KitchenManagerApp({
       console.error("Error saving bells config:", e);
     } finally {
       setIsSavingBellsConfig(false);
+    }
+  };
+
+  // Dish Out-of-Stock and Catering handlers for Kitchen Manager
+  const handleToggleBranchDishStock = async (meal: Meal) => {
+    if (!activeKitchen?.id) return;
+    setIsUpdatingDishStock(meal.id);
+    try {
+      const currentDisabled = activeKitchen.disabledDishIds || [];
+      const isCurrentlyDisabled = currentDisabled.includes(meal.id);
+      const newDisabled = isCurrentlyDisabled
+        ? currentDisabled.filter(id => id !== meal.id)
+        : [...currentDisabled, meal.id];
+      
+      const currentSoldOut = activeKitchen.soldOutDishIds || [];
+      const newSoldOut = isCurrentlyDisabled
+        ? currentSoldOut.filter(id => id !== meal.id)
+        : [...currentSoldOut, meal.id];
+
+      await updateDoc(doc(db, 'kitchens', activeKitchen.id), {
+        disabledDishIds: newDisabled,
+        soldOutDishIds: newSoldOut,
+      });
+      playKitchenChime('complete');
+    } catch (err) {
+      console.error("Error toggling branch dish stock:", err);
+    } finally {
+      setIsUpdatingDishStock(null);
+    }
+  };
+
+  const handleToggleGlobalDishStock = async (meal: Meal) => {
+    setIsUpdatingDishStock(meal.id);
+    try {
+      const newStatus = meal.isAvailable === false ? true : false;
+      await updateDoc(doc(db, 'meals', meal.id), {
+        isAvailable: newStatus,
+        soldOutReason: newStatus ? '' : 'Sold Out (Branch Chef)',
+      });
+      playKitchenChime('complete');
+    } catch (err) {
+      console.error("Error toggling global dish stock:", err);
+    } finally {
+      setIsUpdatingDishStock(null);
+    }
+  };
+
+  const handleToggleDishCatering = async (meal: Meal) => {
+    setIsUpdatingDishStock(meal.id);
+    try {
+      const newStatus = !meal.isCateringEligible;
+      await updateDoc(doc(db, 'meals', meal.id), {
+        isCateringEligible: newStatus,
+        cateringPrice: meal.cateringPrice || Math.round(meal.price * 6.5),
+        cateringServesCount: meal.cateringServesCount || 8,
+        cateringCategory: meal.cateringCategory || (meal.category?.toLowerCase().includes('starter') ? 'starter' : 'main'),
+      });
+
+      if (activeKitchen?.id) {
+        const currentCatering = activeKitchen.cateringDishIds || [];
+        const newCatering = newStatus
+          ? (currentCatering.includes(meal.id) ? currentCatering : [...currentCatering, meal.id])
+          : currentCatering.filter(id => id !== meal.id);
+        await updateDoc(doc(db, 'kitchens', activeKitchen.id), {
+          cateringDishIds: newCatering,
+        });
+      }
+      playKitchenChime('complete');
+    } catch (err) {
+      console.error("Error toggling dish catering:", err);
+    } finally {
+      setIsUpdatingDishStock(null);
     }
   };
 
@@ -1711,6 +1806,24 @@ export default function KitchenManagerApp({
               ) : (
                 <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-300">
                   Open
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setKdsSubSection('menu_stock')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer relative ${
+                kdsSubSection === 'menu_stock'
+                  ? 'bg-amber-500 text-stone-950 shadow-lg shadow-amber-500/20 font-black'
+                  : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Flame className="w-4 h-4 text-amber-500" />
+              <span>Dish Stock & Catering ({allMeals.length})</span>
+              {allMeals.some(m => m.isAvailable === false || activeKitchen?.disabledDishIds?.includes(m.id)) && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-md">
+                  {allMeals.filter(m => m.isAvailable === false || activeKitchen?.disabledDishIds?.includes(m.id)).length} Sold Out
                 </span>
               )}
             </button>
@@ -3710,6 +3823,450 @@ export default function KitchenManagerApp({
 
           </div>
         )}
+
+        {/* ======================================================== */}
+        {/* SUBSECTION: MENU STOCK & CATERING CURATION               */}
+        {/* ======================================================== */}
+        {kdsSubSection === 'menu_stock' && (() => {
+          const filteredMealsForStock = allMeals.filter(meal => {
+            // Search filter
+            if (menuStockSearch.trim()) {
+              const q = menuStockSearch.toLowerCase();
+              const matchesName = meal.name.toLowerCase().includes(q);
+              const matchesDesc = meal.description?.toLowerCase().includes(q);
+              const matchesCategory = meal.category?.toLowerCase().includes(q);
+              if (!matchesName && !matchesDesc && !matchesCategory) return false;
+            }
+
+            // Section filter
+            if (menuStockSectionFilter !== 'all') {
+              if (meal.sectionId) {
+                if (meal.sectionId !== menuStockSectionFilter) return false;
+              } else {
+                const sec = menuSections.find(s => s.id === menuStockSectionFilter);
+                if (sec) {
+                  const matches = sec.keywords?.some(k => 
+                    meal.name.toLowerCase().includes(k.toLowerCase()) || 
+                    meal.category?.toLowerCase().includes(k.toLowerCase())
+                  );
+                  if (!matches) return false;
+                }
+              }
+            }
+
+            // Status filter
+            const isBranchSoldOut = activeKitchen?.disabledDishIds?.includes(meal.id) || activeKitchen?.soldOutDishIds?.includes(meal.id);
+            const isGlobalSoldOut = meal.isAvailable === false;
+            const isCatering = meal.isCateringEligible === true || activeKitchen?.cateringDishIds?.includes(meal.id);
+
+            if (menuStockStatusFilter === 'in_stock') {
+              if (isBranchSoldOut || isGlobalSoldOut) return false;
+            } else if (menuStockStatusFilter === 'branch_sold_out') {
+              if (!isBranchSoldOut) return false;
+            } else if (menuStockStatusFilter === 'global_sold_out') {
+              if (!isGlobalSoldOut) return false;
+            } else if (menuStockStatusFilter === 'catering') {
+              if (!isCatering) return false;
+            }
+
+            return true;
+          });
+
+          const branchSoldOutCount = (activeKitchen?.disabledDishIds || []).length;
+          const globalSoldOutCount = allMeals.filter(m => m.isAvailable === false).length;
+          const cateringCount = allMeals.filter(m => m.isCateringEligible || activeKitchen?.cateringDishIds?.includes(m.id)).length;
+          const readyCount = allMeals.filter(m => m.isAvailable !== false && !activeKitchen?.disabledDishIds?.includes(m.id)).length;
+
+          return (
+            <div className="space-y-6">
+              {/* Top Banner & KPI Metrics */}
+              <div className="bg-[#121820] border border-amber-500/20 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        Live Kitchen Inventory & Out-of-Stock Console
+                      </span>
+                      {activeKitchen && (
+                        <span className="text-xs font-bold text-gray-400">
+                          • {activeKitchen.name}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
+                      <Flame className="w-6 h-6 text-amber-400" />
+                      <span>Dish Availability & Catering Platters</span>
+                    </h3>
+                    <p className="text-xs text-gray-400 max-w-2xl">
+                      Toggle 86&apos;d dishes out-of-stock instantly when fresh batches or ingredients run out. Curate which master dishes are available for bulk catering and weddings. Changes sync live to customer menus.
+                    </p>
+                  </div>
+
+                  {/* Summary Metric Badges */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+                    <div className="bg-[#161D24] border border-white/5 p-3 rounded-2xl text-center">
+                      <div className="text-lg font-black text-white">{allMeals.length}</div>
+                      <div className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Total Menu</div>
+                    </div>
+                    <div className="bg-[#161D24] border border-emerald-500/20 p-3 rounded-2xl text-center">
+                      <div className="text-lg font-black text-emerald-400">{readyCount}</div>
+                      <div className="text-[10px] font-bold uppercase text-emerald-300 tracking-wider">In Stock Here</div>
+                    </div>
+                    <div className="bg-[#161D24] border border-rose-500/20 p-3 rounded-2xl text-center">
+                      <div className="text-lg font-black text-rose-400">{branchSoldOutCount}</div>
+                      <div className="text-[10px] font-bold uppercase text-rose-300 tracking-wider">Branch 86&apos;d</div>
+                    </div>
+                    <div className="bg-[#161D24] border border-amber-500/20 p-3 rounded-2xl text-center">
+                      <div className="text-lg font-black text-amber-400">{cateringCount}</div>
+                      <div className="text-[10px] font-bold uppercase text-amber-300 tracking-wider">Catering Trays</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter and Search Controls */}
+                <div className="mt-6 pt-5 border-t border-white/10 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                  {/* Search Bar */}
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search dish by name, description, tags..."
+                      value={menuStockSearch}
+                      onChange={(e) => setMenuStockSearch(e.target.value)}
+                      className="w-full pl-10 pr-8 py-2.5 bg-[#161D24] border border-white/10 rounded-2xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400 transition-colors"
+                    />
+                    {menuStockSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setMenuStockSearch('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Section Dropdown */}
+                  <div className="shrink-0 flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-gray-400" />
+                    <select
+                      value={menuStockSectionFilter}
+                      onChange={(e) => setMenuStockSectionFilter(e.target.value)}
+                      className="bg-[#161D24] border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 font-bold"
+                    >
+                      <option value="all">All Menu Sections ({allMeals.length})</option>
+                      {menuSections.map((sec) => {
+                        const count = allMeals.filter((m) =>
+                          m.sectionId
+                            ? m.sectionId === sec.id
+                            : sec.keywords?.some(
+                                (k) =>
+                                  m.name.toLowerCase().includes(k.toLowerCase()) ||
+                                  m.category?.toLowerCase().includes(k.toLowerCase())
+                              )
+                        ).length;
+                        return (
+                          <option key={sec.id} value={sec.id}>
+                            {sec.label} ({count})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Status Filter Tabs */}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMenuStockStatusFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      menuStockStatusFilter === 'all'
+                        ? 'bg-white text-stone-950 font-black'
+                        : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    All Items ({allMeals.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMenuStockStatusFilter('in_stock')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      menuStockStatusFilter === 'in_stock'
+                        ? 'bg-emerald-500 text-stone-950 font-black'
+                        : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                    }`}
+                  >
+                    In Stock ({readyCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMenuStockStatusFilter('branch_sold_out')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      menuStockStatusFilter === 'branch_sold_out'
+                        ? 'bg-rose-500 text-white font-black'
+                        : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+                    }`}
+                  >
+                    Branch 86&apos;d Sold Out ({branchSoldOutCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMenuStockStatusFilter('global_sold_out')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      menuStockStatusFilter === 'global_sold_out'
+                        ? 'bg-purple-600 text-white font-black'
+                        : 'bg-purple-600/10 text-purple-300 hover:bg-purple-600/20'
+                    }`}
+                  >
+                    Globally Sold Out ({globalSoldOutCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMenuStockStatusFilter('catering')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      menuStockStatusFilter === 'catering'
+                        ? 'bg-amber-400 text-stone-950 font-black'
+                        : 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+                    }`}
+                  >
+                    Catering Platters ({cateringCount})
+                  </button>
+                </div>
+              </div>
+
+              {/* Master Dishes Grid */}
+              {allMeals.length === 0 ? (
+                <div className="bg-[#121820] border border-white/5 rounded-3xl p-12 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto">
+                    <ChefHat className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-lg font-black text-white">No Dishes in Database</h4>
+                  <p className="text-xs text-gray-400 max-w-md mx-auto">
+                    The master dish collection is empty. Dishes added by the Admin in the Admin Portal will automatically appear here for real-time stock management.
+                  </p>
+                </div>
+              ) : filteredMealsForStock.length === 0 ? (
+                <div className="bg-[#121820] border border-white/5 rounded-3xl p-12 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-white/5 text-gray-400 flex items-center justify-center mx-auto">
+                    <Search className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-lg font-black text-white">No Matching Dishes</h4>
+                  <p className="text-xs text-gray-400 max-w-md mx-auto">
+                    No items match &quot;{menuStockSearch}&quot; with current section/status filters. Try adjusting your query or resetting filters.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuStockSearch('');
+                      setMenuStockSectionFilter('all');
+                      setMenuStockStatusFilter('all');
+                    }}
+                    className="px-4 py-2 bg-amber-500 text-stone-950 text-xs font-black rounded-xl cursor-pointer hover:bg-amber-400 transition-all"
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredMealsForStock.map((meal) => {
+                    const isBranchDisabled =
+                      activeKitchen?.disabledDishIds?.includes(meal.id) ||
+                      activeKitchen?.soldOutDishIds?.includes(meal.id);
+                    const isGlobalDisabled = meal.isAvailable === false;
+                    const isCateringActive =
+                      meal.isCateringEligible === true ||
+                      activeKitchen?.cateringDishIds?.includes(meal.id);
+                    const isUpdatingThis = isUpdatingDishStock === meal.id;
+
+                    const section = menuSections.find((s) => s.id === meal.sectionId);
+                    const displaySectionLabel =
+                      section?.label || meal.category || 'Signature Item';
+
+                    return (
+                      <div
+                        key={meal.id}
+                        className={`bg-[#121820] border rounded-3xl p-5 space-y-4 transition-all ${
+                          isBranchDisabled || isGlobalDisabled
+                            ? 'border-rose-500/30 bg-rose-950/10'
+                            : 'border-white/5 hover:border-amber-500/20'
+                        }`}
+                      >
+                        {/* Dish Header: Image, Veg/Non-Veg, Title, Price */}
+                        <div className="flex items-start gap-3.5">
+                          <div className="w-16 h-16 rounded-2xl overflow-hidden bg-black/40 border border-white/10 shrink-0 relative">
+                            {meal.image ? (
+                              <img
+                                src={meal.image}
+                                alt={meal.name}
+                                className={`w-full h-full object-cover transition-all ${
+                                  isBranchDisabled || isGlobalDisabled ? 'grayscale opacity-60' : ''
+                                }`}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-amber-500 bg-amber-500/10">
+                                <Flame className="w-7 h-7" />
+                              </div>
+                            )}
+                            <div className="absolute top-1 left-1">
+                              <span
+                                className={`inline-block w-3 h-3 rounded-full border-2 border-[#121820] ${
+                                  meal.isVeg ? 'bg-emerald-500' : 'bg-rose-500'
+                                }`}
+                                title={meal.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/5 text-amber-400 border border-white/5 truncate max-w-[180px]">
+                                {displaySectionLabel}
+                              </span>
+                              {meal.popular && (
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300">
+                                  Bestseller
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-sm font-black text-white truncate" title={meal.name}>
+                              {meal.name}
+                            </h4>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono font-black text-amber-400">
+                                ₹{meal.price}
+                              </span>
+                              {meal.calories && (
+                                <span className="text-[11px] text-gray-500 font-mono">
+                                  {meal.calories} kcal
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Current Status Badges */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {isBranchDisabled ? (
+                            <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1">
+                              <XCircle className="w-3 h-3" />
+                              <span>Branch 86&apos;d (Sold Out)</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Branch: In Stock</span>
+                            </span>
+                          )}
+
+                          {isGlobalDisabled ? (
+                            <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              Global: Out of Stock
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase bg-white/5 text-gray-400">
+                              Global: Live
+                            </span>
+                          )}
+
+                          {isCateringActive && (
+                            <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase bg-amber-400/20 text-amber-300 border border-amber-400/30 flex items-center gap-1">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>Catering Platter</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Interactive Branch & Global Stock Toggles */}
+                        <div className="space-y-2 pt-2 border-t border-white/5">
+                          {/* 1. Branch 86'd Toggle */}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-gray-400 font-bold">
+                              This Kitchen ({activeKitchen?.name?.split(' ')[0] || 'Branch'}):
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isUpdatingThis}
+                              onClick={() => handleToggleBranchDishStock(meal)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 border ${
+                                isBranchDisabled
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                              }`}
+                            >
+                              {isUpdatingThis ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : isBranchDisabled ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  <span>Mark In Stock</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-3 h-3" />
+                                  <span>86 / Out of Stock</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* 2. Global Availability Toggle */}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-gray-400 font-bold">
+                              Global (All Bhattis):
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isUpdatingThis}
+                              onClick={() => handleToggleGlobalDishStock(meal)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 border ${
+                                isGlobalDisabled
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30'
+                                  : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                              }`}
+                            >
+                              {isGlobalDisabled ? 'Enable Master Dish' : 'Global Sold Out'}
+                            </button>
+                          </div>
+
+                          {/* 3. Event Catering Toggle & Platter Details */}
+                          <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-[11px] font-black text-amber-300 flex items-center gap-1">
+                                <Sparkles className="w-3 h-3 text-amber-400" />
+                                <span>Event Catering</span>
+                              </div>
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {isCateringActive
+                                  ? `Serves ${meal.cateringServesCount || 8} • ₹${meal.cateringPrice || Math.round(meal.price * 6.5)}`
+                                  : 'Bulk Platter Inactive'}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={isUpdatingThis}
+                              onClick={() => handleToggleDishCatering(meal)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 border ${
+                                isCateringActive
+                                  ? 'bg-amber-400 text-stone-950 border-amber-300 font-black'
+                                  : 'bg-white/5 text-gray-400 border-white/10 hover:text-amber-300 hover:border-amber-400/30'
+                              }`}
+                            >
+                              {isCateringActive ? 'Catering ON' : '+ Add Catering'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       </div>
 

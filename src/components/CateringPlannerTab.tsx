@@ -25,9 +25,11 @@ import {
   Cake,
   Sparkle
 } from 'lucide-react';
-import { Meal } from '../types';
+import { Meal, Kitchen } from '../types';
 
 interface CateringPlannerTabProps {
+  meals?: Meal[];
+  selectedKitchen?: Kitchen | null;
   onAddToCart: (meal: Meal, quantity: number) => void;
   onOpenCart?: () => void;
 }
@@ -45,191 +47,63 @@ interface PlatterItem {
   popular?: boolean;
 }
 
-const CATERING_PLATTERS: PlatterItem[] = [
-  // Starters & Signature Taash
-  {
-    id: 'cat_p1',
-    name: 'Grand Champaran Mutton Taash Party Platter',
-    category: 'starter',
-    description: '1.5 kg of tender boneless goat mutton seared on heavy cast-iron tawas in raw mustard oil, served with 2 large trays of crunchy spiced Bhunja, onions & lemon.',
-    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 2.2,
-    price: 2499,
-    isVeg: false,
-    popular: true,
-  },
-  {
-    id: 'cat_p2',
-    name: 'Cast-Iron Chicken Taash Party Platter',
-    category: 'starter',
-    description: 'Crispy-edged, juicy chicken thigh cuts flash-seared on cast-iron griddles with roasted khada spices, served with seasoned crunchy Bhunja & pickled onions.',
-    image: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 2.0,
-    price: 1899,
-    isVeg: false,
-    popular: true,
-  },
-  {
-    id: 'cat_p3',
-    name: 'Sizzling Bhatti Paneer Taash Tray',
-    category: 'starter',
-    description: 'Fresh malai paneer cubes tossed over blistering cast iron in mustard glaze & roasted coriander, served with spiced Bhunja crunch.',
-    image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
-    servesCount: 8,
-    weightKg: 1.5,
-    price: 1399,
-    isVeg: true,
-    popular: true,
-  },
-  {
-    id: 'cat_p4',
-    name: 'Champaran Ahuna Dum Handi Mutton Feast Pot',
-    category: 'main',
-    description: '3 kg earthen handi sealed with dough, slow-cooking goat mutton with whole roasted garlic heads over wood embers for 3 hours. (Serves 10)',
-    image: 'https://images.unsplash.com/photo-1545247181-516773cae754?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 3.0,
-    price: 2699,
-    isVeg: false,
-    popular: true,
-  },
-  {
-    id: 'cat_p5',
-    name: 'Clay-Pot Signature Dal Makhani Pot',
-    category: 'main',
-    description: 'Slow-cooked black lentils simmered overnight for 24 hours with white butter & smoked fenugreek. (Serves 10)',
-    image: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 2.5,
-    price: 1299,
-    isVeg: true,
-    popular: true,
-  },
-  {
-    id: 'cat_p6',
-    name: 'Paneer Butter Masala Party Tray',
-    category: 'main',
-    description: 'Creamy tomato-cashew gravy with pillowy cottage cheese cubes & ginger juliennes.',
-    image: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 2.2,
-    price: 1499,
-    isVeg: true,
-  },
-  {
-    id: 'cat_p7',
-    name: 'Handi Dum Chicken Biryani Large Box',
-    category: 'main',
-    description: 'Aromatic long-grain Saffron Basmati rice layered with bone-in succulent spiced chicken & caramelized onions. (Includes Raita)',
-    image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 3.0,
-    price: 1899,
-    isVeg: false,
-    popular: true,
-  },
-  {
-    id: 'cat_p8',
-    name: 'Royal Subz Handi Dum Biryani Box',
-    category: 'main',
-    description: 'Fragrant basmati rice dum-cooked with garden vegetables, cottage cheese & kewra water. (Includes Burani Raita)',
-    image: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 2.8,
-    price: 1499,
-    isVeg: true,
-  },
+export default function CateringPlannerTab({
+  meals = [],
+  selectedKitchen = null,
+  onAddToCart,
+  onOpenCart,
+}: CateringPlannerTabProps) {
+  // Dynamic Platter derivation from admin / kitchen configured meals
+  const dynamicPlatters: PlatterItem[] = useMemo(() => {
+    return (meals || [])
+      .filter((m) => {
+        // Must be eligible for catering and not marked out of stock
+        const isEligible = m.isCateringEligible === true || (selectedKitchen?.cateringDishIds && selectedKitchen.cateringDishIds.includes(m.id));
+        if (!isEligible) return false;
+        if (m.isAvailable === false) return false;
+        if (selectedKitchen) {
+          if (
+            selectedKitchen.disabledDishIds?.includes(m.id) ||
+            selectedKitchen.soldOutDishIds?.includes(m.id)
+          ) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map((m) => {
+        const cat: 'starter' | 'main' | 'bread_rice' | 'dessert_drink' =
+          m.cateringCategory ||
+          (m.category === 'coolers' || m.category === 'Coolers'
+            ? 'dessert_drink'
+            : m.category === 'bhunja_sides' || m.category === 'Breads'
+            ? 'bread_rice'
+            : m.isVeg
+            ? 'main'
+            : 'starter');
 
-  // Breads & Sides
-  {
-    id: 'cat_p9',
-    name: 'Clay-Oven Tandoori Garlic Naan Basket',
-    category: 'bread_rice',
-    description: '15 freshly baked garlic butter naans, packed hot in thermal foil insulation.',
-    image: 'https://images.unsplash.com/photo-1626074353765-517a681e40be?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 1.0,
-    price: 699,
-    isVeg: true,
-    popular: true,
-  },
-  {
-    id: 'cat_p10',
-    name: 'Assorted Bhatti Roti & Laccha Paratha Stack',
-    category: 'bread_rice',
-    description: '10 Butter Tandoori Rotis + 10 Layered Laccha Parathas + 5 Pudina Parathas.',
-    image: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 1.2,
-    price: 799,
-    isVeg: true,
-  },
-  {
-    id: 'cat_p11',
-    name: 'Saffron Jeera Basmati Rice Bucket',
-    category: 'bread_rice',
-    description: 'Steamed premium basmati rice tempered with cumin, whole ghee & saffron threads.',
-    image: 'https://images.unsplash.com/photo-1516714435131-44d6b64dc6a2?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 2.0,
-    price: 599,
-    isVeg: true,
-  },
+        return {
+          id: m.id,
+          name: m.name,
+          category: cat,
+          description: m.cateringDescription || m.description,
+          image: m.image,
+          servesCount: m.cateringServesCount || 10,
+          weightKg: 2.0,
+          price: m.cateringPrice || Math.round(m.price * 6.5),
+          isVeg: m.isVeg,
+          popular: m.isFeatured || false,
+        };
+      });
+  }, [meals, selectedKitchen]);
 
-  // Desserts & Drinks
-  {
-    id: 'cat_p12',
-    name: 'Chasni Gulab Jamun Party Tray',
-    category: 'dessert_drink',
-    description: '20 warm, golden khoya gulab jamuns soaked in cardamom saffron syrup.',
-    image: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 1.5,
-    price: 699,
-    isVeg: true,
-  },
-  {
-    id: 'cat_p13',
-    name: 'Earthen Matka Phirni Set (12 Pots)',
-    category: 'dessert_drink',
-    description: '12 individual clay pots of chilled saffron rice pudding garnished with pistachio flakes & silver leaf.',
-    image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
-    servesCount: 12,
-    weightKg: 1.8,
-    price: 899,
-    isVeg: true,
-    popular: true,
-  },
-  {
-    id: 'cat_p14',
-    name: 'Chilled Kulhad Badam Thandai Jar (3 Liters)',
-    category: 'dessert_drink',
-    description: '3L fresh almond rose thandai brewed with peppercorns, fennel & saffron. Served cold.',
-    image: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=600&auto=format&fit=crop&q=80',
-    servesCount: 10,
-    weightKg: 3.0,
-    price: 799,
-    isVeg: true,
-  },
-];
-
-export default function CateringPlannerTab({ onAddToCart, onOpenCart }: CateringPlannerTabProps) {
   // State 1: Event Config
   const [headcount, setHeadcount] = useState<number>(25);
   const [eventType, setEventType] = useState<'house_party' | 'office_lunch' | 'birthday' | 'rooftop_bbq' | 'wedding'>('house_party');
   const [dietRatio, setDietRatio] = useState<'50_50' | '70_30' | '100_veg' | '100_nonveg'>('50_50');
 
   // State 2: Selected Platter Quantities: record of platterId -> quantity
-  const [selectedPlatters, setSelectedPlatters] = useState<Record<string, number>>({
-    cat_p1: 2, // Bhatti Paneer Tikka
-    cat_p2: 2, // Smoked Chicken Malai Tikka
-    cat_p5: 2, // Dal Makhani Pot
-    cat_p7: 2, // Handi Dum Biryani
-    cat_p9: 2, // Garlic Naan Basket
-    cat_p13: 2, // Matka Phirni
-  });
+  const [selectedPlatters, setSelectedPlatters] = useState<Record<string, number>>({});
 
   // Category filter for custom builder view
   const [activeCategory, setActiveCategory] = useState<'all' | 'starter' | 'main' | 'bread_rice' | 'dessert_drink'>('all');
@@ -328,7 +202,7 @@ export default function CateringPlannerTab({ onAddToCart, onOpenCart }: Catering
 
     Object.entries(selectedPlatters).forEach(([id, rawQty]) => {
       const qty = Number(rawQty) || 0;
-      const item = CATERING_PLATTERS.find((p) => p.id === id);
+      const item = dynamicPlatters.find((p) => p.id === id);
       if (item && qty > 0) {
         sub += item.price * qty;
         weight += item.weightKg * qty;
@@ -343,7 +217,7 @@ export default function CateringPlannerTab({ onAddToCart, onOpenCart }: Catering
       totalServingsCapacity: capacity,
       totalItemsCount: count,
     };
-  }, [selectedPlatters]);
+  }, [selectedPlatters, dynamicPlatters]);
 
   // Bulk Discount Tier Computation
   const discountInfo = useMemo(() => {
@@ -393,7 +267,7 @@ export default function CateringPlannerTab({ onAddToCart, onOpenCart }: Catering
     // Build itemized summary
     const platterDetails = Object.entries(selectedPlatters)
       .map(([id, qty]) => {
-        const item = CATERING_PLATTERS.find((p) => p.id === id);
+        const item = dynamicPlatters.find((p) => p.id === id);
         return item ? `${qty}x ${item.name}` : null;
       })
       .filter(Boolean)
@@ -432,9 +306,9 @@ export default function CateringPlannerTab({ onAddToCart, onOpenCart }: Catering
   };
 
   const filteredPlatters = useMemo(() => {
-    if (activeCategory === 'all') return CATERING_PLATTERS;
-    return CATERING_PLATTERS.filter((p) => p.category === activeCategory);
-  }, [activeCategory]);
+    if (activeCategory === 'all') return dynamicPlatters;
+    return dynamicPlatters.filter((p) => p.category === activeCategory);
+  }, [activeCategory, dynamicPlatters]);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-8 animate-fade-in pb-16">
@@ -704,8 +578,26 @@ export default function CateringPlannerTab({ onAddToCart, onOpenCart }: Catering
         </div>
 
         {/* Platter Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredPlatters.map((item) => {
+        {filteredPlatters.length === 0 ? (
+          <div className="bg-[#12181E] border border-amber-500/20 rounded-3xl p-8 text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/15 text-amber-400 mx-auto flex items-center justify-center text-3xl">
+              👑
+            </div>
+            <h3 className="text-base font-black text-white">Live Bhatti Catering Platters Updating</h3>
+            <p className="text-xs text-gray-400 max-w-md mx-auto">
+              Our Master Ustads and Kitchen Managers are curating today's bulk party platters. You can request a custom live event catering quote directly below!
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowQuoteModal(true)}
+              className="px-5 py-2.5 bg-brand-orange text-brand-charcoal font-black text-xs uppercase rounded-xl inline-flex items-center gap-2 hover:bg-brand-orange/90 cursor-pointer shadow-lg"
+            >
+              <Sparkles className="w-4 h-4" /> Request Custom Live Event Quote
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredPlatters.map((item) => {
             const qty = selectedPlatters[item.id] || 0;
             return (
               <div
@@ -788,6 +680,7 @@ export default function CateringPlannerTab({ onAddToCart, onOpenCart }: Catering
             );
           })}
         </div>
+      )}
       </div>
 
       {/* SECTION 3: STICKY BULK DISCOUNT SUMMARY & CHECKOUT BAR */}
@@ -836,7 +729,7 @@ export default function CateringPlannerTab({ onAddToCart, onOpenCart }: Catering
           <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
             {Object.entries(selectedPlatters).map(([id, rawQty]) => {
               const qty = Number(rawQty) || 0;
-              const item = CATERING_PLATTERS.find((p) => p.id === id);
+              const item = dynamicPlatters.find((p) => p.id === id);
               if (!item || qty === 0) return null;
               return (
                 <div key={id} className="flex items-center justify-between text-xs py-1 border-b border-white/5">

@@ -58,6 +58,21 @@ export interface Meal {
   ingredients?: { name: string; grams: number }[];
   prepTimeMinutes?: number;
   goesWellWith?: string[]; // IDs of menu items / meals that pair well with this dish
+  category?: string; // Legacy or category tag
+  sectionId?: string; // ID of the MenuSection this dish belongs to
+  isCateringEligible?: boolean; // Eligible for bulk catering orders
+  cateringPrice?: number; // Bulk / party platter tray price
+  cateringServesCount?: number; // Estimated headcount per platter (e.g. 10 people)
+  cateringCategory?: 'starter' | 'main' | 'bread_rice' | 'dessert_drink';
+  cateringDescription?: string;
+}
+
+export interface MenuSection {
+  id: string;
+  label: string;
+  order: number;
+  keywords?: string[];
+  isActive?: boolean;
 }
 
 export interface User {
@@ -822,6 +837,7 @@ export interface Kitchen {
   isTakingOrders?: boolean;
   disabledDishIds?: string[]; // Dishes currently sold out at this specific Bhatti
   soldOutDishIds?: string[]; // Dishes currently sold out at this specific Bhatti
+  cateringDishIds?: string[]; // Dishes offered for catering/bulk orders from this Bhatti
   globalPrepDelayMinutes?: number; // Bhatti-wide prep time adjustment/delay in minutes
   isRaining?: boolean; // Bhatti Manager toggle: Currently Raining Mode
   rainDelayMinutes?: number; // Extra delay minutes when raining

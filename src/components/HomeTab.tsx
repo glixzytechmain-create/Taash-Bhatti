@@ -39,7 +39,7 @@ import {
   Timer
 } from 'lucide-react';
 import { Meal, User, HeroBanner, OrderItem, Order } from '../types';
-import { MEALS_DATA, DEFAULT_HERO_BANNERS } from '../data';
+import { DEFAULT_HERO_BANNERS } from '../data';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import GoesWellWithExtension from './GoesWellWithExtension';
@@ -77,7 +77,7 @@ export default function HomeTab({
   onAddToCart,
   onQuickView,
   fbUser,
-  meals = MEALS_DATA,
+  meals = [],
   cartMealIds = [],
   cart = [],
   onUpdateQuantity,
@@ -118,7 +118,13 @@ export default function HomeTab({
   const [bhattiTemp, setBhattiTemp] = useState<number>(320); // 220, 320, 450
 
   // 5. Interactive Combo Builder State
-  const [comboMain, setComboMain] = useState<Meal>(meals[0] || MEALS_DATA[0]);
+  const [comboMain, setComboMain] = useState<Meal | null>(() => meals[0] || null);
+
+  useEffect(() => {
+    if (!comboMain && meals.length > 0) {
+      setComboMain(meals[0]);
+    }
+  }, [meals, comboMain]);
   const [comboBread, setComboBread] = useState<{ id: string; name: string; price: number }>({
     id: 'br1',
     name: 'Crispy Ghee Tawa Laccha Paratha (2 Pcs)',
@@ -311,12 +317,13 @@ export default function HomeTab({
   ];
 
   // Calculated Combo Price
-  const rawComboTotal = comboMain.price + comboBread.price + comboDip.price;
+  const rawComboTotal = comboMain ? comboMain.price + comboBread.price + comboDip.price : comboBread.price + comboDip.price;
   const comboDiscountedTotal = Math.round(rawComboTotal * 0.9); // 10% Bundle Discount
 
   const activeBanner = banners[currentBannerIndex] || DEFAULT_HERO_BANNERS[0];
 
   const handleAddComboToCart = () => {
+    if (!comboMain) return;
     // Create a custom combo meal object to add to cart
     const comboMeal: Meal = {
       id: `combo_${Date.now()}`,
@@ -972,13 +979,13 @@ export default function HomeTab({
                     key={m.id}
                     onClick={() => setComboMain(m)}
                     className={`w-full p-2.5 rounded-xl text-left border transition-all cursor-pointer flex items-center justify-between ${
-                      comboMain.id === m.id
+                      comboMain?.id === m.id
                         ? 'bg-brand-charcoal text-white border-brand-orange shadow-sm font-bold'
                         : 'bg-white text-brand-charcoal border-gray-200 hover:border-brand-green/30'
                     }`}
                   >
                     <span className="text-xs font-extrabold line-clamp-1">{m.name}</span>
-                    <span className={`text-xs font-mono shrink-0 ml-2 ${comboMain.id === m.id ? 'text-amber-300' : 'text-brand-green font-black'}`}>
+                    <span className={`text-xs font-mono shrink-0 ml-2 ${comboMain?.id === m.id ? 'text-amber-300' : 'text-brand-green font-black'}`}>
                       ₹{m.price}
                     </span>
                   </button>
@@ -1065,7 +1072,12 @@ export default function HomeTab({
 
             <button
               onClick={handleAddComboToCart}
-              className="w-full sm:w-auto px-6 py-3 bg-brand-green hover:bg-brand-green/90 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+              disabled={!comboMain}
+              className={`w-full sm:w-auto px-6 py-3 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 ${
+                comboMain
+                  ? 'bg-brand-green hover:bg-brand-green/90 text-white cursor-pointer'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
             >
               <Plus className="w-4 h-4" /> Add Custom Combo Box
             </button>

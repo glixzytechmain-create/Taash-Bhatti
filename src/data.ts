@@ -3,7 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Meal, Gym, Offer, FAQ, SubscriptionPlan, DeliveryPartner, HeroBanner } from './types';
+import { Meal, Gym, Offer, FAQ, SubscriptionPlan, DeliveryPartner, HeroBanner, MenuSection } from './types';
+
+export const DEFAULT_MENU_SECTIONS: MenuSection[] = [
+  { id: 'taash', label: '👑 Signature Taash', order: 1, keywords: ['taash'] },
+  { id: 'ahuna_handi', label: '🍲 Ahuna Handi', order: 2, keywords: ['handi', 'ahuna', 'curry'] },
+  { id: 'rolls', label: '🌯 Taash Rolls', order: 3, keywords: ['roll', 'kathi', 'wrap'] },
+  { id: 'biryani', label: '🍚 Bhatti Biryani', order: 4, keywords: ['biryani', 'pulao'] },
+  { id: 'bhunja_sides', label: '🥨 Bhunja & Breads', order: 5, keywords: ['bhunja', 'chura', 'paratha', 'naan', 'roti'] },
+  { id: 'coolers', label: '🥤 Desi Coolers', order: 6, keywords: ['cooler', 'refresher', 'chaas', 'sattu', 'shake', 'drink'] },
+];
 
 export const DEFAULT_HERO_BANNERS: HeroBanner[] = [
   {

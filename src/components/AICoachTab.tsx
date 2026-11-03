@@ -14,7 +14,6 @@ import {
   Award,
 } from 'lucide-react';
 import { Meal, OrderItem } from '../types';
-import { MEALS_DATA } from '../data';
 import CartQuantityButton from './CartQuantityButton';
 
 interface AICoachTabProps {
@@ -29,7 +28,7 @@ interface AICoachTabProps {
 export default function AICoachTab({
   onAddToCart,
   onQuickView,
-  meals = MEALS_DATA,
+  meals = [],
   cart = [],
   onUpdateQuantity,
 }: AICoachTabProps) {

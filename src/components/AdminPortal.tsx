@@ -116,8 +116,8 @@ function getSecondaryAuth() {
   }
   return getAuth(secondaryApp);
 }
-import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, DEFAULT_SERVICE_BELLS, MealMediaItem } from '../types';
-import { MEALS_DATA, GYMS_DATA, INITIAL_DELIVERY_PARTNERS, DEFAULT_HERO_BANNERS } from '../data';
+import { Order, Meal, Gym, GymChain, User, Kitchen, DeliveryPartner, SupportTicket, SupportAgent, KitchenManager, HeroBanner, AppNotification, KitchenInventoryItem, CashDepositRequest, KitchenEODReport, KitchenWastageRecord, BhattiTable, ServiceBellItemConfig, DEFAULT_SERVICE_BELLS, MealMediaItem, MenuSection } from '../types';
+import { GYMS_DATA, INITIAL_DELIVERY_PARTNERS, DEFAULT_HERO_BANNERS, DEFAULT_MENU_SECTIONS } from '../data';
 import AdminDealsManager from './AdminDealsManager';
 import AdminLegalManager from './AdminLegalManager';
 import { KdsRiderCashSection } from './KdsRiderCashSection';
@@ -1067,7 +1067,14 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   });
   const [tickedPrepSteps, setTickedPrepSteps] = useState<Record<string, Record<string, boolean>>>({});
   const [expandedRecipes, setExpandedRecipes] = useState<Record<string, boolean>>({});
-  const [meals, setMeals] = useState<Meal[]>(() => MEALS_DATA);
+  const [meals, setMeals] = useState<Meal[]>([]);
+  const [menuSections, setMenuSections] = useState<MenuSection[]>([]);
+  const [showSectionsModal, setShowSectionsModal] = useState<boolean>(false);
+  const [newSectionLabel, setNewSectionLabel] = useState<string>('');
+  const [editingSection, setEditingSection] = useState<MenuSection | null>(null);
+  const [editingSectionLabel, setEditingSectionLabel] = useState<string>('');
+  const [editingSectionOrder, setEditingSectionOrder] = useState<number>(1);
+  const [filterSection, setFilterSection] = useState<string>('all');
   const [ingredients, setIngredients] = useState<IngredientStock[]>(INITIAL_INGREDIENTS);
   const [coupons, setCoupons] = useState<any[]>([]);
   const [couponSubTab, setCouponSubTab] = useState<'campaigns' | 'analytics' | 'stacking'>('campaigns');
@@ -1188,6 +1195,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   const [formTimings, setFormTimings] = useState<('breakfast' | 'lunch' | 'dinner' | 'snack')[]>(['lunch', 'dinner']);
   const [formGoals, setFormGoals] = useState<('fat_loss' | 'muscle_gain' | 'maintenance' | 'post_workout')[]>(['maintenance']);
   const [formIsAvailable, setFormIsAvailable] = useState(true);
+  const [formSoldOutReason, setFormSoldOutReason] = useState('');
+  const [formSectionId, setFormSectionId] = useState('taash');
+  const [formIsCateringEligible, setFormIsCateringEligible] = useState(false);
+  const [formCateringPrice, setFormCateringPrice] = useState(1499);
+  const [formCateringServesCount, setFormCateringServesCount] = useState(10);
+  const [formCateringCategory, setFormCateringCategory] = useState<'starter' | 'main' | 'bread_rice' | 'dessert_drink'>('starter');
+  const [formCateringDescription, setFormCateringDescription] = useState('');
   const [formIsHidden, setFormIsHidden] = useState(false);
   const [formIsFeatured, setFormIsFeatured] = useState(false);
   const [formPartnerGymExclusive, setFormPartnerGymExclusive] = useState(false);
@@ -1772,6 +1786,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormTimings(['lunch', 'dinner']);
     setFormGoals(['maintenance']);
     setFormIsAvailable(true);
+    setFormSoldOutReason('');
+    setFormSectionId(menuSections[0]?.id || 'taash');
+    setFormIsCateringEligible(false);
+    setFormCateringPrice(1499);
+    setFormCateringServesCount(10);
+    setFormCateringCategory('starter');
+    setFormCateringDescription('');
     setFormIsHidden(false);
     setFormIsFeatured(false);
     setFormPartnerGymExclusive(false);
@@ -1826,6 +1847,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setFormTimings(meal.timings || []);
     setFormGoals(meal.goals || []);
     setFormIsAvailable(meal.isAvailable !== false);
+    setFormSoldOutReason(meal.soldOutReason || '');
+    setFormSectionId(meal.sectionId || 'taash');
+    setFormIsCateringEligible(meal.isCateringEligible === true);
+    setFormCateringPrice(meal.cateringPrice || Math.round(meal.price * 6.5));
+    setFormCateringServesCount(meal.cateringServesCount || 10);
+    setFormCateringCategory(meal.cateringCategory || (meal.isVeg ? 'main' : 'starter'));
+    setFormCateringDescription(meal.cateringDescription || '');
     setFormIsHidden(meal.isHidden === true);
     setFormIsFeatured(meal.isFeatured === true);
     setFormPartnerGymExclusive(meal.partnerGymExclusive === true);
@@ -1902,6 +1930,13 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       popularity: editingMeal ? (editingMeal.popularity ?? 100) : 100,
       partnerGymExclusive: formPartnerGymExclusive,
       isAvailable: formIsAvailable,
+      soldOutReason: formIsAvailable ? null : (formSoldOutReason.trim() || 'Marked out of stock by kitchen'),
+      sectionId: formSectionId,
+      isCateringEligible: formIsCateringEligible,
+      cateringPrice: Number(formCateringPrice) || 0,
+      cateringServesCount: Number(formCateringServesCount) || 10,
+      cateringCategory: formCateringCategory,
+      cateringDescription: formCateringDescription.trim(),
       isHidden: formIsHidden,
       isFeatured: formIsFeatured,
       ingredients: parseIngredients(formIngredientsText),
@@ -2215,11 +2250,66 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
   // Toggle quick fields directly
   const handleToggleMealAvailability = async (meal: Meal) => {
     try {
+      const nextAvailable = meal.isAvailable === false;
       await updateDoc(doc(db, 'meals', meal.id), {
-        isAvailable: meal.isAvailable === false ? true : false
+        isAvailable: nextAvailable,
+        soldOutReason: nextAvailable ? null : 'Marked out of stock by Admin'
       });
     } catch (err) {
       console.error("Error toggling availability:", err);
+    }
+  };
+
+  const handleToggleMealCatering = async (meal: Meal) => {
+    try {
+      const nextCatering = meal.isCateringEligible !== true;
+      await updateDoc(doc(db, 'meals', meal.id), {
+        isCateringEligible: nextCatering,
+        cateringPrice: meal.cateringPrice || Math.round(meal.price * 6.5),
+        cateringServesCount: meal.cateringServesCount || 10,
+        cateringCategory: meal.cateringCategory || (meal.isVeg ? 'main' : 'starter')
+      });
+    } catch (err) {
+      console.error("Error toggling catering:", err);
+    }
+  };
+
+  const handleAddSection = async () => {
+    if (!newSectionLabel.trim()) return;
+    const sId = 'sec_' + Date.now();
+    const newSection: MenuSection = {
+      id: sId,
+      label: newSectionLabel.trim(),
+      order: menuSections.length + 1,
+      isActive: true,
+    };
+    try {
+      await setDoc(doc(db, 'menu_sections', sId), newSection);
+      setNewSectionLabel('');
+    } catch (err) {
+      console.error("Error adding menu section:", err);
+    }
+  };
+
+  const handleUpdateSection = async () => {
+    if (!editingSection || !editingSectionLabel.trim()) return;
+    try {
+      await updateDoc(doc(db, 'menu_sections', editingSection.id), {
+        label: editingSectionLabel.trim(),
+        order: Number(editingSectionOrder) || 1,
+      });
+      setEditingSection(null);
+    } catch (err) {
+      console.error("Error updating section:", err);
+    }
+  };
+
+  const handleDeleteSection = async (secId: string, label: string) => {
+    if (!window.confirm(`Are you sure you want to delete section "${label}"? Dishes assigned to this section will remain in your menu roster.`)) return;
+    try {
+      await deleteDoc(doc(db, 'menu_sections', secId));
+    } catch (err) {
+      console.error("Error deleting section:", err);
     }
   };
 
@@ -2728,21 +2818,39 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
         });
         setMeals(loadedMeals);
       } else {
-        setMeals(MEALS_DATA);
-        // Seed default meals to Firestore so documents exist for updating
-        try {
-          for (const m of MEALS_DATA) {
-            await setDoc(doc(db, 'meals', m.id), sanitizeForFirestore(m), { merge: true });
-          }
-        } catch (e) {
-          console.error("Failed seeding meals:", e);
-        }
+        setMeals([]);
       }
     }, (error) => {
       console.error("Error loading meals in admin portal:", error);
       handleFirestoreError(error, OperationType.LIST, 'meals');
     });
     return () => unsubscribe();
+  }, []);
+
+  // Sync / Real-time menu sections
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'menu_sections'), async (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: MenuSection[] = [];
+        snapshot.forEach((d) => {
+          loaded.push({ id: d.id, ...d.data() } as MenuSection);
+        });
+        loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
+        setMenuSections(loaded);
+      } else {
+        // Pre-seed default core sections to Firestore once
+        try {
+          for (const s of DEFAULT_MENU_SECTIONS) {
+            await setDoc(doc(db, 'menu_sections', s.id), s);
+          }
+        } catch (e) {
+          console.warn("Failed seeding default menu sections:", e);
+        }
+      }
+    }, (error) => {
+      console.error("Error loading menu_sections in admin portal:", error);
+    });
+    return () => unsub();
   }, []);
 
   // Real-time coupons listener
@@ -3891,12 +3999,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
         await setDoc(doc(db, 'gym_chains', chain.id), chain);
       }
 
-      // 2. Meals Catalog
-      for (const meal of MEALS_DATA) {
-        await setDoc(doc(db, 'meals', meal.id), meal);
-      }
-
-      // 3. Partner Gym Facilities
+      // Partner Gym Facilities
       for (const gym of GYMS_DATA) {
         await setDoc(doc(db, 'gyms', gym.id), gym);
       }
@@ -4076,9 +4179,14 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
       if (filterAvailability === 'available' && meal.isAvailable === false) return false;
       if (filterAvailability === 'unavailable' && meal.isAvailable !== false) return false;
 
+      // section match
+      if (filterSection !== 'all') {
+        if (meal.sectionId !== filterSection && meal.category !== filterSection) return false;
+      }
+
       return true;
     });
-  }, [meals, searchTerm, filterDiet, filterGoal, filterAvailability]);
+  }, [meals, searchTerm, filterDiet, filterGoal, filterAvailability, filterSection]);
 
   // Paginated meals calculations
   const totalMealPages = Math.ceil(filteredMeals.length / MEALS_PER_PAGE) || 1;
@@ -6070,16 +6178,27 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                     </p>
                   </div>
 
-                  <button
-                    onClick={handleOpenAddMeal}
-                    className="px-4 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase rounded-xl flex items-center gap-1.5 transition-all shadow-md self-start sm:self-auto cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 stroke-[3px]" /> Add New Meal
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSectionsModal(true)}
+                      className="px-3.5 py-2.5 bg-brand-charcoal/80 hover:bg-brand-charcoal text-white font-extrabold text-xs uppercase rounded-xl border border-brand-green/20 flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    >
+                      <Layers className="w-4 h-4 text-brand-orange" />
+                      Manage Menu Sections ({menuSections.length})
+                    </button>
+
+                    <button
+                      onClick={handleOpenAddMeal}
+                      className="px-4 py-2.5 bg-brand-green hover:bg-brand-green/90 text-brand-charcoal font-black text-xs uppercase rounded-xl flex items-center gap-1.5 transition-all shadow-md self-start sm:self-auto cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3px]" /> Add New Meal
+                    </button>
+                  </div>
                 </div>
 
                 {/* Filters & Search Row */}
-                <div className="bg-brand-charcoal/30 border border-brand-green/5 p-4 rounded-2xl grid grid-cols-1 md:grid-cols-4 gap-3.5">
+                <div className="bg-brand-charcoal/30 border border-brand-green/5 p-4 rounded-2xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3.5">
                   {/* Search input */}
                   <div>
                     <label className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider mb-1">
@@ -6092,6 +6211,25 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full bg-brand-charcoal/80 border border-brand-green/15 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-green/50"
                     />
+                  </div>
+
+                  {/* Section / Category filter */}
+                  <div>
+                    <label className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider mb-1">
+                      Menu Section
+                    </label>
+                    <select
+                      value={filterSection}
+                      onChange={(e) => setFilterSection(e.target.value)}
+                      className="w-full bg-brand-charcoal/80 border border-brand-green/15 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-green/50 cursor-pointer"
+                    >
+                      <option value="all">All Sections</option>
+                      {menuSections.map((sec) => (
+                        <option key={sec.id} value={sec.id}>
+                          {sec.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Diet filter */}
@@ -6226,6 +6364,11 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${m.isVeg ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : 'bg-red-950 text-red-400 border border-red-900'}`}>
                                   {m.isVeg ? 'VEG' : 'NON-VEG'}
                                 </span>
+                                {m.sectionId && (
+                                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
+                                    {menuSections.find(s => s.id === m.sectionId)?.label || m.sectionId}
+                                  </span>
+                                )}
                                 {m.isFeatured && (
                                   <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-950 text-brand-orange border border-amber-900 uppercase">
                                     ★ Featured
@@ -6292,15 +6435,29 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
                               {/* Stock Toggler */}
                               <button
                                 onClick={() => handleToggleMealAvailability(m)}
-                                className={`px-2.5 py-1.5 rounded-xl text-[9px] font-black uppercase border transition-all cursor-pointer flex items-center gap-1 ${
+                                className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase border transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
                                   !isSoldOut
-                                    ? 'bg-emerald-950/55 text-emerald-400 border-emerald-900 hover:bg-emerald-950'
-                                    : 'bg-red-950/55 text-red-400 border-red-900 hover:bg-red-950'
+                                    ? 'bg-emerald-950/70 text-emerald-400 border-emerald-700 hover:bg-emerald-950'
+                                    : 'bg-red-950/80 text-red-300 border-red-700 hover:bg-red-950'
                                 }`}
                                 title="Click to Toggle Stock Status"
                               >
-                                <span className={`w-1.5 h-1.5 rounded-full ${!isSoldOut ? 'bg-emerald-400' : 'bg-red-400 animate-pulse'}`} />
-                                {!isSoldOut ? 'IN STOCK' : 'SOLD OUT'}
+                                <span className={`w-2 h-2 rounded-full ${!isSoldOut ? 'bg-emerald-400' : 'bg-red-500 animate-pulse'}`} />
+                                {!isSoldOut ? 'IN STOCK' : 'OUT OF STOCK'}
+                              </button>
+
+                              {/* Catering Toggler */}
+                              <button
+                                onClick={() => handleToggleMealCatering(m)}
+                                className={`px-2.5 py-1.5 rounded-xl text-[9px] font-black uppercase border transition-all cursor-pointer flex items-center gap-1 ${
+                                  m.isCateringEligible === true
+                                    ? 'bg-amber-950/70 text-amber-300 border-amber-700 hover:bg-amber-950'
+                                    : 'bg-white/5 text-gray-500 border-white/10 hover:bg-white/10'
+                                }`}
+                                title="Click to Toggle Catering Eligibility"
+                              >
+                                <span>🎉</span>
+                                {m.isCateringEligible === true ? 'CATERING: ON' : 'CATERING: OFF'}
                               </button>
 
                               {/* Visibility Toggler */}
@@ -12046,6 +12203,152 @@ Free express delivery directly to trainer desks"
               )}
             </AnimatePresence>
 
+            {/* MANAGE MENU SECTIONS MODAL */}
+            <AnimatePresence>
+              {showSectionsModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4 overflow-y-auto">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setShowSectionsModal(false)}
+                    className="fixed inset-0 bg-[#080B0F]/85 backdrop-blur-sm"
+                  />
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                    className="relative bg-[#0F1419] border border-brand-green/20 rounded-[28px] max-w-xl w-full p-6 shadow-2xl z-10 max-h-[85vh] overflow-y-auto space-y-5"
+                  >
+                    <div className="flex items-center justify-between border-b border-brand-green/15 pb-4">
+                      <div>
+                        <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-brand-orange" /> Manage Menu Sections & Categories
+                        </h3>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          Add custom sections (e.g. Taash Rolls, Ahuna Handi), edit labels, and set display order.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowSectionsModal(false)}
+                        className="text-gray-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Add New Section */}
+                    <div className="bg-brand-charcoal/40 border border-brand-green/15 p-4 rounded-2xl space-y-3">
+                      <span className="text-[10px] font-black uppercase text-brand-green block">Add New Section / Tab</span>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. 🍢 Bhatti Kebabs, 🌯 Taash Rolls..."
+                          value={newSectionLabel}
+                          onChange={(e) => setNewSectionLabel(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddSection();
+                            }
+                          }}
+                          className="flex-1 bg-brand-charcoal border border-brand-green/20 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-green/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddSection}
+                          disabled={!newSectionLabel.trim()}
+                          className="px-4 py-2 bg-brand-green hover:bg-brand-green/90 disabled:opacity-50 text-brand-charcoal font-black text-xs uppercase rounded-xl flex items-center gap-1 transition-all cursor-pointer shrink-0"
+                        >
+                          <Plus className="w-4 h-4" /> Add
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sections List */}
+                    <div className="space-y-2.5">
+                      <span className="text-[10px] font-black uppercase text-gray-400 block">Active Menu Sections ({menuSections.length})</span>
+                      {menuSections.map((sec, idx) => {
+                        const isEditingThis = editingSection?.id === sec.id;
+                        const dishCount = meals.filter((m) => m.sectionId === sec.id || m.category === sec.id).length;
+
+                        return (
+                          <div
+                            key={sec.id}
+                            className="bg-brand-charcoal/30 border border-brand-green/10 p-3 rounded-2xl flex items-center justify-between gap-3"
+                          >
+                            {isEditingThis ? (
+                              <div className="flex items-center gap-2 flex-1">
+                                <input
+                                  type="text"
+                                  value={editingSectionLabel}
+                                  onChange={(e) => setEditingSectionLabel(e.target.value)}
+                                  className="flex-1 bg-brand-charcoal border border-brand-green/30 rounded-lg px-2.5 py-1 text-xs text-white"
+                                />
+                                <input
+                                  type="number"
+                                  value={editingSectionOrder}
+                                  onChange={(e) => setEditingSectionOrder(Number(e.target.value))}
+                                  className="w-14 bg-brand-charcoal border border-brand-green/30 rounded-lg px-2 py-1 text-xs text-white"
+                                  title="Display Order"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleUpdateSection}
+                                  className="px-2.5 py-1 bg-emerald-500 text-brand-charcoal font-black text-xs rounded-lg cursor-pointer"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSection(null)}
+                                  className="px-2 py-1 bg-white/10 text-gray-300 text-xs rounded-lg cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className="text-[10px] font-mono text-gray-500 w-5">#{sec.order || idx + 1}</span>
+                                  <span className="text-xs font-black text-white truncate">{sec.label}</span>
+                                  <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-brand-green/10 text-brand-green border border-brand-green/20">
+                                    {dishCount} dishes
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingSection(sec);
+                                      setEditingSectionLabel(sec.label);
+                                      setEditingSectionOrder(sec.order || idx + 1);
+                                    }}
+                                    className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer transition-colors"
+                                    title="Edit Section Name / Order"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSection(sec.id, sec.label)}
+                                    className="p-1.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 rounded-lg cursor-pointer transition-colors"
+                                    title="Delete Section"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
             {/* FORM MODAL DIALOG (MEAL EDITING AND CREATION) */}
             <AnimatePresence>
               {showFormModal && (
@@ -12468,59 +12771,169 @@ Free express delivery directly to trainer desks"
                         </div>
                       </div>
 
+                      {/* Section E2: Menu Section & Category Assignment */}
+                      <div className="bg-brand-charcoal/20 border border-brand-green/15 p-4 rounded-2xl space-y-2">
+                        <label className="text-[10px] font-bold text-gray-300 uppercase tracking-wider block">
+                          Menu Section / Category *
+                        </label>
+                        <select
+                          value={formSectionId}
+                          onChange={(e) => setFormSectionId(e.target.value)}
+                          className="w-full bg-brand-charcoal border border-brand-green/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-green/50 cursor-pointer"
+                        >
+                          {menuSections.map((sec) => (
+                            <option key={sec.id} value={sec.id}>
+                              {sec.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-[9px] text-gray-400 block font-normal">
+                          Controls which category pill carousel tab in the customer menu displays this dish.
+                        </span>
+                      </div>
+
+                      {/* Section E3: Catering & Bulk Orders Configuration */}
+                      <div className="bg-amber-950/20 border border-amber-500/25 p-4 rounded-2xl space-y-3">
+                        <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-amber-300">
+                          <input
+                            type="checkbox"
+                            checked={formIsCateringEligible}
+                            onChange={(e) => setFormIsCateringEligible(e.target.checked)}
+                            className="w-4 h-4 text-amber-500 bg-brand-charcoal border-gray-600 rounded-sm focus:ring-amber-500"
+                          />
+                          <div>
+                            <span>🎉 Eligible for Event Catering & Party Platters</span>
+                            <span className="text-[9px] text-gray-400 block font-normal">
+                              Publish this dish into the dynamic Catering & Party Box Planner tab.
+                            </span>
+                          </div>
+                        </label>
+
+                        {formIsCateringEligible && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-amber-500/15">
+                            <div>
+                              <label className="text-[9px] font-bold text-gray-300 uppercase block mb-1">
+                                Platter Tray Price (₹)
+                              </label>
+                              <input
+                                type="number"
+                                value={formCateringPrice}
+                                onChange={(e) => setFormCateringPrice(Number(e.target.value))}
+                                className="w-full bg-brand-charcoal border border-amber-500/20 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-gray-300 uppercase block mb-1">
+                                Servings Capacity (Pax)
+                              </label>
+                              <input
+                                type="number"
+                                value={formCateringServesCount}
+                                onChange={(e) => setFormCateringServesCount(Number(e.target.value))}
+                                className="w-full bg-brand-charcoal border border-amber-500/20 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-gray-300 uppercase block mb-1">
+                                Catering Category
+                              </label>
+                              <select
+                                value={formCateringCategory}
+                                onChange={(e) => setFormCateringCategory(e.target.value as any)}
+                                className="w-full bg-brand-charcoal border border-amber-500/20 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 cursor-pointer"
+                              >
+                                <option value="starter">Starter / Taash Platter</option>
+                                <option value="main">Main Feast Pot</option>
+                                <option value="bread_rice">Breads & Rice Basket</option>
+                                <option value="dessert_drink">Dessert & Cooler Jar</option>
+                              </select>
+                            </div>
+                            <div className="md:col-span-3">
+                              <label className="text-[9px] font-bold text-gray-300 uppercase block mb-1">
+                                Catering Platter Description
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 2.0 kg large tray slow cooked with crunchy bhunja (Serves 10)"
+                                value={formCateringDescription}
+                                onChange={(e) => setFormCateringDescription(e.target.value)}
+                                className="w-full bg-brand-charcoal border border-amber-500/20 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Section F: Advanced toggles */}
-                      <div className="bg-brand-charcoal/10 border border-brand-green/10 p-4 rounded-2xl grid grid-cols-2 gap-4">
-                        <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
-                          <input
-                            type="checkbox"
-                            checked={formIsAvailable}
-                            onChange={(e) => setFormIsAvailable(e.target.checked)}
-                            className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
-                          />
-                          <div>
-                            <span>Is Available (In Stock)</span>
-                            <span className="text-[9px] text-gray-400 block font-normal">Controls instant "SOLD OUT" badge.</span>
-                          </div>
-                        </label>
+                      <div className="bg-brand-charcoal/10 border border-brand-green/10 p-4 rounded-2xl space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
+                            <input
+                              type="checkbox"
+                              checked={formIsAvailable}
+                              onChange={(e) => setFormIsAvailable(e.target.checked)}
+                              className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
+                            />
+                            <div>
+                              <span>Is Available (In Stock)</span>
+                              <span className="text-[9px] text-gray-400 block font-normal">Controls instant &quot;SOLD OUT&quot; badge.</span>
+                            </div>
+                          </label>
 
-                        <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
-                          <input
-                            type="checkbox"
-                            checked={formIsHidden}
-                            onChange={(e) => setFormIsHidden(e.target.checked)}
-                            className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
-                          />
-                          <div>
-                            <span>Is Hidden (Menu Lock)</span>
-                            <span className="text-[9px] text-gray-400 block font-normal">Hides fully from customer interface.</span>
-                          </div>
-                        </label>
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
+                            <input
+                              type="checkbox"
+                              checked={formIsHidden}
+                              onChange={(e) => setFormIsHidden(e.target.checked)}
+                              className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
+                            />
+                            <div>
+                              <span>Is Hidden (Menu Lock)</span>
+                              <span className="text-[9px] text-gray-400 block font-normal">Hides fully from customer interface.</span>
+                            </div>
+                          </label>
 
-                        <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
-                          <input
-                            type="checkbox"
-                            checked={formIsFeatured}
-                            onChange={(e) => setFormIsFeatured(e.target.checked)}
-                            className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
-                          />
-                          <div>
-                            <span>Is Featured (Priority)</span>
-                            <span className="text-[9px] text-gray-400 block font-normal">Push into popular slots & coach tips.</span>
-                          </div>
-                        </label>
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
+                            <input
+                              type="checkbox"
+                              checked={formIsFeatured}
+                              onChange={(e) => setFormIsFeatured(e.target.checked)}
+                              className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
+                            />
+                            <div>
+                              <span>Is Featured (Priority)</span>
+                              <span className="text-[9px] text-gray-400 block font-normal">Push into popular slots & coach tips.</span>
+                            </div>
+                          </label>
 
-                        <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
-                          <input
-                            type="checkbox"
-                            checked={formPartnerGymExclusive}
-                            onChange={(e) => setFormPartnerGymExclusive(e.target.checked)}
-                            className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
-                          />
-                          <div>
-                            <span>Partner Gym Exclusive</span>
-                            <span className="text-[9px] text-gray-400 block font-normal">Only visible to connected elite memberships.</span>
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white">
+                            <input
+                              type="checkbox"
+                              checked={formPartnerGymExclusive}
+                              onChange={(e) => setFormPartnerGymExclusive(e.target.checked)}
+                              className="w-4 h-4 text-brand-green bg-brand-charcoal border-gray-600 rounded-sm focus:ring-brand-green"
+                            />
+                            <div>
+                              <span>Partner Gym Exclusive</span>
+                              <span className="text-[9px] text-gray-400 block font-normal">Only visible to connected elite memberships.</span>
+                            </div>
+                          </label>
+                        </div>
+
+                        {!formIsAvailable && (
+                          <div className="pt-2 border-t border-rose-900/30">
+                            <label className="text-[9px] font-bold text-rose-400 uppercase block mb-1">
+                              Out of Stock Reason (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Daily fresh mutton stock exhausted, resting batch..."
+                              value={formSoldOutReason}
+                              onChange={(e) => setFormSoldOutReason(e.target.value)}
+                              className="w-full bg-brand-charcoal border border-rose-900/40 rounded-xl px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-rose-400"
+                            />
                           </div>
-                        </label>
+                        )}
                       </div>
 
                       {/* Sticky Form Action buttons */}

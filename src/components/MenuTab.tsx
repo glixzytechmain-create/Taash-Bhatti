@@ -25,8 +25,10 @@ import {
   MessageSquare,
   Users,
 } from 'lucide-react';
-import { Meal, Kitchen, OrderItem } from '../types';
-import { MEALS_DATA } from '../data';
+import { Meal, Kitchen, OrderItem, MenuSection } from '../types';
+import { DEFAULT_MENU_SECTIONS } from '../data';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import MealReviewsSection from './MealReviewsSection';
 import GoesWellWithExtension from './GoesWellWithExtension';
 import CartQuantityButton from './CartQuantityButton';
@@ -73,7 +75,7 @@ export default function MenuTab({
   onClearPreSelectedGoal,
   onOpenDeals,
   onOpenGroupOrder,
-  meals = MEALS_DATA,
+  meals = [],
   cartMealIds = [],
   cart = [],
   onUpdateQuantity,
@@ -214,16 +216,40 @@ export default function MenuTab({
     }
   }, [preSelectedGoal, onClearPreSelectedGoal]);
 
-  // Culinary Menu Categories
-  const categoriesList = [
-    { id: 'all', label: '✨ All Specialties', keywords: [] },
-    { id: 'taash', label: '👑 Signature Taash', keywords: ['taash'] },
-    { id: 'ahuna_handi', label: '🍲 Ahuna Handi', keywords: ['handi', 'ahuna', 'curry'] },
-    { id: 'rolls', label: '🌯 Taash Rolls', keywords: ['roll', 'kathi', 'wrap'] },
-    { id: 'biryani', label: '🍚 Bhatti Biryani', keywords: ['biryani', 'pulao'] },
-    { id: 'bhunja_sides', label: '🥨 Bhunja & Breads', keywords: ['bhunja', 'chura', 'paratha', 'naan', 'roti'] },
-    { id: 'coolers', label: '🥤 Desi Coolers', keywords: ['cooler', 'refresher', 'chaas', 'sattu', 'shake', 'drink'] },
-  ];
+  // Real-time Firestore Menu Sections Listener
+  const [menuSections, setMenuSections] = useState<MenuSection[]>(DEFAULT_MENU_SECTIONS);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'menu_sections'), (snap) => {
+      if (!snap.empty) {
+        const list: MenuSection[] = [];
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as MenuSection);
+        });
+        list.sort((a, b) => (a.order || 0) - (b.order || 0));
+        setMenuSections(list);
+      } else {
+        setMenuSections(DEFAULT_MENU_SECTIONS);
+      }
+    }, (err) => {
+      console.warn("Error listening to menu_sections in MenuTab:", err);
+    });
+    return () => unsub();
+  }, []);
+
+  // Culinary Menu Categories derived dynamically from Firestore
+  const categoriesList = useMemo(() => {
+    return [
+      { id: 'all', label: '✨ All Specialties', keywords: [] as string[] },
+      ...menuSections.map((s) => ({
+        id: s.id,
+        label: s.label,
+        keywords: s.keywords && s.keywords.length > 0
+          ? s.keywords
+          : [s.id.toLowerCase(), s.label.toLowerCase().replace(/[^a-z0-9]/g, '')],
+      })),
+    ];
+  }, [menuSections]);
 
   // Memoized filtered and sorted meals
   const filteredMeals = useMemo(() => {
@@ -235,17 +261,22 @@ export default function MenuTab({
       const matchesSearch = meal.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         meal.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-      // Category match
+      // Category / Section match
       const matchesCategory = activeGoal === 'all' || (() => {
-        const target = categoriesList.find(c => c.id === activeGoal);
-        if (!target || !target.keywords || target.keywords.length === 0) return true;
+        // Direct section ID match
+        if (meal.sectionId && meal.sectionId === activeGoal) return true;
+        // Direct legacy category match
+        if (meal.category && meal.category.toLowerCase() === activeGoal.toLowerCase()) return true;
+
+        const target = categoriesList.find((c) => c.id === activeGoal);
+        if (!target || !target.keywords || target.keywords.length === 0) return false;
         const textToSearch = [
           meal.name || '',
           meal.description || '',
-          (meal as any).category || '',
+          meal.category || '',
           ...(meal.goals || [])
         ].join(' ').toLowerCase();
-        return target.keywords.some(kw => textToSearch.includes(kw.toLowerCase()));
+        return target.keywords.some((kw) => textToSearch.includes(kw.toLowerCase()));
       })();
 
       // Diet match (Veg Mode master switch strictly enforces vegetarian & vegan dishes)
@@ -552,11 +583,19 @@ export default function MenuTab({
       </div>
 
       {/* 4. MEAL CARD GRID */}
-      {filteredMeals.length === 0 ? (
+      {meals.length === 0 ? (
+        <div className="py-20 text-center bg-white rounded-3xl border border-brand-green/10 p-8 shadow-xs">
+          <ChefHat className="w-14 h-14 text-brand-orange mx-auto mb-3 animate-bounce" />
+          <h4 className="font-black text-base text-brand-charcoal">Our Bhatti Ustads Are Curating Today's Menu</h4>
+          <p className="text-xs text-brand-charcoal/60 mt-1.5 max-w-md mx-auto">
+            Fresh meat cuts and cast-iron tawas are firing up. Dishes added by the kitchen or admin will appear here live!
+          </p>
+        </div>
+      ) : filteredMeals.length === 0 ? (
         <div className="py-16 text-center">
           <UtensilsCrossed className="w-12 h-12 text-brand-charcoal/20 mx-auto mb-3" />
           <h4 className="font-extrabold text-sm text-brand-charcoal">No dishes match your filters</h4>
-          <p className="text-xs text-brand-charcoal/50 mt-1">Try resetting your diet or calorie range targets.</p>
+          <p className="text-xs text-brand-charcoal/50 mt-1">Try resetting your diet or category selection.</p>
           <button
             onClick={handleResetFilters}
             className="mt-4 px-4 py-2 bg-brand-green text-white font-bold text-xs rounded-xl cursor-pointer"

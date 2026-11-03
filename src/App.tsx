@@ -19,7 +19,7 @@ import BuddyDeckView from './components/BuddyDeckView';
 import CartDrawer from './components/CartDrawer';
 import { Gift, ArrowRight, AlertCircle, LogOut } from 'lucide-react';
 import { Meal, Gym, GymChain, Order, User, OrderItem, Kitchen, MealReview, BuddyDeckRequest, GroupOrderRoom } from './types';
-import { GYMS_DATA, MEALS_DATA } from './data';
+import { GYMS_DATA } from './data';
 import { 
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
@@ -598,7 +598,7 @@ export default function App() {
     }
     return [];
   });
-  const [meals, setMeals] = useState<Meal[]>(() => MEALS_DATA);
+  const [meals, setMeals] = useState<Meal[]>([]);
 
   // Monitor placed group orders for floating tracking bubble
   useEffect(() => {
@@ -1774,7 +1774,7 @@ export default function App() {
         });
         setMeals(loadedMeals);
       } else {
-        setMeals(MEALS_DATA);
+        setMeals([]);
       }
     }, (error) => {
       console.error("Error subscribing to meals in App.tsx:", error);
@@ -1833,12 +1833,7 @@ export default function App() {
             await setDoc(doc(db, 'gym_chains', chain.id), chain);
           }
 
-          // 2. Meal Catalog
-          for (const m of MEALS_DATA) {
-            await setDoc(doc(db, 'meals', m.id), m);
-          }
-
-          // 3. Gym Partners
+          // Partner Gyms
           for (const g of GYMS_DATA) {
             await setDoc(doc(db, 'gyms', g.id), g);
           }
@@ -3474,6 +3469,8 @@ export default function App() {
 
         {activeTab === 'catering' && (
           <CateringPlannerTab
+            meals={meals}
+            selectedKitchen={selectedBhatti}
             onAddToCart={handleAddToCart}
             onOpenCart={() => setCartOpen(true)}
           />
