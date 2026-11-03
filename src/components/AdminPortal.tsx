@@ -2052,8 +2052,8 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setPartnerPassword('fz' + Math.floor(100000 + Math.random() * 900000));
     setPartnerVehicleType('ev_two_wheeler');
     setPartnerVehicleNumber('');
-    setPartnerKitchenId(allKitchens[0]?.id || 'k1');
-    setPartnerCity(allKitchens[0]?.city || 'Muzaffarpur');
+    setPartnerKitchenId(allKitchens[0]?.id || '');
+    setPartnerCity(allKitchens[0]?.city || '');
     setPartnerStatus('active');
     setAuthSyncStatus(null);
     setShowFleetModal(true);
@@ -2158,8 +2158,8 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setAgentEmail('');
     setAgentPassword('cs' + Math.floor(100000 + Math.random() * 900000));
     setAgentRole('overall');
-    setAgentKitchenId(allKitchens[0]?.id || 'k1');
-    setAgentCity(allKitchens[0]?.city || 'Muzaffarpur');
+    setAgentKitchenId(allKitchens[0]?.id || '');
+    setAgentCity(allKitchens[0]?.city || '');
     setAgentStatus('active');
     setShowSupportAgentModal(true);
   };
@@ -2171,7 +2171,7 @@ export default function AdminPortal({ onExit, onSwitchGateway, user, fbUser, all
     setAgentEmail(agent.email);
     setAgentPassword(agent.password);
     setAgentRole(agent.role);
-    setAgentKitchenId(agent.assignedKitchenId || allKitchens[0]?.id || 'k1');
+    setAgentKitchenId(agent.assignedKitchenId || allKitchens[0]?.id || '');
     setAgentCity(agent.assignedCity || 'Muzaffarpur');
     setAgentStatus(agent.status);
     setShowSupportAgentModal(true);
@@ -15358,8 +15358,8 @@ Free express delivery directly to trainer desks"
                       {invCategoryFilter === 'wastage' ? (
                         <div className="py-2">
                           <KitchenWastageManager
-                            kitchenId={activeKdsKitchen?.id || (allKitchens && allKitchens[0]?.id) || 'k1'}
-                            kitchenName={activeKdsKitchen?.name || (allKitchens && allKitchens[0]?.name) || 'Central Kitchen Hub'}
+                            kitchenId={activeKdsKitchen?.id || (allKitchens && allKitchens[0]?.id) || ''}
+                            kitchenName={activeKdsKitchen?.name || (allKitchens && allKitchens[0]?.name) || 'Kitchen Facility'}
                             inventoryItems={activeKdsKitchen ? inventoryItems.filter(i => i.kitchenId === activeKdsKitchen.id) : inventoryItems}
                             orders={orders}
                             meals={meals}

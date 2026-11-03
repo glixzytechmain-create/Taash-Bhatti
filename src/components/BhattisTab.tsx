@@ -21,61 +21,6 @@ import { GOOGLE_MAPS_API_KEY, isGoogleMapsAuthFailed, TAASH_BHATTI_BRAND_MAP_STY
 import { LeafletMap } from './LeafletMap';
 import FullScreenAddressPinModal from './FullScreenAddressPinModal';
 
-// Default high-fidelity baseline Bhattis in Muzaffarpur, Bihar
-const DEFAULT_BHATTIS: Kitchen[] = [
-  {
-    id: 'k1',
-    name: 'Taash Bhatti Central Kitchen',
-    address: 'Mithanpura Chowk, near Club Road, Muzaffarpur, Bihar 842002',
-    city: 'Muzaffarpur',
-    lat: 26.1220,
-    lng: 85.3780,
-    geofenceRadius: 15,
-    isActive: true,
-    isTakingOrders: true,
-    phone: '+91 98765 43210',
-    managerName: 'Chef Rajesh Kumar',
-    rating: 4.9,
-    specialties: ['Handi Dum Biryani', 'Saffron Tandoori Paneer', 'Smoked Kebabs'],
-    description: 'Our primary flagship clay-oven kitchen operating 4 massive handi tandoors continuously for instant fulfillment.',
-    image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'k2',
-    name: 'Taash Bhatti Express Hub - Brahmpura',
-    address: 'Brahmpura Main Road, Muzaffarpur, Bihar 842003',
-    city: 'Muzaffarpur',
-    lat: 26.1310,
-    lng: 85.3620,
-    geofenceRadius: 12,
-    isActive: true,
-    isTakingOrders: true,
-    phone: '+91 98765 43211',
-    managerName: 'Chef Amit Verma',
-    rating: 4.8,
-    specialties: ['Clay Oven Kulchas', 'Butter Garlic Naan', 'Reshmi Tikka Platter'],
-    description: 'Dedicated high-speed express Bhatti unit for rapid sub-20 minute urban deliveries.',
-    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'k3',
-    name: 'Taash Bhatti Tandoor - Gobarsahi Link',
-    address: 'Gobarsahi Chowk, Highway Road, Muzaffarpur, Bihar 842001',
-    city: 'Muzaffarpur',
-    lat: 26.0984,
-    lng: 85.3486,
-    geofenceRadius: 14,
-    isActive: true,
-    isTakingOrders: true,
-    phone: '+91 98765 43212',
-    managerName: 'Chef Vikram Singh',
-    rating: 4.9,
-    specialties: ['Smoked Charcoal Dal Makhani', 'Charcoal Roasted Corn', 'Mutton Galouti'],
-    description: 'Traditional slow-fire charcoal Bhatti specializing in authentic slow-simmered royal gravies.',
-    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=600&auto=format&fit=crop&q=80'
-  }
-];
-
 interface BhattisTabProps {
   selectedBhatti?: Kitchen | null;
   onSelectBhatti?: (bhatti: Kitchen | null) => void;
@@ -86,7 +31,7 @@ interface BhattisTabProps {
 export default function BhattisTab({
   selectedBhatti,
   onSelectBhatti,
-  allKitchens,
+  allKitchens = [],
   onNavigateToMenu,
 }: BhattisTabProps) {
   const [filterCity, setFilterCity] = useState<string>('all');
@@ -94,18 +39,20 @@ export default function BhattisTab({
   const [isEnlargedMapOpen, setIsEnlargedMapOpen] = useState(false);
   const [useLeaflet, setUseLeaflet] = useState<boolean>(false);
 
-  const bhattisToUse: Kitchen[] = (allKitchens && allKitchens.length > 0 ? allKitchens : DEFAULT_BHATTIS).map((k, idx) => ({
+  const bhattisToUse: Kitchen[] = (allKitchens || []).map((k, idx) => ({
     ...k,
-    rating: k.rating || 4.8 + (idx * 0.05),
-    specialties: k.specialties || ['Handi Dum Biryani', 'Saffron Tandoori Paneer', 'Smoked Kebabs'],
+    rating: k.rating || 4.9,
+    specialties: k.specialties || ['Signature Taash', 'Champaran Ahuna Handi', 'Bhatti Biryani'],
     image: k.image || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&auto=format&fit=crop&q=80'
   }));
 
   // Extract cities
-  const cities = ['all', ...Array.from(new Set(bhattisToUse.map((b) => b.city || 'Muzaffarpur')))];
+  const cities = bhattisToUse.length > 0 
+    ? ['all', ...Array.from(new Set(bhattisToUse.map((b) => b.city).filter(Boolean) as string[]))]
+    : ['all'];
 
   const filteredBhattis = bhattisToUse.filter((bhatti) => {
-    const cityMatch = filterCity === 'all' || (bhatti.city || 'Muzaffarpur').toLowerCase() === filterCity.toLowerCase();
+    const cityMatch = filterCity === 'all' || (bhatti.city || '').toLowerCase() === filterCity.toLowerCase();
     const activeMatch = bhatti.isActive !== false;
     
     const matchesSearch = !searchQuery.trim() || 
@@ -153,12 +100,12 @@ export default function BhattisTab({
           </h2>
 
           <p className="text-xs sm:text-sm text-stone-300 leading-relaxed font-medium">
-            Prefer your meals baked by a specific clay-oven kitchen? Select your favorite TAASH BHATTI below and your order will be dispatched exclusively from that Bhatti.
+            Prefer your signature Taash & Ahuna Handi crafted by a specific Bhatti branch? Select your favorite TAASH BHATTI below and your order will be dispatched exclusively from that kitchen.
           </p>
 
           <div className="pt-2 flex flex-wrap items-center gap-3 text-xs text-stone-300 font-bold">
             <span className="flex items-center gap-1 bg-white/10 px-2.5 py-1 rounded-xl border border-white/10">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Dedicated Clay Tandoor
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Cast-Iron & Ahuna Dum
             </span>
             <span className="flex items-center gap-1 bg-white/10 px-2.5 py-1 rounded-xl border border-white/10">
               <Zap className="w-3.5 h-3.5 text-amber-400" /> Direct Kitchen Route
@@ -256,12 +203,27 @@ export default function BhattisTab({
         {/* BHATTI OUTLETS LISTING */}
         <div className="lg:col-span-7 space-y-4">
           {filteredBhattis.length === 0 ? (
-            <div className="text-center py-12 bg-white border border-stone-200 rounded-3xl p-8 shadow-xs">
-              <Flame className="w-10 h-10 text-brand-orange mx-auto mb-3 opacity-40" />
-              <h4 className="font-extrabold text-sm text-stone-800 uppercase tracking-wider">No Bhatti Outlets Found</h4>
-              <p className="text-xs text-stone-500 max-w-sm mx-auto mt-1 font-medium">
-                Try searching for a different area or reset filters above.
+            <div className="text-center py-16 bg-white border border-stone-200 rounded-3xl p-8 shadow-xs space-y-3">
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
+                <Flame className="w-8 h-8" />
+              </div>
+              <h4 className="font-extrabold text-base text-stone-900 uppercase tracking-wider">
+                {bhattisToUse.length === 0 ? 'No Kitchen Branches Active Yet' : 'No Matching Bhatti Outlets'}
+              </h4>
+              <p className="text-xs text-stone-500 max-w-md mx-auto font-medium">
+                {bhattisToUse.length === 0 
+                  ? 'Kitchen branches registered by the admin in the Admin Portal will automatically appear here for real-time order dispatch and dine-in seating.'
+                  : 'Try searching for a different area or clear your search filters.'}
               </p>
+              {bhattisToUse.length > 0 && searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(''); setFilterCity('all'); }}
+                  className="px-4 py-2 bg-amber-500 text-stone-950 text-xs font-black rounded-xl cursor-pointer hover:bg-amber-400 transition-all"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">

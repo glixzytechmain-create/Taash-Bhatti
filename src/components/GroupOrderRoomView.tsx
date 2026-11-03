@@ -491,8 +491,8 @@ export default function GroupOrderRoomView({
         hostAvatar: user.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
         treatMode: createTreatMode,
         status: 'active',
-        kitchenId: matchedKitchen?.id || 'k1',
-        kitchenName: matchedKitchen?.name || 'Muzaffarpur Bhatti #1',
+        kitchenId: matchedKitchen?.id || kitchens[0]?.id || '',
+        kitchenName: matchedKitchen?.name || kitchens[0]?.name || 'Direct Bhatti Dispatch',
         deliveryAddress: {
           street: deliveryStreet.trim(),
           city: deliveryCity.trim(),
@@ -1141,8 +1141,8 @@ export default function GroupOrderRoomView({
       groupRoomCode: room.code,
       groupTreatMode: room.treatMode,
       isNonCancellable: true,
-      kitchenId: room.kitchenId || 'k1',
-      kitchenName: room.kitchenName || 'Muzaffarpur Bhatti #1',
+      kitchenId: room.kitchenId || kitchens[0]?.id || '',
+      kitchenName: room.kitchenName || kitchens[0]?.name || 'Direct Bhatti Dispatch',
       groupMembersSummary: (Object.values(room.members) as GroupOrderMember[]).map((m) => ({
         memberName: m.name,
         itemsCount: (room.items || []).filter((i) => i.addedByUserId === m.id).length,
@@ -1151,8 +1151,8 @@ export default function GroupOrderRoomView({
       })),
       trackingSteps: [
         { title: 'Group Order Placed', description: `Room ${room.code} verified and dispatched`, time: 'Just now', done: true },
-        { title: 'Kitchen Accepted', description: `Assigned to ${room.kitchenName || 'Woodfire Bhatti'}`, time: 'Next step', done: false },
-        { title: 'Tandoor Woodfire Cooking', description: 'Live fresh preparation', time: 'Pending', done: false },
+        { title: 'Kitchen Accepted', description: `Assigned to ${room.kitchenName || 'Bhatti Kitchen'}`, time: 'Next step', done: false },
+        { title: 'Bhatti Woodfire Cooking', description: 'Live fresh preparation', time: 'Pending', done: false },
         { title: 'Delivery Partner Assigned', description: 'Heading for direct door delivery', time: 'Pending', done: false },
         { title: 'Delivered Hot', description: 'Enjoy the group feast!', time: 'Pending', done: false },
       ],

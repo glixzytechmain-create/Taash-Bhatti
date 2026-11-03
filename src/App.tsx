@@ -1895,42 +1895,7 @@ export default function App() {
             await setDoc(doc(db, 'ingredients', ing.id), ing);
           }
 
-          // 6. Default Kitchen Branches
-          const defaultKitchens = [
-            {
-              id: 'k1',
-              name: 'Taash Bhatti Central Kitchen',
-              address: 'Mithanpura Chowk, near Club Road, Muzaffarpur, Bihar 842002',
-              city: 'Muzaffarpur',
-              lat: 26.1220,
-              lng: 85.3780,
-              geofenceRadius: 15,
-              isActive: true,
-              isTakingOrders: true,
-              phone: '+91 98765 43210',
-              managerName: 'Chef Rajesh Kumar',
-              registeredAt: '2026-01-01'
-            },
-            {
-              id: 'k2',
-              name: 'Taash Bhatti Express Hub - Brahmpura',
-              address: 'Brahmpura Main Road, Muzaffarpur, Bihar 842003',
-              city: 'Muzaffarpur',
-              lat: 26.1310,
-              lng: 85.3620,
-              geofenceRadius: 12,
-              isActive: true,
-              isTakingOrders: true,
-              phone: '+91 98765 43211',
-              managerName: 'Chef Amit Verma',
-              registeredAt: '2026-01-01'
-            }
-          ];
-          for (const k of defaultKitchens) {
-            await setDoc(doc(db, 'kitchens', k.id), k);
-          }
-
-          console.log("All real-world high-fidelity baseline data seeded into Firestore successfully!");
+          console.log("All real-world baseline data seeded into Firestore successfully!");
         }
       } catch (err) {
         console.error("Silent seeder error:", err);
@@ -1944,7 +1909,7 @@ export default function App() {
     const unsubscribeKitchens = onSnapshot(collection(db, 'kitchens'), (snapshot) => {
       const loadedKitchens: Kitchen[] = [];
       snapshot.forEach((doc) => {
-        loadedKitchens.push(doc.data() as Kitchen);
+        loadedKitchens.push({ id: doc.id, ...doc.data() } as Kitchen);
       });
       setKitchens(loadedKitchens);
     }, (error) => {
@@ -1952,6 +1917,22 @@ export default function App() {
     });
     return () => unsubscribeKitchens();
   }, []);
+
+  // Synchronize selectedBhatti with real kitchens in Firestore (clear stale cached dummy kitchens)
+  useEffect(() => {
+    if (selectedBhatti) {
+      if (kitchens.length === 0) {
+        handleSelectBhatti(null);
+      } else {
+        const found = kitchens.find(k => k.id === selectedBhatti.id);
+        if (!found) {
+          handleSelectBhatti(null);
+        } else {
+          setSelectedBhatti(found);
+        }
+      }
+    }
+  }, [kitchens]);
 
   // Sync unread support ticket notifications
   useEffect(() => {

@@ -269,9 +269,7 @@ export default function KitchenManagerApp({
     const unsub = onSnapshot(collection(db, 'kitchens'), (snap) => {
       const fetched: Kitchen[] = [];
       snap.forEach((d) => fetched.push({ id: d.id, ...d.data() } as Kitchen));
-      if (fetched.length > 0) {
-        setKitchensList(fetched);
-      }
+      setKitchensList(fetched);
     }, (err) => {
       console.warn("Firestore kitchens listener error:", err);
     });
@@ -890,16 +888,16 @@ export default function KitchenManagerApp({
       return;
     }
 
-    // Default fallback branch manager account
-    const assignedK = kitchensList[0] || { id: 'k1', name: 'Central Kitchen Hub' };
+    // Fallback branch manager account if not pre-registered in Firestore
+    const assignedK = kitchensList[0] || null;
     const defaultMgr: KitchenManager = {
       id: 'KM-' + Math.floor(1000 + Math.random() * 9000),
       name: emailClean.split('@')[0].toUpperCase(),
       email: emailClean,
       password: passClean,
       phone: '+91 98765 43210',
-      assignedKitchenId: assignedK.id,
-      assignedKitchenName: assignedK.name,
+      assignedKitchenId: assignedK ? assignedK.id : '',
+      assignedKitchenName: assignedK ? assignedK.name : 'Unassigned Branch',
       status: 'active',
       role: 'kitchen_manager',
       registeredAt: new Date().toISOString()
@@ -1072,7 +1070,7 @@ export default function KitchenManagerApp({
   const handleDenyOrder = async (orderId: string) => {
     try {
       await updateDoc(doc(db, 'orders', orderId), {
-        rejectedByKitchenIds: [activeKitchen?.id || 'k1'],
+        rejectedByKitchenIds: activeKitchen?.id ? [activeKitchen.id] : [],
         status: 'sent'
       });
       playKitchenChime('alert');
@@ -1709,6 +1707,18 @@ export default function KitchenManagerApp({
           >
             Turn Off ☀️
           </button>
+        </div>
+      )}
+
+      {/* NO REGISTERED KITCHENS ALERT */}
+      {kitchensList.length === 0 && (
+        <div className="bg-rose-950/80 border-b border-rose-500/50 px-4 py-3 text-xs text-rose-200 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2 max-w-4xl">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>
+              <strong>No Kitchen Branches Registered:</strong> Please register a kitchen branch in the Admin Portal under Kitchen Operations to enable order dispatch and KDS prep lanes.
+            </span>
+          </div>
         </div>
       )}
 
@@ -4507,7 +4517,7 @@ export default function KitchenManagerApp({
                 <button
                   key={b.mins}
                   type="button"
-                  onClick={() => handleSetGlobalPrepDelay(activeKitchen?.id || 'k1', b.mins)}
+                  onClick={() => activeKitchen?.id && handleSetGlobalPrepDelay(activeKitchen.id, b.mins)}
                   className={`p-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                     (activeKitchen?.globalPrepDelayMinutes || 0) === b.mins
                       ? 'bg-amber-500 text-brand-charcoal border-amber-500 shadow-md'

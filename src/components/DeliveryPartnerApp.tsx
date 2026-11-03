@@ -166,7 +166,7 @@ export default function DeliveryPartnerApp({
           phone: auth.currentUser.phoneNumber || '+91 98765 43210',
           email: emailLower,
           password: '',
-          kitchenId: 'k1',
+          kitchenId: allKitchens[0]?.id || '',
           vehicleNumber: 'BR-06-TB-2026',
           vehicleType: 'ev_two_wheeler',
           status: 'active',
@@ -820,8 +820,8 @@ export default function DeliveryPartnerApp({
         password: passInput,
         vehicleType: 'ev_two_wheeler',
         vehicleNumber: 'FZ-EV-01',
-        kitchenId: 'k1',
-        kitchenName: 'Central Kitchen Hub',
+        kitchenId: allKitchens[0]?.id || '',
+        kitchenName: allKitchens[0]?.name || 'Unassigned Branch',
         status: 'active',
         firebaseAuthSynced: true,
         firebaseUid: authUserCred.user.uid
@@ -1747,9 +1747,9 @@ export default function DeliveryPartnerApp({
   // Find origin kitchen for active order or default
   const originKitchen = (activeUnlockedOrder && allKitchens.find((k) => k.id === activeUnlockedOrder.acceptedByKitchenId || k.id === activeUnlockedOrder.kitchenId)) ||
     allKitchens[0] || {
-      id: 'k1',
-      name: 'Central Kitchen Hub',
-      address: 'Mithanpura Central Kitchen, Club Road Junction',
+      id: '',
+      name: 'Kitchen Facility',
+      address: 'Central Kitchen',
       lat: 26.1209,
       lng: 85.3647,
       geofenceRadius: 10
