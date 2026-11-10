@@ -11,3 +11,39 @@ env:
     value: production
     availability:
       - RUNTIME
+  - variable: BILLDESK_MERCHANT_ID
+    value: UATIBLENT
+    availability:
+      - RUNTIME
+  - variable: BILLDESK_CLIENT_ID
+    value: uatiblent
+    availability:
+      - RUNTIME
+  - variable: BILLDESK_SECURITY_ID
+    value: NxeoeS4C9mXj
+    availability:
+      - RUNTIME
+  - variable: BILLDESK_ENCRYPTION_KEY
+    value: tn5iq1PcRfkcvk43zvl0dY1mn0B6yUeB
+    availability:
+      - RUNTIME
+  - variable: BILLDESK_SIGNING_KEY
+    value: eHWv8ZLCl3vJD5kjpKRiEYkVTCPYtAvE
+    availability:
+      - RUNTIME
+  - variable: BILLDESK_ENV
+    value: uat
+    availability:
+      - RUNTIME
+  - variable: BILLDESK_RETURN_URL
+    value: https://taashbhatti.com/api/payment/billdesk/callback
+    availability:
+      - RUNTIME
+  - variable: TWO_FACTOR_API_KEY
+    value: 5ad02ca2-b076-11f1-90d7-0200cd936042
+    availability:
+      - RUNTIME
+  - variable: ADMIN_SECURE_PHONE
+    value: "9341819216"
+    availability:
+      - RUNTIME
