@@ -732,6 +732,28 @@ app.get('/api/payment/billdesk/config', (_req, res) => {
   });
 });
 
+app.get('/api/payment/billdesk/status', async (_req, res) => {
+  let outboundIp = 'unknown';
+  try {
+    const ipRes = await fetch('https://api.ipify.org?format=json');
+    const ipData = (await ipRes.json()) as any;
+    outboundIp = ipData.ip || 'unknown';
+  } catch (e: any) {
+    outboundIp = e.message;
+  }
+  const isNeo = isBillDeskNeoConfigured();
+  const cfg = getBillDeskNeoConfig();
+  res.json({
+    configured: isNeo,
+    env: cfg.env,
+    mercid: cfg.mercid,
+    clientid: cfg.clientid,
+    keyid: cfg.keyid,
+    serverOutboundIp: outboundIp,
+    whitelistedIpsInEmail: ['35.219.200.62', '49.42.13.66']
+  });
+});
+
 // 2. Initiate BillDesk Payment Order (Supports BillDesk Neo Full Redirect & Classic fallback)
 app.post('/api/payment/billdesk/initiate', async (req, res) => {
   try {

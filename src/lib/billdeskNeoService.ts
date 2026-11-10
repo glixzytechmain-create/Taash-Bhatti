@@ -244,10 +244,19 @@ export async function createBillDeskNeoOrder(params: BillDeskNeoCreateOrderParam
 
     if (!response.ok) {
       console.error('BillDesk Neo Create Order HTTP error:', response.status, responseText);
+      let errorDetail = responseText.substring(0, 200);
+      try {
+        const decryptedErr = await verifyAndDecryptJose(responseText, cfg);
+        if (decryptedErr && (decryptedErr.message || decryptedErr.error_code)) {
+          errorDetail = `${decryptedErr.message || 'Error'} (${decryptedErr.error_code || 'CODE'})`;
+        }
+      } catch (_e) {
+        // use raw substring
+      }
       return {
         success: false,
         orderId: params.orderId,
-        error: `BillDesk API error (${response.status}): ${responseText.substring(0, 200)}`
+        error: `BillDesk API error (${response.status}): ${errorDetail}`
       };
     }
 
