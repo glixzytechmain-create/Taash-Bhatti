@@ -24,11 +24,11 @@ env:
     availability:
       - RUNTIME
   - variable: BILLDESK_ENCRYPTION_KEY
-    value: tn5iq1PcRfkcvk43zvl0dY1mn0B6yUeB
+    value: tn5iq1PcRfkcvk43zvlOdY1mnOB6yUeB
     availability:
       - RUNTIME
   - variable: BILLDESK_SIGNING_KEY
-    value: eHWv8ZLCl3vJD5kjpKRiEYkVTCPYtAvE
+    value: eHWv8ZLCl3vJD5kjpKRiEYkVTCpYtAvE
     availability:
       - RUNTIME
   - variable: BILLDESK_ENV
