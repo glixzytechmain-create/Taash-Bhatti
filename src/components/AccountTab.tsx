@@ -2602,9 +2602,21 @@ export default function AccountTab({
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-100 text-stone-800 border border-stone-300 font-extrabold text-[9px]">
                               <Banknote className="w-2.5 h-2.5 text-stone-600" /> Cash on Delivery (COD)
                             </span>
-                          ) : (
+                          ) : (order.total || 0) <= 0 && (order.walletUsedAmount || 0) > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-300 font-extrabold text-[9px]">
+                              <Wallet className="w-2.5 h-2.5 text-amber-700" /> Paid with Bhatti Wallet
+                            </span>
+                          ) : order.paymentStatus === 'paid' || order.paymentStatus === 'collected' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-[9px]">
-                              <CreditCard className="w-2.5 h-2.5 text-emerald-600" /> Prepaid Online ({order.paymentMethod || 'Online'})
+                              <CreditCard className="w-2.5 h-2.5 text-emerald-600" /> Paid Online ({order.paymentMethod || 'Online'})
+                            </span>
+                          ) : order.paymentStatus === 'failed' || order.status === 'cancelled' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 font-extrabold text-[9px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Payment Failed / Cancelled
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-[9px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Payment Pending ({order.paymentMethod || 'Online'})
                             </span>
                           )}
                         </div>

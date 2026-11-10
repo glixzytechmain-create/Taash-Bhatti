@@ -42,25 +42,28 @@ export function isCashOnDeliveryOrder(order: { paymentMethod?: string; isCOD?: b
 /**
  * Checks if an order was genuinely prepaid and paid upfront.
  * Cash on Delivery is strictly NEVER prepaid.
+ * Unpaid, failed, pending, or cancelled orders are strictly NEVER prepaid.
  */
-export function isTrulyPrepaidOrder(order: { paymentMethod?: string; isCOD?: boolean; paymentStatus?: string; walletUsedAmount?: number } | null | undefined): boolean {
+export function isTrulyPrepaidOrder(order: { paymentMethod?: string; isCOD?: boolean; paymentStatus?: string; walletUsedAmount?: number; status?: string } | null | undefined): boolean {
   if (!order) return false;
   // If it is Cash on Delivery, it is strictly NEVER prepaid
   if (isCashOnDeliveryOrder(order)) return false;
 
-  const pm = (order.paymentMethod || '').toLowerCase().trim();
+  // If order is cancelled or payment status is explicitly pending, unpaid, or failed, it is strictly NOT prepaid
+  if (
+    order.status === 'cancelled' ||
+    order.paymentStatus === 'pending' ||
+    order.paymentStatus === 'unpaid' ||
+    order.paymentStatus === 'failed'
+  ) {
+    return false;
+  }
+
   const isPaidStatus = order.paymentStatus === 'paid' || order.paymentStatus === 'collected';
-  const isPrepaidMethod =
-    pm.includes('online') ||
-    pm.includes('upi') ||
-    pm.includes('card') ||
-    pm.includes('netbanking') ||
-    pm.includes('wallet') ||
-    pm.includes('prepaid');
   const hasWalletDeduction = Boolean(order.walletUsedAmount && order.walletUsedAmount > 0);
 
-  // Must not be explicitly unpaid, and must have verified payment status or online/wallet method
-  return order.paymentStatus !== 'unpaid' && (isPaidStatus || isPrepaidMethod || hasWalletDeduction);
+  // Must have verified paid status or genuine wallet-covered status
+  return isPaidStatus || (hasWalletDeduction && order.paymentStatus !== 'failed' && order.paymentStatus !== 'pending');
 }
 
 /**

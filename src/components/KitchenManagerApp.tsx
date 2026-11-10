@@ -777,6 +777,13 @@ export default function KitchenManagerApp({
   const kitchenOrders = useMemo(() => {
     if (!activeKitchen) return [];
     return liveOrders.filter(order => {
+      // Exclude cancelled or failed orders
+      if (order.status === 'cancelled' || order.paymentStatus === 'failed') return false;
+
+      // Online payment orders MUST have payment confirmed as 'paid' or covered before kitchen accepts/cooks
+      const isPaidOrCod = order.isCOD || order.paymentStatus === 'paid' || (order.total || 0) <= 0;
+      if (!isPaidOrCod) return false;
+
       if (order.acceptedByKitchenId === activeKitchen.id) return true;
       if (order.kitchenId === activeKitchen.id) return true;
       if (order.status === 'sent' && (!order.acceptedByKitchenId || order.acceptedByKitchenId === '')) {

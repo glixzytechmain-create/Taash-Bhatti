@@ -906,6 +906,8 @@ app.post('/api/payment/billdesk/callback', async (req, res) => {
           const orderData = orderSnap.data();
           if (isSuccess) {
             await updateDoc(orderRef, {
+              status: 'sent',
+              kdsStage: 'received',
               paymentStatus: 'paid',
               paymentMethod: `BillDesk Online (${paymentMethod})`,
               transactionId: txnReferenceNo,
@@ -929,12 +931,35 @@ app.post('/api/payment/billdesk/callback', async (req, res) => {
               }
             }
           } else {
+            // PAYMENT FAILED OR CANCELLED:
+            // Explicitly mark order as CANCELLED so kitchen never cooks it, and revert any ember coins used
             await updateDoc(orderRef, {
-              paymentStatus: 'unpaid',
+              status: 'cancelled',
+              kdsStage: 'cancelled',
+              paymentStatus: 'failed',
+              cancelledAt: new Date().toISOString(),
+              cancelledBy: 'system',
+              cancellationReason: `Online Payment Failed: ${errorDescription || 'Transaction cancelled or declined by bank.'}`,
               pgGateway: 'billdesk',
               pgResponseCode: authStatus,
               paymentFailureReason: errorDescription
             });
+
+            // Revert any Ember coins used for this failed order back to customer
+            const goldenUsed = orderData.goldenEmbersUsed || 0;
+            const standardUsed = orderData.standardEmbersUsed || 0;
+            if (orderData.userId && (goldenUsed > 0 || standardUsed > 0)) {
+              try {
+                const userRef = doc(db, 'users', orderData.userId);
+                await updateDoc(userRef, {
+                  goldenEmberBalance: increment(goldenUsed),
+                  standardEmberBalance: increment(standardUsed),
+                  walletBalance: increment(goldenUsed + standardUsed)
+                });
+              } catch (revertErr) {
+                console.warn('Could not revert ember coins on failed payment:', revertErr);
+              }
+            }
           }
         }
       } catch (dbErr) {
@@ -1014,6 +1039,8 @@ app.post('/api/payment/billdesk/webhook', async (req, res) => {
           const current = orderSnap.data();
           if (isSuccess && current.paymentStatus !== 'paid') {
             await updateDoc(orderRef, {
+              status: 'sent',
+              kdsStage: 'received',
               paymentStatus: 'paid',
               paymentMethod: `BillDesk Online (${paymentMethod})`,
               transactionId: txnReferenceNo,

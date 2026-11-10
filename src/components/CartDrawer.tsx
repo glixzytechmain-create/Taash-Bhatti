@@ -1312,6 +1312,144 @@ export default function CartDrawer({
     await applyCouponByCode(couponCode);
   };
 
+  const commitDiscountsAndSaveOrder = async (orderToPlace: Order) => {
+    // 1. Increment coupon usage count dynamically and accumulate totalSavings in Firestore
+    for (const coupon of appliedCoupons) {
+      if ((coupon as any).isReferral) continue;
+      if (coupon.id || coupon.code) {
+        const cId = coupon.id || coupon.code;
+        try {
+          let savingsContrib = 0;
+          if (coupon.discountType === 'percentage') {
+            const raw = Math.round(regularSubtotal * ((coupon.discountValue || 0) / 100));
+            const maxCap = coupon.criteria?.maxDiscountCap || coupon.maxDiscountCap;
+            savingsContrib = maxCap ? Math.min(raw, maxCap) : raw;
+          } else if (coupon.discountType === 'fixed') {
+            savingsContrib = Math.min(regularSubtotal, coupon.discountValue || 0);
+          } else if (coupon.discountType === 'free_delivery') {
+            savingsContrib = 30;
+          }
+
+          const couponRef = doc(db, 'coupons', cId);
+          const snap = await getDoc(couponRef);
+          if (snap.exists()) {
+            const currentData = snap.data();
+            const currentCount = currentData.usageCount || 0;
+            const currentGlobalCount = currentData.globalUsageCount || currentCount || 0;
+            const currentSavings = currentData.totalSavings || 0;
+            const currentBreakdown = currentData.channelBreakdown || { delivery: 0, takeaway: 0, dine_in: 0 };
+            const channelKey: 'delivery' | 'takeaway' | 'dine_in' =
+              fulfillmentType === 'takeaway' ? 'takeaway' : fulfillmentType === 'dine_in' ? 'dine_in' : 'delivery';
+            currentBreakdown[channelKey] = (currentBreakdown[channelKey] || 0) + 1;
+
+            const redemptionRecord: SmartCouponRedemptionRecord = {
+              orderId: orderToPlace.id,
+              userId: auth.currentUser?.uid || user.id || 'guest',
+              userName: orderToPlace.customerName || user.name || 'Customer',
+              userPhone: orderToPlace.customerPhone || user.phone || '',
+              fulfillmentMode: channelKey,
+              subtotal: regularSubtotal,
+              discountAmount: savingsContrib,
+              timestamp: new Date().toISOString()
+            };
+
+            const recentRedemptions = Array.isArray(currentData.recentRedemptions)
+              ? [redemptionRecord, ...currentData.recentRedemptions].slice(0, 50)
+              : [redemptionRecord];
+
+            await updateDoc(couponRef, {
+              usageCount: currentCount + 1,
+              globalUsageCount: currentGlobalCount + 1,
+              totalSavings: currentSavings + savingsContrib,
+              channelBreakdown: currentBreakdown,
+              recentRedemptions: recentRedemptions,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        } catch (err) {
+          console.error("Error updating coupon usage/savings:", err);
+        }
+      }
+    }
+
+    // 2. Debit Ember coins if used
+    if (emberCheckout.totalEmberDiscount > 0) {
+      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
+      const newGolden = Math.max(0, goldenBalance - emberCheckout.goldenDeduction);
+      const newStandard = Math.max(0, standardBalance - emberCheckout.standardDeduction);
+      const newTotal = newGolden + newStandard;
+
+      const updatedUser: User = {
+        ...user,
+        goldenEmberBalance: newGolden,
+        standardEmberBalance: newStandard,
+        walletBalance: newTotal
+      };
+
+      if (onUpdateUser) {
+        onUpdateUser(updatedUser);
+      }
+
+      try {
+        ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
+          const cached = localStorage.getItem(key);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            parsed.goldenEmberBalance = newGolden;
+            parsed.standardEmberBalance = newStandard;
+            parsed.walletBalance = newTotal;
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
+        });
+        window.dispatchEvent(
+          new CustomEvent('taashbhatti_user_updated', {
+            detail: {
+              goldenEmberBalance: newGolden,
+              standardEmberBalance: newStandard,
+              walletBalance: newTotal
+            }
+          })
+        );
+      } catch (e) {}
+
+      try {
+        await debitEmberCoinsForOrder({
+          userId: activeUserId,
+          orderId: orderToPlace.id,
+          goldenAmount: emberCheckout.goldenDeduction,
+          standardAmount: emberCheckout.standardDeduction
+        });
+      } catch (emberErr) {
+        console.warn("Could not debit ember coins:", emberErr);
+      }
+    }
+
+    // 3. Credit Gold Ember Coins if customer banked free delivery shortfall on 100% wallet paid order
+    if (gecShortfallAmount > 0 && !orderToPlace.isCOD && (orderToPlace.total || 0) <= 0) {
+      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
+      try {
+        await creditGoldenEmbersForShortfall({
+          userId: activeUserId,
+          orderId: orderToPlace.id,
+          amount: gecShortfallAmount
+        });
+      } catch (gecErr) {
+        console.warn("Could not credit Golden Embers for shortfall:", gecErr);
+      }
+
+      if (onUpdateUser) {
+        onUpdateUser({
+          ...user,
+          goldenEmberBalance: (user.goldenEmberBalance || 0) + gecShortfallAmount,
+          walletBalance: (user.walletBalance || 0) + gecShortfallAmount
+        });
+      }
+    }
+
+    // 4. Persist order in Firestore & App state
+    await onPlaceOrder(orderToPlace);
+  };
+
   const handleConfirmSwitchToCod = async () => {
     if (!pgNoticeModal?.pendingOrder) {
       setPgNoticeModal(null);
@@ -1322,13 +1460,16 @@ export default function CartDrawer({
       isCOD: true,
       paymentMethod: 'Cash on Delivery (COD)',
       paymentStatus: 'unpaid',
+      kdsStage: 'received',
+      status: 'sent',
       pgGateway: undefined,
       pendingEmberBonus: (pgNoticeModal.pendingOrder.pendingEmberBonus || 0) > 0 ? pgNoticeModal.pendingOrder.pendingEmberBonus : undefined,
       gecBonusAwarded: false
     };
 
     try {
-      await onPlaceOrder(orderToSwitch);
+      await commitDiscountsAndSaveOrder(orderToSwitch);
+      onClearCart();
       setSelectedPayment('Cash on Delivery (COD)');
       setPlacedOrderId(orderToSwitch.id);
       if (orderToSwitch.takeawayPickupOtp) {
@@ -1568,156 +1709,22 @@ export default function CartDrawer({
       rejectedByKitchenIds: [],
     };
 
-    // Increment coupon usage count dynamically and accumulate totalSavings in Firestore
-    for (const coupon of appliedCoupons) {
-      if ((coupon as any).isReferral) continue;
-      if (coupon.id || coupon.code) {
-        const cId = coupon.id || coupon.code;
-        try {
-          // Calculate savings contribution for this specific coupon
-          let savingsContrib = 0;
-          if (coupon.discountType === 'percentage') {
-            const raw = Math.round(regularSubtotal * ((coupon.discountValue || 0) / 100));
-            const maxCap = coupon.criteria?.maxDiscountCap || coupon.maxDiscountCap;
-            savingsContrib = maxCap ? Math.min(raw, maxCap) : raw;
-          } else if (coupon.discountType === 'fixed') {
-            savingsContrib = Math.min(regularSubtotal, coupon.discountValue || 0);
-          } else if (coupon.discountType === 'free_delivery') {
-            savingsContrib = 30; // Delivery fee saved
-          }
-
-          const couponRef = doc(db, 'coupons', cId);
-          const snap = await getDoc(couponRef);
-          if (snap.exists()) {
-            const currentData = snap.data();
-            const currentCount = currentData.usageCount || 0;
-            const currentGlobalCount = currentData.globalUsageCount || currentCount || 0;
-            const currentSavings = currentData.totalSavings || 0;
-            const currentBreakdown = currentData.channelBreakdown || { delivery: 0, takeaway: 0, dine_in: 0 };
-            const channelKey: 'delivery' | 'takeaway' | 'dine_in' =
-              fulfillmentType === 'takeaway' ? 'takeaway' : fulfillmentType === 'dine_in' ? 'dine_in' : 'delivery';
-            currentBreakdown[channelKey] = (currentBreakdown[channelKey] || 0) + 1;
-
-            const redemptionRecord: SmartCouponRedemptionRecord = {
-              orderId: orderId,
-              userId: auth.currentUser?.uid || user.id || 'guest',
-              userName: finalCustomerName || user.name || 'Customer',
-              userPhone: finalCustomerPhone || user.phone || '',
-              fulfillmentMode: channelKey,
-              subtotal: regularSubtotal,
-              discountAmount: savingsContrib,
-              timestamp: new Date().toISOString()
-            };
-
-            const recentRedemptions = Array.isArray(currentData.recentRedemptions)
-              ? [redemptionRecord, ...currentData.recentRedemptions].slice(0, 50)
-              : [redemptionRecord];
-
-            await updateDoc(couponRef, {
-              usageCount: currentCount + 1,
-              globalUsageCount: currentGlobalCount + 1,
-              totalSavings: currentSavings + savingsContrib,
-              channelBreakdown: currentBreakdown,
-              recentRedemptions: recentRedemptions,
-              updatedAt: new Date().toISOString()
-            });
-          }
-        } catch (err) {
-          console.error("Error updating coupon usage/savings:", err);
-        }
-      }
-    }
-
-    // Debit Ember coins if used
-    if (emberCheckout.totalEmberDiscount > 0) {
-      const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
-      const newGolden = Math.max(0, goldenBalance - emberCheckout.goldenDeduction);
-      const newStandard = Math.max(0, standardBalance - emberCheckout.standardDeduction);
-      const newTotal = newGolden + newStandard;
-
-      const updatedUser: User = {
-        ...user,
-        goldenEmberBalance: newGolden,
-        standardEmberBalance: newStandard,
-        walletBalance: newTotal
-      };
-
-      if (onUpdateUser) {
-        onUpdateUser(updatedUser);
-      }
-
-      try {
-        ['taashbhatti_user_session', 'taashbhatti_cached_user_profile'].forEach((key) => {
-          const cached = localStorage.getItem(key);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            parsed.goldenEmberBalance = newGolden;
-            parsed.standardEmberBalance = newStandard;
-            parsed.walletBalance = newTotal;
-            localStorage.setItem(key, JSON.stringify(parsed));
-          }
-        });
-        window.dispatchEvent(
-          new CustomEvent('taashbhatti_user_updated', {
-            detail: {
-              goldenEmberBalance: newGolden,
-              standardEmberBalance: newStandard,
-              walletBalance: newTotal
-            }
-          })
-        );
-      } catch (e) {}
-
-      try {
-        await debitEmberCoinsForOrder({
-          userId: activeUserId,
-          orderId,
-          goldenAmount: emberCheckout.goldenDeduction,
-          standardAmount: emberCheckout.standardDeduction
-        });
-      } catch (emberErr) {
-        console.warn("Could not debit ember coins:", emberErr);
-      }
-    }
-
-    // Credit Gold Ember Coins if customer banked free delivery shortfall
     const isCodOrder = isCashOnDeliveryOrder({ paymentMethod: selectedPayment });
-    if (gecShortfallAmount > 0) {
-      if (!isCodOrder && finalTotal <= 0) {
-        // 100% WALLET COVERED ORDER: Credit immediately into Bhatti Wallet
-        const activeUserId = user.id || auth.currentUser?.uid || localStorage.getItem('taashbhatti_guest_user_id') || 'guest_user';
-        try {
-          await creditGoldenEmbersForShortfall({
-            userId: activeUserId,
-            orderId,
-            amount: gecShortfallAmount
-          });
-        } catch (gecErr) {
-          console.warn("Could not credit Golden Embers for shortfall:", gecErr);
-        }
-
-        if (onUpdateUser) {
-          onUpdateUser({
-            ...user,
-            goldenEmberBalance: (user.goldenEmberBalance || 0) + gecShortfallAmount,
-            walletBalance: (user.walletBalance || 0) + gecShortfallAmount
-          });
-        }
-      } else {
-        // CASH ON DELIVERY (COD) OR ONLINE PAYMENT GATEWAY:
-        // Defer crediting until the delivery partner OTP handover OR BillDesk PG callback confirms payment!
-        newOrder.pendingEmberBonus = gecShortfallAmount;
-        newOrder.gecBonusAwarded = false;
-      }
-    }
-
     const isOnlinePayment = !isCodOrder && finalTotal > 0;
 
+    // Credit Gold Ember Coins if customer banked free delivery shortfall
+    if (gecShortfallAmount > 0 && !isCodOrder && finalTotal > 0) {
+      newOrder.pendingEmberBonus = gecShortfallAmount;
+      newOrder.gecBonusAwarded = false;
+    }
+
     if (isOnlinePayment) {
+      newOrder.kdsStage = 'payment_pending' as any;
+      newOrder.paymentStatus = 'pending';
+      newOrder.pgGateway = 'billdesk';
+
       setIsRedirectingToPg(true);
       try {
-        await onPlaceOrder(newOrder);
-
         const initiateRes = await fetch('/api/payment/billdesk/initiate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1734,9 +1741,10 @@ export default function CartDrawer({
         const initiateData = await initiateRes.json();
 
         if (initiateData.success && initiateData.pgUrl && initiateData.pgPayload) {
+          // BillDesk session initiated. Persist order with pending status, deduct discounts, and redirect to gateway.
+          await commitDiscountsAndSaveOrder(newOrder);
           onClearCart();
 
-          // Build and submit hidden form to official BillDesk hosted gateway (supports both Neo and legacy payload)
           const form = document.createElement('form');
           form.method = 'POST';
           form.action = initiateData.pgUrl;
@@ -1757,28 +1765,32 @@ export default function CartDrawer({
           return;
         } else {
           setIsRedirectingToPg(false);
-          if (initiateData.configured === false) {
-            setPgNoticeModal({
-              title: 'Utkarsh Bank & BillDesk Onboarding',
-              message: 'BillDesk production gateway credentials (BILLDESK_MERCHANT_ID, BILLDESK_CHECKSUM_KEY) have not been entered into .env yet. Would you like to switch to Cash on Delivery (COD) to place this order now?',
-              allowCodSwitch: true,
-              pendingOrder: newOrder
-            });
-            return;
-          } else {
-            alert(`⚠️ Payment Gateway Error: ${initiateData.error || 'Unable to connect to BillDesk. Please try again or choose Cash on Delivery.'}`);
-            return;
-          }
+          // Payment initiation failed. Zero Firestore records created. Zero coins deducted. Cart preserved.
+          setPgNoticeModal({
+            title: initiateData.configured === false ? 'Payment Gateway Setup' : 'Online Payment Unavailable',
+            message: initiateData.configured === false
+              ? 'BillDesk payment gateway is currently awaiting live activation. Would you like to switch to Cash on Delivery (COD) to place this feast now?'
+              : `Unable to initiate payment with online gateway (${initiateData.error || 'Server error'}). Would you like to switch to Cash on Delivery (COD) or return to your cart?`,
+            allowCodSwitch: true,
+            pendingOrder: newOrder
+          });
+          return;
         }
       } catch (err: any) {
         setIsRedirectingToPg(false);
         console.error('Error initiating BillDesk payment:', err);
-        alert('⚠️ Network error connecting to BillDesk Gateway. Please check your connection or select Cash on Delivery.');
+        setPgNoticeModal({
+          title: 'Connection Error',
+          message: 'Unable to reach the payment gateway. Would you like to switch to Cash on Delivery (COD) to place your feast now?',
+          allowCodSwitch: true,
+          pendingOrder: newOrder
+        });
         return;
       }
     }
 
-    onPlaceOrder(newOrder);
+    // COD OR 100% WALLET-COVERED ORDER
+    await commitDiscountsAndSaveOrder(newOrder);
     setPlacedOrderId(orderId);
     if (takeawayOtp) {
       setPlacedTakeawayOtp(takeawayOtp);
