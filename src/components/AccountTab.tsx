@@ -49,6 +49,8 @@ import {
   Gamepad2,
   Ticket,
   Compass,
+  Headphones,
+  X,
 } from 'lucide-react';
 import { User, Order, FAQ, SubscriptionPlan, Meal, SupportTicket, ChatMessage, OrderDeliveryRating, Kitchen, MealReview } from '../types';
 import { FAQS_DATA, SUBSCRIPTIONS_DATA } from '../data';
@@ -455,6 +457,80 @@ export default function AccountTab({
       setReorderGroupModalOrder(order);
     } else {
       onReorder(order.items);
+    }
+  };
+
+  // Active Order Live Help Modal state
+  const [activeOrderHelp, setActiveOrderHelp] = useState<Order | null>(null);
+  const [orderHelpCategory, setOrderHelpCategory] = useState<'delay' | 'rider' | 'address' | 'items' | 'other'>('delay');
+  const [orderHelpMessage, setOrderHelpMessage] = useState<string>('');
+  const [isSubmittingOrderHelp, setIsSubmittingOrderHelp] = useState<boolean>(false);
+  const [orderHelpSuccessNotice, setOrderHelpSuccessNotice] = useState<string | null>(null);
+
+  const handleSubmitOrderHelpTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOrderHelp) return;
+    setIsSubmittingOrderHelp(true);
+    setOrderHelpSuccessNotice(null);
+
+    const ticketId = `TICKET-ORD-${activeOrderHelp.id.slice(-6)}-${Date.now().toString().slice(-4)}`;
+    const categoryLabels: Record<string, string> = {
+      delay: '⏱️ Order Delayed / ETA Inquiry',
+      rider: '🛵 Rider Contact / Location Issue',
+      address: '📍 Update Delivery Address / Gate Notes',
+      items: '🍲 Food Preparation / Customization Query',
+      other: '❓ General Order Assistance',
+    };
+
+    const newTicket: SupportTicket = {
+      id: ticketId,
+      ticketSource: 'customer',
+      userId: user.id || fbUser?.uid || activeOrderHelp.userId || 'guest',
+      userEmail: user.email || (activeOrderHelp as any).customerEmail || 'customer@taashbhatti.com',
+      userName: user.name || activeOrderHelp.customerName || 'Customer',
+      userPhone: user.phone || activeOrderHelp.customerPhone || '',
+      orderId: activeOrderHelp.id,
+      orderDate: activeOrderHelp.date || (activeOrderHelp as any).createdAt || new Date().toISOString(),
+      orderTotal: activeOrderHelp.total,
+      orderStatus: activeOrderHelp.status,
+      orderItemsSummary: activeOrderHelp.items?.map(i => `${i.quantity}x ${i.meal?.name || i.dealTitle || 'Dish'}`).join(', ') || 'Feast items',
+      orderDeliveryAddress: activeOrderHelp.address,
+      orderPaymentMethod: activeOrderHelp.paymentMethod,
+      orderFulfillmentMode: (activeOrderHelp.fulfillmentMode as any) || 'delivery',
+      deliveryPartnerName: activeOrderHelp.deliveryPartnerName,
+      deliveryPartnerPhone: activeOrderHelp.deliveryPartnerPhone,
+      deliveryVehicleNumber: activeOrderHelp.deliveryVehicleNumber,
+      assignedKitchenId: activeOrderHelp.acceptedByKitchenId || activeOrderHelp.kitchenId,
+      assignedKitchenName: activeOrderHelp.acceptedKitchenName,
+      type: 'complaint',
+      category: orderHelpCategory === 'delay' ? 'delivery_delay' : orderHelpCategory === 'rider' ? 'customer_unreachable' : orderHelpCategory === 'items' ? 'food_quality' : 'general',
+      subject: `🚨 [Live Order #${activeOrderHelp.id}] ${categoryLabels[orderHelpCategory] || 'Order Assistance'}`,
+      message: orderHelpMessage.trim() || `Customer requested immediate assistance on active Order #${activeOrderHelp.id}. Status: ${activeOrderHelp.status}. Delivery Address: ${activeOrderHelp.address}.`,
+      priority: 'urgent',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      unreadByAdmin: true,
+      unreadByCustomer: false
+    };
+
+    try {
+      const cleanData = JSON.parse(JSON.stringify(newTicket));
+      await setDoc(doc(db, 'support_tickets', ticketId), cleanData);
+
+      try {
+        const cached = localStorage.getItem('taashbhatti_support_tickets');
+        const list: SupportTicket[] = cached ? JSON.parse(cached) : [];
+        list.unshift(newTicket);
+        localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(list));
+      } catch (cErr) {}
+
+      setOrderHelpSuccessNotice(`Ticket #${ticketId} dispatched! Our live support desk has received your ticket and will assist you immediately.`);
+      setOrderHelpMessage('');
+    } catch (err) {
+      console.error("Failed to submit support ticket from in-app tracker:", err);
+      setOrderHelpSuccessNotice(`Help request logged! (ID: #${ticketId}). You can also tap WhatsApp for instant chat.`);
+    } finally {
+      setIsSubmittingOrderHelp(false);
     }
   };
 
@@ -2650,12 +2726,27 @@ export default function AccountTab({
                         )}
                       </div>
 
-                      <div className="text-right">
-                        <span className="text-[9px] font-black text-brand-orange uppercase tracking-widest block leading-none mb-0.5">SMART DELIVERY ETA</span>
-                        <span className="text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-xl flex items-center gap-1 shadow-xs">
-                          <Clock className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
-                          <span>{smartEta}</span>
-                        </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveOrderHelp(order);
+                            setOrderHelpSuccessNotice(null);
+                          }}
+                          className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-brand-orange hover:from-amber-600 hover:to-orange-600 text-brand-charcoal font-black text-[10px] sm:text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 animate-pulse"
+                          title="Need assistance with this active order?"
+                        >
+                          <Headphones className="w-3.5 h-3.5 stroke-[2.5px]" />
+                          <span>Need Help?</span>
+                        </button>
+
+                        <div className="text-right">
+                          <span className="text-[9px] font-black text-brand-orange uppercase tracking-widest block leading-none mb-0.5">SMART DELIVERY ETA</span>
+                          <span className="text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-xl flex items-center gap-1 shadow-xs">
+                            <Clock className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+                            <span>{smartEta}</span>
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -2968,6 +3059,47 @@ export default function AccountTab({
                         >
                           <Share2 className="w-3 h-3" />
                           WhatsApp
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* NEED HELP WITH THIS ORDER BANNER */}
+                    <div className="bg-gradient-to-r from-amber-500/10 via-orange-50 to-amber-100/40 border-2 border-amber-400/50 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-800 flex items-center justify-center font-black text-base shrink-0">
+                          <Headphones className="w-4 h-4 text-amber-700" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-extrabold text-brand-charcoal block">
+                            Need Help With Order #{order.id}?
+                          </span>
+                          <span className="text-[10px] text-gray-600 block">
+                            Order delay, change of delivery instructions, or meal queries? Our live support desk is active.
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a
+                          href={`https://wa.me/917004729479?text=${encodeURIComponent(
+                            `Hello Taash Bhatti Support,\n\nI need assistance regarding my active Order #${order.id}.\nStatus: ${order.status}\nCustomer: ${user.name || order.customerName || 'Customer'}\nPhone: ${user.phone || order.customerPhone || 'N/A'}\nDelivery Address: ${order.address}\nTotal: ₹${order.total || 0}`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          <span>WhatsApp</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveOrderHelp(order);
+                            setOrderHelpSuccessNotice(null);
+                          }}
+                          className="px-3 py-1.5 bg-brand-charcoal hover:bg-black text-white font-black text-[10px] uppercase rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                        >
+                          <Headphones className="w-3 h-3 text-amber-400" />
+                          <span>Support Desk</span>
                         </button>
                       </div>
                     </div>
@@ -4404,6 +4536,166 @@ export default function AccountTab({
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* 🛎️ ACTIVE ORDER ASSISTANCE & LIVE SUPPORT MODAL */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {activeOrderHelp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[#121820] border-2 border-amber-500/40 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-5 text-left text-white"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center">
+                    <Headphones className="w-5 h-5 stroke-[2.5px]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white uppercase tracking-wider">
+                      Order Support Desk
+                    </h3>
+                    <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                      Order #{activeOrderHelp.id} • Total: ₹{activeOrderHelp.total || 0}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveOrderHelp(null);
+                    setOrderHelpSuccessNotice(null);
+                  }}
+                  className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all cursor-pointer"
+                  title="Close support modal"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Instant Hotline / WhatsApp Options */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <a
+                  href={`https://wa.me/917004729479?text=${encodeURIComponent(
+                    `Hello Taash Bhatti Support Team,\n\nI need immediate assistance regarding my active Order #${activeOrderHelp.id}.\nStatus: ${activeOrderHelp.status}\nCustomer: ${user.name || activeOrderHelp.customerName || 'Customer'}\nPhone: ${user.phone || activeOrderHelp.customerPhone || 'N/A'}\nDelivery Address: ${activeOrderHelp.address}\nTotal: ₹${activeOrderHelp.total || 0}\n\nCould you please look into this?`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 rounded-2xl bg-emerald-950/40 hover:bg-emerald-950/70 border border-emerald-500/40 flex items-center gap-3 transition-all group cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
+                      Chat on WhatsApp
+                    </span>
+                    <span className="text-[10px] text-gray-400 block mt-0.5">
+                      Average reply: &lt; 2 mins
+                    </span>
+                  </div>
+                </a>
+
+                <a
+                  href="tel:+917004729479"
+                  className="p-3.5 rounded-2xl bg-amber-950/30 hover:bg-amber-950/60 border border-amber-500/40 flex items-center gap-3 transition-all group cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                    <Phone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-amber-300 tracking-wider block">
+                      Call Support Hotline
+                    </span>
+                    <span className="text-[10px] text-gray-400 block mt-0.5">
+                      +91 7004729479
+                    </span>
+                  </div>
+                </a>
+              </div>
+
+              {/* Success Alert */}
+              {orderHelpSuccessNotice && (
+                <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    {orderHelpSuccessNotice}
+                  </div>
+                </div>
+              )}
+
+              {/* Support Ticket Submission Form */}
+              <form onSubmit={handleSubmitOrderHelpTicket} className="space-y-4 pt-1">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider block mb-2">
+                    What Do You Need Help With?
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {[
+                      { id: 'delay' as const, label: '⏱️ Order Delayed / ETA' },
+                      { id: 'rider' as const, label: '🛵 Rider Contact / GPS' },
+                      { id: 'address' as const, label: '📍 Update Address / Gate' },
+                      { id: 'items' as const, label: '🍲 Food Prep / Packaging' },
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setOrderHelpCategory(item.id)}
+                        className={`p-2.5 rounded-xl border text-left font-bold transition-all text-[11px] cursor-pointer ${
+                          orderHelpCategory === item.id
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/20'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider block mb-1">
+                    Message or Special Note (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={orderHelpMessage}
+                    onChange={(e) => setOrderHelpMessage(e.target.value)}
+                    placeholder="e.g. Please ask the rider to call when reaching Tower B, or check why cooking is taking extra time..."
+                    className="w-full bg-[#0B0F14] border border-white/10 rounded-xl p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400 resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveOrderHelp(null);
+                      setOrderHelpSuccessNotice(null);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingOrderHelp}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-brand-orange hover:from-amber-600 hover:to-orange-600 text-brand-charcoal font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5 stroke-[2.5px]" />
+                    <span>{isSubmittingOrderHelp ? 'Dispatching...' : 'Submit Help Request'}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
