@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Bike, 
   ChefHat, 
@@ -13,11 +13,18 @@ import {
   ShieldCheck, 
   Utensils, 
   Flame,
-  CloudRain
+  CloudRain,
+  Headphones,
+  Phone,
+  MessageSquare,
+  X,
+  Send,
+  HelpCircle,
+  ExternalLink
 } from 'lucide-react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Order, Kitchen } from '../types';
+import { Order, Kitchen, SupportTicket } from '../types';
 import InAppDeliveryMap from './InAppDeliveryMap';
 
 interface DeliverableOrderTrackerProps {
@@ -30,6 +37,13 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
   const [error, setError] = useState<string | null>(null);
   const [kitchen, setKitchen] = useState<Kitchen | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+
+  // Live Order Assistance & Support Modal States
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [helpCategory, setHelpCategory] = useState<'delay' | 'rider' | 'address' | 'items' | 'other'>('delay');
+  const [helpMessage, setHelpMessage] = useState<string>('');
+  const [isSubmittingHelp, setIsSubmittingHelp] = useState<boolean>(false);
+  const [helpSuccessNotice, setHelpSuccessNotice] = useState<string | null>(null);
 
   // Clean the Order ID
   const cleanId = (orderId || '').trim();
@@ -107,6 +121,73 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  const handleSubmitHelpTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!order) return;
+    setIsSubmittingHelp(true);
+    setHelpSuccessNotice(null);
+
+    const ticketId = `TICKET-ORD-${cleanId.slice(-6)}-${Date.now().toString().slice(-4)}`;
+    const categoryLabels: Record<string, string> = {
+      delay: '⏱️ Order Delayed / ETA Inquiry',
+      rider: '🛵 Rider Contact / Location Issue',
+      address: '📍 Update Delivery Address / Gate Notes',
+      items: '🍲 Food Preparation / Customization Query',
+      other: '❓ General Order Assistance',
+    };
+
+    const newTicket: SupportTicket = {
+      id: ticketId,
+      ticketSource: 'customer',
+      userId: order.userId || 'guest',
+      userEmail: (order as any).userEmail || (order as any).customerEmail || 'customer@taashbhatti.com',
+      userName: order.customerName || 'Customer',
+      userPhone: order.customerPhone || '',
+      orderId: cleanId,
+      orderDate: order.date || (order as any).createdAt || new Date().toISOString(),
+      orderTotal: order.total,
+      orderStatus: order.status,
+      orderItemsSummary: order.items?.map(i => `${i.quantity}x ${i.meal?.name || i.dealTitle || 'Dish'}`).join(', ') || 'Feast items',
+      orderDeliveryAddress: order.address,
+      orderPaymentMethod: order.paymentMethod,
+      orderFulfillmentMode: (order.fulfillmentMode as any) || 'delivery',
+      deliveryPartnerName: order.deliveryPartnerName,
+      deliveryPartnerPhone: order.deliveryPartnerPhone,
+      deliveryVehicleNumber: order.deliveryVehicleNumber,
+      assignedKitchenId: order.acceptedByKitchenId || order.kitchenId,
+      assignedKitchenName: order.acceptedKitchenName || kitchen?.name,
+      type: 'complaint',
+      category: helpCategory === 'delay' ? 'delivery_delay' : helpCategory === 'rider' ? 'customer_unreachable' : helpCategory === 'items' ? 'food_quality' : 'general',
+      subject: `🚨 [Live Order #${cleanId}] ${categoryLabels[helpCategory] || 'Order Assistance'}`,
+      message: helpMessage.trim() || `Customer requested immediate assistance on active Order #${cleanId}. Status: ${order.status}. Delivery Address: ${order.address}.`,
+      priority: 'urgent',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      unreadByAdmin: true,
+      unreadByCustomer: false
+    };
+
+    try {
+      const cleanData = JSON.parse(JSON.stringify(newTicket));
+      await setDoc(doc(db, 'support_tickets', ticketId), cleanData);
+
+      try {
+        const cached = localStorage.getItem('taashbhatti_support_tickets');
+        const list: SupportTicket[] = cached ? JSON.parse(cached) : [];
+        list.unshift(newTicket);
+        localStorage.setItem('taashbhatti_support_tickets', JSON.stringify(list));
+      } catch (cErr) {}
+
+      setHelpSuccessNotice(`Ticket #${ticketId} dispatched! Our live support desk has received your ticket and will assist you immediately.`);
+      setHelpMessage('');
+    } catch (err) {
+      console.error("Failed to submit support ticket from tracker:", err);
+      setHelpSuccessNotice(`Help request logged! (ID: #${ticketId}). You can also tap WhatsApp for instant chat.`);
+    } finally {
+      setIsSubmittingHelp(false);
+    }
+  };
+
   // Helper status resolution
   const getStageIndex = (status?: string): number => {
     switch (status) {
@@ -179,6 +260,15 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowHelpModal(true)}
+              title="Need Help with this Order?"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-orange/20 to-amber-500/20 hover:from-brand-orange/30 hover:to-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              <Headphones className="w-3.5 h-3.5 text-amber-400" />
+              <span>Need Help?</span>
+            </button>
+
+            <button
               onClick={handleCopyLink}
               title="Copy live tracking link"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-bold transition-all cursor-pointer"
@@ -191,7 +281,7 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5 text-gray-400" />
-                  <span>Copy Link</span>
+                  <span className="hidden sm:inline">Copy Link</span>
                 </>
               )}
             </button>
@@ -523,10 +613,198 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
                   {order.address}
                 </p>
               </div>
+
+              {/* NEED HELP WITH YOUR ORDER BANNER */}
+              <div className="bg-gradient-to-r from-amber-500/10 via-[#18202A] to-[#12181E] border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                    <Headphones className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                      Need Help With This Order?
+                      <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">
+                        Live Support
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      Order delay, change in delivery notes, or meal queries? Our support team is active right now.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHelpModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-brand-orange hover:from-amber-600 hover:to-orange-600 text-brand-charcoal font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 shrink-0"
+                >
+                  <Headphones className="w-3.5 h-3.5 stroke-[2.5px]" />
+                  <span>Contact Support</span>
+                </button>
+              </div>
             </div>
           </>
         )}
       </main>
+
+      {/* ======================================================== */}
+      {/* 🛎️ ORDER ASSISTANCE & LIVE SUPPORT MODAL */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {showHelpModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[#121820] border-2 border-amber-500/40 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-5 text-left"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center">
+                    <Headphones className="w-5 h-5 stroke-[2.5px]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white uppercase tracking-wider">
+                      Order Support Desk
+                    </h3>
+                    <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                      Order #{cleanId} • Total: ₹{order?.total || 0}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHelpModal(false);
+                    setHelpSuccessNotice(null);
+                  }}
+                  className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all cursor-pointer"
+                  title="Close support modal"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Instant Hotline / WhatsApp Options */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <a
+                  href={`https://wa.me/917004729479?text=${encodeURIComponent(
+                    `Hello Taash Bhatti Support Team,\n\nI need immediate assistance regarding my active Order #${cleanId}.\nStatus: ${order?.status || 'Active'}\nCustomer: ${order?.customerName || 'Patron'}\nDelivery Address: ${order?.address || 'N/A'}\nTotal: ₹${order?.total || 0}\n\nCould you please look into this?`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3.5 rounded-2xl bg-emerald-950/40 hover:bg-emerald-950/70 border border-emerald-500/40 flex items-center gap-3 transition-all group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-emerald-400 tracking-wider block">
+                      Chat on WhatsApp
+                    </span>
+                    <span className="text-[10px] text-gray-400 block mt-0.5">
+                      Average reply: &lt; 2 mins
+                    </span>
+                  </div>
+                </a>
+
+                <a
+                  href="tel:+917004729479"
+                  className="p-3.5 rounded-2xl bg-amber-950/30 hover:bg-amber-950/60 border border-amber-500/40 flex items-center gap-3 transition-all group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                    <Phone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-amber-300 tracking-wider block">
+                      Call Support Hotline
+                    </span>
+                    <span className="text-[10px] text-gray-400 block mt-0.5">
+                      +91 7004729479
+                    </span>
+                  </div>
+                </a>
+              </div>
+
+              {/* Success Alert */}
+              {helpSuccessNotice && (
+                <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    {helpSuccessNotice}
+                  </div>
+                </div>
+              )}
+
+              {/* Support Ticket Submission Form */}
+              <form onSubmit={handleSubmitHelpTicket} className="space-y-4 pt-1">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider block mb-2">
+                    What Do You Need Help With?
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {[
+                      { id: 'delay' as const, label: '⏱️ Order Delayed / ETA' },
+                      { id: 'rider' as const, label: '🛵 Rider Contact / GPS' },
+                      { id: 'address' as const, label: '📍 Update Address / Gate' },
+                      { id: 'items' as const, label: '🍲 Food Prep / Packaging' },
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setHelpCategory(item.id)}
+                        className={`p-2.5 rounded-xl border text-left font-bold transition-all text-[11px] cursor-pointer ${
+                          helpCategory === item.id
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/20'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider block mb-1">
+                    Message or Special Note (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={helpMessage}
+                    onChange={(e) => setHelpMessage(e.target.value)}
+                    placeholder="e.g. Please ask the rider to call when reaching Tower B, or check why cooking is taking extra time..."
+                    className="w-full bg-[#0B0F14] border border-white/10 rounded-xl p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400 resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowHelpModal(false);
+                      setHelpSuccessNotice(null);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingHelp}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-brand-orange hover:from-amber-600 hover:to-orange-600 text-brand-charcoal font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5 stroke-[2.5px]" />
+                    <span>{isSubmittingHelp ? 'Dispatching...' : 'Submit Help Request'}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* FOOTER WATERMARK */}
       <footer className="text-center py-4 border-t border-white/5 text-[10px] text-gray-600">

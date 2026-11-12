@@ -519,9 +519,33 @@ export default function App() {
     setShowGroupOrdering(true);
   };
 
-  // Cart State
-  const [cart, setCart] = useState<OrderItem[]>([]);
+  // Cart State (Persisted across tab refreshes and app switches)
+  const [cart, setCart] = useState<OrderItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('taashbhatti_cart_items');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn("Failed to restore cached cart items:", e);
+    }
+    return [];
+  });
   const [cartOpen, setCartOpen] = useState(false);
+
+  // Sync cart items to localStorage for session persistence
+  useEffect(() => {
+    try {
+      if (cart && cart.length > 0) {
+        localStorage.setItem('taashbhatti_cart_items', JSON.stringify(cart));
+      } else {
+        localStorage.removeItem('taashbhatti_cart_items');
+      }
+    } catch (e) {
+      console.warn("Failed to persist cart items to localStorage:", e);
+    }
+  }, [cart]);
 
   // Support Mailbox State
   const [mailboxOpen, setMailboxOpen] = useState(false);
