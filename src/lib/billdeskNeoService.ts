@@ -196,6 +196,21 @@ export async function createBillDeskNeoOrder(params: BillDeskNeoCreateOrderParam
   // Format order_date: YYYY-MM-DDThh:mm:ss+05:30
   const orderDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}+05:30`;
 
+  // Sanitize customerName: BillDesk strictly forbids special characters like &, quotes, exclamation marks, emoji
+  const rawName = (params.customerName || 'Patron')
+    .replace(/[^a-zA-Z0-9 ._-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 50);
+  const cleanName = rawName || 'Patron';
+
+  // Sanitize customerPhone: BillDesk additional_info fields MUST be non-empty and valid.
+  // Fall back to '9999999999' if phone has no digits or was 'N/A'/empty so BillDesk never throws AIIDE0001.
+  const rawPhone = (params.customerPhone || '').replace(/\D/g, '');
+  const cleanPhone = rawPhone.length >= 10
+    ? rawPhone.substring(0, 15)
+    : (rawPhone.length > 0 ? rawPhone : '9999999999');
+
   const requestPayload = {
     mercid: cfg.mercid,
     orderid: params.orderId,
@@ -205,8 +220,8 @@ export async function createBillDeskNeoOrder(params: BillDeskNeoCreateOrderParam
     ru: params.returnUrl || cfg.returnUrl,
     itemcode: 'DIRECT',
     additional_info: {
-      additional_info1: (params.customerName || 'Patron').substring(0, 50),
-      additional_info2: (params.customerPhone || '').replace(/\D/g, '').substring(0, 15),
+      additional_info1: cleanName,
+      additional_info2: cleanPhone,
       additional_info3: 'TAASH_BHATTI',
       additional_info4: 'NA',
       additional_info5: 'NA',

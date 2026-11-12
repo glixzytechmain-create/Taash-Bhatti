@@ -111,9 +111,17 @@ export function buildBillDeskPaymentRequest(params: BillDeskOrderInitiateParams)
 
   const formattedAmount = params.amount.toFixed(2);
   const effectiveReturnUrl = params.returnUrl || config.returnUrl;
-  const customerId = (params.customerPhone ? params.customerPhone.replace(/\D/g, '') : params.orderId) || 'CUST';
-  const cleanCustomerName = (params.customerName || 'Patron').replace(/\|/g, '').substring(0, 50);
-  const cleanCustomerPhone = (params.customerPhone || '').replace(/\D/g, '').substring(0, 15);
+  const rawCustomerName = (params.customerName || 'Patron')
+    .replace(/[^a-zA-Z0-9 ._-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 50);
+  const cleanCustomerName = rawCustomerName || 'Patron';
+  const rawPhone = (params.customerPhone || '').replace(/\D/g, '');
+  const cleanCustomerPhone = rawPhone.length >= 10
+    ? rawPhone.substring(0, 15)
+    : (rawPhone.length > 0 ? rawPhone : '9999999999');
+  const customerId = cleanCustomerPhone !== '9999999999' ? cleanCustomerPhone : (params.orderId || 'CUST');
 
   // BillDesk Pipe Delimited Request String preceding Checksum
   const messageParts = [

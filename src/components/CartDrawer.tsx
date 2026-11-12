@@ -1545,8 +1545,9 @@ export default function CartDrawer({
     const takeawayOtp = isTakeaway ? Math.floor(1000 + Math.random() * 9000).toString() : undefined;
 
     const effectiveTable = isDineIn ? (selectedTableNumber || dineInSession?.tableNumber || 'Table 1').trim() : undefined;
+    const resolvedPhone = (user.phone || auth.currentUser?.phoneNumber || (fbUser as any)?.phoneNumber || '').trim();
     const finalCustomerName = isDineIn ? (dineInGuestName || user.name || 'Dine-In Guest').trim() : (user.name || 'Customer');
-    const finalCustomerPhone = isDineIn ? (dineInGuestPhone || user.phone || 'N/A').trim() : (user.phone || 'N/A');
+    const finalCustomerPhone = isDineIn ? (dineInGuestPhone || resolvedPhone || 'N/A').trim() : (resolvedPhone || 'N/A');
 
     let finalAddress = isDineIn
       ? `Dine-In • ${effectiveTable} (${selectedDineInKitchen?.name || 'Taash Bhatti'})`
@@ -1732,7 +1733,7 @@ export default function CartDrawer({
             orderId: newOrder.id,
             amount: finalTotal,
             customerName: finalCustomerName,
-            customerPhone: finalCustomerPhone,
+            customerPhone: finalCustomerPhone !== 'N/A' ? finalCustomerPhone : (resolvedPhone || ''),
             customerEmail: user.email || '',
             returnUrl: `${window.location.origin}/api/payment/billdesk/callback`
           })
