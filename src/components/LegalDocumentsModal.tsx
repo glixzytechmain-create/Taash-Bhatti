@@ -104,7 +104,7 @@ export default function LegalDocumentsModal({
   return (
     <div
       id="legal-documents-modal-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-brand-charcoal/80 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-6 bg-brand-charcoal/80 backdrop-blur-md animate-fade-in"
     >
       <div
         id="legal-documents-modal-container"

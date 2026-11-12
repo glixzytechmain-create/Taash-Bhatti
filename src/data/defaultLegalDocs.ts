@@ -9,7 +9,7 @@ export const DEFAULT_TERMS_AND_CONDITIONS: LegalDocument = {
   summary:
     'These Terms & Conditions govern your access to and use of TAASH BHATTI culinary services, online ordering platform, takeaway counters, and food delivery fulfillment. By accessing our services, creating an account, or placing an order, you agree to be bound by these culinary terms.',
   contactEmail: 'support@taashbhatti.com',
-  contactPhone: '+91 7004729479',
+  contactPhone: 'Sweta Suman : +91 7004729479',
   contactAddress: 'IBL ENTERPRISES, NA NA SADBHANA, MUSHHARI, NAYA TOLA, MUZAFFARPUR, NEAR THAKUR NURSING HOME, MUZAFFARPUR, BIHAR, INDIA 842001',
   sections: [
     {
@@ -134,7 +134,7 @@ export const DEFAULT_PRIVACY_POLICY: LegalDocument = {
   summary:
     'At TAASH BHATTI, we respect your privacy and are committed to complete transparency regarding how your personal information is gathered, managed, and safeguarded. This Privacy Policy details our data governance practices across all digital ordering and culinary delivery services.',
   contactEmail: 'privacy@taashbhatti.com',
-  contactPhone: '+91 7004729479',
+  contactPhone: 'Sweta Suman : +91 7004729479',
   contactAddress: 'IBL ENTERPRISES, NA NA SADBHANA, MUSHHARI, NAYA TOLA, MUZAFFARPUR, NEAR THAKUR NURSING HOME, MUZAFFARPUR, BIHAR, INDIA 842001',
   sections: [
     {
@@ -249,11 +249,24 @@ export const DEFAULT_PRIVACY_POLICY: LegalDocument = {
       content:
         'In accordance with the Information Technology Act and applicable Indian digital personal data protection frameworks, we have designated a dedicated Data Protection Officer (DPO) to handle inquiries, grievances, and regulatory consultations:',
       subpoints: [
-        'Data Protection Officer: TAASH BHATTI Legal & Privacy Governance Cell',
+        'Data Protection Officer: TAASH BHATTI Legal & Privacy Governance Cell (Contact: Sweta Suman)',
         'Official Email: privacy@taashbhatti.com',
-        'Direct Assistance Phone: +91 91234 56789 (10:00 AM – 8:00 PM IST, Monday through Saturday)',
-        'Physical Headquarters: TAASH BHATTI Central Cloud Kitchens, Muzaffarpur, Bihar 842001, India',
+        'Direct Assistance Phone: Sweta Suman : +91 7004729479 (10:00 AM – 11:00 PM IST, Monday through Sunday)',
+        'Physical Headquarters: IBL ENTERPRISES, NA NA SADBHANA, MUSHHARI, NAYA TOLA, MUZAFFARPUR, NEAR THAKUR NURSING HOME, MUZAFFARPUR, BIHAR, INDIA 842001',
         'All formal privacy complaints will be acknowledged within 48 hours and investigated thoroughly within 14 business days.',
+      ],
+    },
+    {
+      id: 'refund_and_cancellation_policy',
+      title: '11. Refund, Cancellation & Return Policy',
+      content:
+        'At TAASH BHATTI (operated by IBL ENTERPRISES), customer satisfaction, food safety, and transparent digital transactions are our highest priorities. This Refund, Cancellation & Return Policy governs all meal orders placed through our platform:',
+      subpoints: [
+        'Order Cancellation: You may cancel an order free of charge within 60 seconds of placement or before the cloud kitchen commences active handi cooking and cast-iron searing. Once food preparation has begun, orders cannot be cancelled due to the perishable, made-to-order nature of authentic Champaran dishes.',
+        'Online Payment Gateway Refunds: In the event of an approved cancellation, duplicate payment deduction, technical transaction timeout where money was debited, or non-delivery due to operational geofence constraints, your refund is processed immediately. For payments completed online via BillDesk (Credit/Debit Card, Net Banking, or UPI), the full amount is credited directly back to the original source bank account or UPI ID within 5 to 7 working days, adhering strictly to RBI guidelines and banking settlement schedules.',
+        'Instant Bhatti Wallet Reimbursement: At your preference, any approved refund can alternatively be credited instantly (0-minute turnaround) to your in-app Bhatti Wallet / Ember balance with bonus loyalty points for immediate reordering.',
+        'Food Return & Quality Assurance: As freshly cooked perishable food items, physical returns of delivered food cannot be accepted. However, if any meal item arrives damaged, spilled, missing, or compromised in culinary quality, please report the issue within 30 minutes of delivery along with photos via the in-app support portal or WhatsApp. Upon quick verification, we will immediately dispatch a fresh replacement or issue a complete refund.',
+        'Grievance & Refund Officer Contact: For any billing or refund assistance, contact Sweta Suman directly at +91 7004729479 or email support@taashbhatti.com. Physical Office: IBL ENTERPRISES, NA NA SADBHANA, MUSHHARI, NAYA TOLA, MUZAFFARPUR, BIHAR 842001.',
       ],
     },
   ],
