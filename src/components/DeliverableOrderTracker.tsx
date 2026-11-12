@@ -259,14 +259,26 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
           </div>
 
           <div className="flex items-center gap-2">
-            <button
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => setShowHelpModal(true)}
               title="Need Help with this Order?"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-orange/20 to-amber-500/20 hover:from-brand-orange/30 hover:to-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+              className="relative group overflow-hidden px-3 sm:px-3.5 py-1.5 rounded-full bg-gradient-to-r from-brand-orange via-amber-500 to-brand-gold text-stone-950 font-black text-[10px] sm:text-xs uppercase tracking-wider shadow-md shadow-brand-orange/35 ring-1 ring-white/50 flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 animate-bhatti-beacon shrink-0"
             >
-              <Headphones className="w-3.5 h-3.5 text-amber-400" />
-              <span>Need Help?</span>
-            </button>
+              {/* Ambient Gleam Reflection Passing Across */}
+              <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none animate-bhatti-gleam" />
+
+              {/* Live Support Ping Beacon */}
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-stone-950 opacity-60" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-stone-950" />
+              </span>
+
+              <Headphones className="w-3.5 h-3.5 stroke-[2.5px] text-stone-950 animate-headphone-wiggle" />
+              <span className="tracking-wide">Need Help?</span>
+            </motion.button>
 
             <button
               onClick={handleCopyLink}
@@ -615,31 +627,50 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
               </div>
 
               {/* NEED HELP WITH YOUR ORDER BANNER */}
-              <div className="bg-gradient-to-r from-amber-500/10 via-[#18202A] to-[#12181E] border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                    <Headphones className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
-                      Need Help With This Order?
-                      <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">
-                        Live Support
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-charcoal via-[#182129] to-brand-forest border-2 border-brand-orange/40 p-4 sm:p-5 text-white shadow-xl">
+                {/* Ambient Fire & Gold Glow Reflections */}
+                <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-brand-orange/20 rounded-full blur-2xl pointer-events-none" />
+                <div className="absolute -left-6 -top-6 w-24 h-24 bg-brand-gold/15 rounded-full blur-xl pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <div className="relative shrink-0">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-orange via-orange-500 to-brand-gold text-stone-950 flex items-center justify-center font-black shadow-lg shadow-brand-orange/30 animate-bhatti-beacon">
+                        <Headphones className="w-5 h-5 stroke-[2.5px] animate-headphone-wiggle" />
+                      </div>
+                      <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80" />
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-brand-charcoal" />
                       </span>
-                    </h4>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      Order delay, change in delivery notes, or meal queries? Our support team is active right now.
-                    </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-black text-white tracking-wide">
+                          Need Help With This Order?
+                        </h4>
+                        <span className="text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/40">
+                          Live Concierge
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                        Order delay, delivery instructions, or chef prep status — our live support desk is active.
+                      </p>
+                    </div>
                   </div>
+
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setShowHelpModal(true)}
+                    className="relative overflow-hidden px-5 py-2.5 bg-gradient-to-r from-brand-orange via-amber-500 to-brand-gold text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-brand-orange/30 hover:brightness-105 transition-all cursor-pointer animate-bhatti-beacon shrink-0"
+                  >
+                    <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none animate-bhatti-gleam" />
+                    <Headphones className="w-3.5 h-3.5 stroke-[2.5px] animate-headphone-wiggle" />
+                    <span>Contact Support</span>
+                  </motion.button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowHelpModal(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-brand-orange hover:from-amber-600 hover:to-orange-600 text-brand-charcoal font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 shrink-0"
-                >
-                  <Headphones className="w-3.5 h-3.5 stroke-[2.5px]" />
-                  <span>Contact Support</span>
-                </button>
               </div>
             </div>
           </>
@@ -656,18 +687,27 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-[#121820] border-2 border-amber-500/40 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-5 text-left"
+              className="bg-gradient-to-b from-[#182028] via-[#12161A] to-brand-charcoal border-2 border-brand-orange/40 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-5 text-left text-white relative overflow-hidden"
             >
+              {/* Corner Brand Ambient Glow */}
+              <div className="absolute -right-12 -top-12 w-36 h-36 bg-brand-orange/20 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-28 h-28 bg-brand-gold/15 rounded-full blur-xl pointer-events-none" />
+
               {/* Header */}
-              <div className="flex items-start justify-between border-b border-white/10 pb-4">
+              <div className="relative z-10 flex items-start justify-between border-b border-white/10 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center">
-                    <Headphones className="w-5 h-5 stroke-[2.5px]" />
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-orange via-orange-500 to-brand-gold text-stone-950 flex items-center justify-center font-black shadow-lg shadow-brand-orange/30 shrink-0">
+                    <Headphones className="w-5 h-5 stroke-[2.5px] animate-headphone-wiggle" />
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-white uppercase tracking-wider">
-                      Order Support Desk
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-white uppercase tracking-wider">
+                        Order Support Desk
+                      </h3>
+                      <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/30">
+                        Priority
+                      </span>
+                    </div>
                     <p className="text-[10px] text-gray-400 font-mono mt-0.5">
                       Order #{cleanId} • Total: ₹{order?.total || 0}
                     </p>
@@ -687,7 +727,7 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
               </div>
 
               {/* Instant Hotline / WhatsApp Options */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <a
                   href={`https://wa.me/917004729479?text=${encodeURIComponent(
                     `Hello Taash Bhatti Support Team,\n\nI need immediate assistance regarding my active Order #${cleanId}.\nStatus: ${order?.status || 'Active'}\nCustomer: ${order?.customerName || 'Patron'}\nDelivery Address: ${order?.address || 'N/A'}\nTotal: ₹${order?.total || 0}\n\nCould you please look into this?`
@@ -711,13 +751,13 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
 
                 <a
                   href="tel:+917004729479"
-                  className="p-3.5 rounded-2xl bg-amber-950/30 hover:bg-amber-950/60 border border-amber-500/40 flex items-center gap-3 transition-all group"
+                  className="p-3.5 rounded-2xl bg-brand-charcoal/80 hover:bg-brand-charcoal border border-brand-orange/40 flex items-center gap-3 transition-all group"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-brand-orange/20 text-brand-orange flex items-center justify-center shrink-0">
                     <Phone className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-[11px] font-black uppercase text-amber-300 tracking-wider block">
+                    <span className="text-[11px] font-black uppercase text-brand-orange tracking-wider block">
                       Call Support Hotline
                     </span>
                     <span className="text-[10px] text-gray-400 block mt-0.5">
@@ -729,7 +769,7 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
 
               {/* Success Alert */}
               {helpSuccessNotice && (
-                <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs flex items-start gap-2.5">
+                <div className="relative z-10 p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs flex items-start gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div className="leading-relaxed">
                     {helpSuccessNotice}
@@ -738,7 +778,7 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
               )}
 
               {/* Support Ticket Submission Form */}
-              <form onSubmit={handleSubmitHelpTicket} className="space-y-4 pt-1">
+              <form onSubmit={handleSubmitHelpTicket} className="relative z-10 space-y-4 pt-1">
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider block mb-2">
                     What Do You Need Help With?
@@ -756,7 +796,7 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
                         onClick={() => setHelpCategory(item.id)}
                         className={`p-2.5 rounded-xl border text-left font-bold transition-all text-[11px] cursor-pointer ${
                           helpCategory === item.id
-                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            ? 'bg-brand-orange/20 border-brand-orange text-brand-orange font-black shadow-xs'
                             : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/20'
                         }`}
                       >
@@ -775,7 +815,7 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
                     value={helpMessage}
                     onChange={(e) => setHelpMessage(e.target.value)}
                     placeholder="e.g. Please ask the rider to call when reaching Tower B, or check why cooking is taking extra time..."
-                    className="w-full bg-[#0B0F14] border border-white/10 rounded-xl p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400 resize-none"
+                    className="w-full bg-[#0B0F14] border border-white/10 rounded-xl p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-orange resize-none"
                   />
                 </div>
 
@@ -794,8 +834,9 @@ export default function DeliverableOrderTracker({ orderId }: DeliverableOrderTra
                   <button
                     type="submit"
                     disabled={isSubmittingHelp}
-                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-brand-orange hover:from-amber-600 hover:to-orange-600 text-brand-charcoal font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="relative overflow-hidden px-5 py-2.5 bg-gradient-to-r from-brand-orange via-amber-500 to-brand-gold hover:brightness-105 text-stone-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-brand-orange/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95 animate-bhatti-beacon"
                   >
+                    <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none animate-bhatti-gleam" />
                     <Send className="w-3.5 h-3.5 stroke-[2.5px]" />
                     <span>{isSubmittingHelp ? 'Dispatching...' : 'Submit Help Request'}</span>
                   </button>

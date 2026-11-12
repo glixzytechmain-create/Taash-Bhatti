@@ -216,6 +216,63 @@ video::-webkit-media-controls-overlay-play-button {
   animation: plasmaPulse 2.8s ease-in-out infinite;
 }
 
+/* Taash Bhatti Attention Beacon & Shimmer Gleam Animations */
+@keyframes bhattiBeaconGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 87, 34, 0.45), 0 4px 14px rgba(255, 87, 34, 0.25);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 87, 34, 0), 0 6px 20px rgba(255, 87, 34, 0.4);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes bhattiShimmerGleam {
+  0% {
+    transform: translateX(-160%) skewX(-20deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.65;
+  }
+  40% {
+    transform: translateX(260%) skewX(-20deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(260%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+@keyframes headphoneWiggle {
+  0%, 80%, 100% {
+    transform: rotate(0deg);
+  }
+  85% {
+    transform: rotate(-12deg);
+  }
+  90% {
+    transform: rotate(10deg);
+  }
+  95% {
+    transform: rotate(-6deg);
+  }
+}
+
+.animate-bhatti-beacon {
+  animation: bhattiBeaconGlow 2.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-bhatti-gleam {
+  animation: bhattiShimmerGleam 3.5s infinite ease-in-out;
+}
+
+.animate-headphone-wiggle {
+  animation: headphoneWiggle 3.5s infinite ease-in-out;
+}
+
 /* Instamart-Style Curved Dish Modal: Ambient Brand Palette Animations */
 @keyframes bhattiAurora1 {
   0%, 100% {
