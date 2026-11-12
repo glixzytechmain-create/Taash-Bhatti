@@ -5,6 +5,9 @@ runConfig:
   minInstances: 0
   maxInstances: 10
   concurrency: 80
+  vpcAccess:
+    egress: ALL_TRAFFIC
+    connector: projects/taash-bhatti/locations/asia-east1/connectors/billdesk-connector
 
 env:
   - variable: NODE_ENV
