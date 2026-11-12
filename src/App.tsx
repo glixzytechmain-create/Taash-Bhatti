@@ -17,7 +17,7 @@ import AccountTab from './components/AccountTab';
 import MyDeckTab from './components/MyDeckTab';
 import BuddyDeckView from './components/BuddyDeckView';
 import CartDrawer from './components/CartDrawer';
-import { Gift, ArrowRight, AlertCircle, LogOut, Flame } from 'lucide-react';
+import { Gift, ArrowRight, AlertCircle, LogOut } from 'lucide-react';
 import { Meal, Gym, GymChain, Order, User, OrderItem, Kitchen, MealReview, BuddyDeckRequest, GroupOrderRoom } from './types';
 import { GYMS_DATA } from './data';
 import { 
@@ -3523,47 +3523,8 @@ export default function App() {
         )}
 
         {/* CULINARY BRAND FOOTER & LEGAL NAVIGATION */}
-        <footer className="mt-16 pt-8 pb-24 border-t border-brand-charcoal/10 text-center space-y-5 px-4">
-          {/* ABOUT TAASH BHATTI BRAND SECTION */}
-          <div className="max-w-2xl mx-auto p-5 sm:p-6 rounded-3xl bg-gradient-to-b from-white/95 to-brand-cream/40 border border-brand-green/15 shadow-xs text-left space-y-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-brand-orange/15 border border-brand-orange/30 flex items-center justify-center text-brand-orange shrink-0">
-                <Flame className="w-4 h-4 fill-brand-orange/20" />
-              </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-brand-orange block">
-                  Royalty in Slow Cooking
-                </span>
-                <h3 className="text-base font-black text-brand-charcoal tracking-tight">
-                  About TAASH BHATTI
-                </h3>
-              </div>
-            </div>
-
-            <p className="text-xs text-brand-charcoal/80 leading-relaxed font-medium">
-              Born from the iconic culinary crossroads of Champaran and the historic Nepal border, <strong className="text-brand-charcoal font-black">TAASH BHATTI</strong> brings centuries of woodfire mastery to your table. Our signature <strong className="text-brand-green font-black">Taash</strong> is crafted with prime, tender cuts marinated in cold-pressed kachi ghani mustard oil, crushed whole garlic, and stone-ground khada masalas, then seared to perfection on heavy concave cast-iron tawas over roaring embers.
-            </p>
-            <p className="text-xs text-brand-charcoal/80 leading-relaxed font-medium">
-              From dough-sealed unglazed earthen <strong className="text-brand-charcoal font-black">Ahuna Handis</strong> simmered gently for 3 hours to fragrant charcoal-cooked dum biryanis and crispy bhunja chura, we uphold a strict pledge: pure mustard oil, zero artificial food coloring, zero chemical tenderizers, and authentic slow-fire craft.
-            </p>
-
-            <div className="pt-1.5 flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-1 rounded-full bg-brand-green/10 border border-brand-green/20 text-[10px] font-extrabold text-brand-green">
-                🪵 Authentic Woodfire Bhatti
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-extrabold text-amber-700">
-                🫕 Clay-Pot Ahuna Dum Handi
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-[10px] font-extrabold text-orange-700">
-                🌿 100% Pure Kachi Ghani Oil
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-[10px] font-extrabold text-rose-700">
-                🚫 Zero Artificial Colors
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-bold text-brand-charcoal/70 pt-2">
+        <footer className="mt-16 pt-8 pb-24 border-t border-brand-charcoal/10 text-center space-y-4 px-4">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-bold text-brand-charcoal/70">
             <button
               type="button"
               onClick={() => handleOpenLegal('terms')}
