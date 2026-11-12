@@ -3563,13 +3563,13 @@ export default function App() {
               NA NA SADBHANA MUSHHARI NAYA TOLA MUZAFFARPUR NEAR THAKUR NURSING HOME MUZAFFARPUR BIHAR INDIA 842001
             </p>
             <div className="pt-1 flex flex-wrap items-center justify-center gap-2 text-xs font-bold text-brand-charcoal">
-              <span>📱 MOBILE:</span>
-              <span className="font-extrabold text-brand-charcoal">Sweta Suman :</span>
+              <span>PROPRIETOR : SWETA SUMAN :</span>
               <a
                 href="tel:7004729479"
-                className="text-brand-green hover:underline font-extrabold tracking-wide"
+                className="text-brand-green hover:underline font-extrabold tracking-wide flex items-center gap-1"
               >
-                7004729479
+                <span>📱</span>
+                <span>7004729479</span>
               </a>
             </div>
           </div>
